@@ -30,7 +30,7 @@ cat <<'EOF'
 
 普通用户常用参数（建议优先使用）：
   --preset NAME
-  --dataset DATASET          mrpc|sst2|stsb|cola|qnli|rte|wnli
+  --dataset DATASET          mrpc|rte|sst2
   --algorithm ALG            rl|bo_rf|greedy|coinn_ga（eval 可用；run 子命令由 run 后面的算法决定）
   --fresh                    等价于 --fresh-start
   --budget N                 训练兼容路径/compare 的随机对照数量；独立 Paean final eval 需同时传 --random
@@ -63,7 +63,7 @@ cat <<'EOF'
 核心高级参数：
   --search-algorithm rl|ga|greedy|general-rl|rl-and-ga-compare  旧版兼容入口
   --logfile FILE
-  --model-type bert-base|bert-large|gpt-2
+  --model-type bert-base|bert-large
 
 普通 RL：
   --stage1-search-episodes N
@@ -277,8 +277,8 @@ GA / Greedy：
   bash Paean/run_final_eval.sh --preset mrpc-blb-action-range
   bash llama_7B_LayerImportance.sh compare --dataset mrpc
   bash llama_7B_LayerImportance.sh compare --dataset mrpc --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
-  bash llama_7B_LayerImportance.sh general train --dataset mrpc --general-rl-tasks mrpc,cola,rte,stsb --fresh
-  bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir "Parting Chapter/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default"
+  bash llama_7B_LayerImportance.sh general train --dataset mrpc --general-rl-tasks mrpc,rte,sst2 --fresh
+  bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir PATH
 EOF
 }
 
@@ -292,7 +292,7 @@ is_pos_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] &
 is_nonneg_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) >= 0) }'; }
 ga_total_layers_for_model_type(){
   case "$1" in
-    bert-base|gpt-2) echo 12 ;;
+    bert-base) echo 12 ;;
     bert-large) echo 24 ;;
     *) err "无法为模型类型推断 GA 默认代数：$1" ;;
   esac
@@ -368,7 +368,6 @@ modelzh(){
   case "$1" in
     bert-base) echo "BERT Base（bert-base）" ;;
     bert-large) echo "BERT Large（bert-large）" ;;
-    gpt-2) echo "GPT-2（gpt-2）" ;;
     *) echo "$1" ;;
   esac
 }
@@ -1019,7 +1018,6 @@ esac
 case "$MODEL_TYPE" in
   bert-base|bert_base|bertbase) MODEL_TYPE="bert-base" ;;
   bert-large|bert_large|bertlarge) MODEL_TYPE="bert-large" ;;
-  gpt-2|gpt2|gpt_2) MODEL_TYPE="gpt-2" ;;
   *) err "不支持的模型类型：$MODEL_TYPE" ;;
 esac
 
@@ -1330,7 +1328,7 @@ if [ "$FINAL_EVAL_ONLY" != "true" ]; then
 fi
 
 case "$DATASET" in
-  mrpc|sst2|stsb|cola|qnli|rte|wnli) DATA_PATH="$DATASET" ;;
+  mrpc|rte|sst2) DATA_PATH="$DATASET" ;;
   *) err "不支持的数据集：$DATASET" ;;
 esac
 
@@ -1640,34 +1638,15 @@ fi
 
 if [ "$MODEL_TYPE" = "bert-base" ]; then
   case "$DATASET" in
-    wnli) BASE_MODEL="textattack/bert-base-uncased-WNLI" ;;
     rte) BASE_MODEL="textattack/bert-base-uncased-RTE" ;;
-    cola) BASE_MODEL="textattack/bert-base-uncased-CoLA" ;;
-    qnli) BASE_MODEL="textattack/bert-base-uncased-QNLI" ;;
     mrpc) BASE_MODEL="textattack/bert-base-uncased-MRPC" ;;
     sst2) BASE_MODEL="textattack/bert-base-uncased-SST-2" ;;
-    stsb) BASE_MODEL="textattack/bert-base-uncased-STS-B" ;;
   esac
 elif [ "$MODEL_TYPE" = "bert-large" ]; then
   case "$DATASET" in
     mrpc) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-mrpc" ;;
-    cola) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-cola" ;;
-    stsb) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-stsb" ;;
     rte) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-rte" ;;
     sst2) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-sst2" ;;
-    qnli) BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-qnli" ;;
-    *) err "bert-large 当前仅支持 mrpc, cola, stsb, rte, sst2, qnli" ;;
-  esac
-else
-  case "$DATASET" in
-    cola) BASE_MODEL="PavanNeerudu/gpt2-finetuned-cola" ;;
-    sst2) BASE_MODEL="PavanNeerudu/gpt2-finetuned-sst2" ;;
-    mrpc) BASE_MODEL="PavanNeerudu/gpt2-finetuned-mrpc" ;;
-    stsb) BASE_MODEL="PavanNeerudu/gpt2-finetuned-stsb" ;;
-    qnli) BASE_MODEL="PavanNeerudu/gpt2-finetuned-qnli" ;;
-    rte) BASE_MODEL="PavanNeerudu/gpt2-finetuned-rte" ;;
-    wnli) BASE_MODEL="PavanNeerudu/gpt2-finetuned-wnli" ;;
-    *) err "gpt-2 当前不支持数据集：$DATASET" ;;
   esac
 fi
 

@@ -9,6 +9,11 @@ import shlex
 import time
 from typing import List, Optional, Sequence, Tuple
 
+from glue_data_protocol import (
+    SUPPORTED_DATASETS,
+    SUPPORTED_MODEL_FAMILIES,
+    validate_supported_profile,
+)
 from runtime_error_reporter import format_command
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -17,7 +22,8 @@ PRESET_DIR = PACKAGE_DIR / "presets"
 DEFAULT_OUTPUT_ROOT = PACKAGE_DIR / "outputs"
 DEFAULT_PRESET = "default"
 
-DATASET_CHOICES = ("mrpc", "sst2", "stsb", "cola", "qnli", "rte", "wnli")
+DATASET_CHOICES = SUPPORTED_DATASETS
+MODEL_TYPE_CHOICES = SUPPORTED_MODEL_FAMILIES
 SOURCE_CHOICES = ("search", "json", "manual", "max", "stage2-max", "stage2_max", "blb-max", "blb_max")
 
 
@@ -135,7 +141,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-presets", action="store_true")
     parser.add_argument("--dataset", default="mrpc", choices=DATASET_CHOICES)
     parser.add_argument("--algorithm", "--search-algorithm", default="rl")
-    parser.add_argument("--model-type", default="bert-base")
+    parser.add_argument(
+        "--model-type", default="bert-base", choices=MODEL_TYPE_CHOICES
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--logfile", default="final_eval.log")
     parser.add_argument("--source", "--config-source", "--final-eval-source", dest="source", default="json")
@@ -389,8 +397,7 @@ def validate_settings(
         raise ValueError("--source search requires --resume-from for standalone final_eval runs")
     if settings.resume_from and not Path(settings.resume_from).is_dir():
         raise FileNotFoundError(f"--resume-from directory does not exist: {settings.resume_from}")
-    if settings.model_type not in ("bert-base", "bert-large", "gpt-2"):
-        raise ValueError("--model-type must be bert-base, bert-large, or gpt-2")
+    validate_supported_profile(settings.model_type, settings.dataset)
     if settings.stage2_rl_variant not in ("blb_v3", "legacy_v2"):
         raise ValueError("--stage2-rl-variant must be blb_v3 or legacy_v2")
     if settings.action_config and not Path(settings.action_config).is_file():

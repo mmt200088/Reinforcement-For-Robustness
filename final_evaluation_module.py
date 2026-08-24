@@ -23,12 +23,14 @@
 import itertools
 import json
 import os
-from typing import Dict, List, Optional, Sequence
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
 from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
-from json_utils import to_jsonable
+from glue_data_protocol import FINAL_EVAL_SPLIT, TRAIN_PROBE_SPLIT
+from json_utils import read_json_file, to_jsonable
 
 NOISE_SCALING_FACTOR_KEYS = (
     "input_noise_scaling_factors",
@@ -64,6 +66,89 @@ _FAMILY_COLOR_MAP = {
     "Stage1FixedMaxSF": "#B279A2",
 }
 _FAMILY_COLOR_ORDER = tuple(_FAMILY_COLOR_MAP)
+
+
+def _protocol_hashes(value: Any) -> set[str]:
+    if isinstance(value, Mapping):
+        hashes = set()
+        own_hash = value.get("dataset_protocol_hash")
+        if own_hash not in (None, ""):
+            hashes.add(str(own_hash))
+        for nested in value.values():
+            hashes.update(_protocol_hashes(nested))
+        return hashes
+    if isinstance(value, (list, tuple)):
+        hashes = set()
+        for nested in value:
+            hashes.update(_protocol_hashes(nested))
+        return hashes
+    return set()
+
+
+def require_final_evaluation_protocol(
+    evaluator: Any,
+    *,
+    search_results: Sequence[Any],
+    requested_split: str = FINAL_EVAL_SPLIT,
+) -> dict[str, Any]:
+    if str(requested_split) != FINAL_EVAL_SPLIT:
+        raise RuntimeError(
+            f"final evaluation requires {FINAL_EVAL_SPLIT}, got "
+            f"{requested_split!r}"
+        )
+
+    protocol_hash = str(
+        getattr(evaluator, "dataset_protocol_hash", "") or ""
+    )
+    if not protocol_hash:
+        raise RuntimeError("final evaluation dataset protocol hash is missing")
+    protocol_path = Path(
+        str(getattr(evaluator, "dataset_protocol_path", "") or "")
+    )
+    if not protocol_path.is_file():
+        raise RuntimeError("final evaluation dataset_protocol.json is missing")
+    protocol_payload = read_json_file(protocol_path)
+    if (
+        not isinstance(protocol_payload, Mapping)
+        or protocol_payload.get("dataset_protocol_hash") != protocol_hash
+        or protocol_payload.get("final_eval_split") != FINAL_EVAL_SPLIT
+    ):
+        raise RuntimeError("final evaluation persisted protocol hash mismatch")
+
+    provided_results = [result for result in search_results if result is not None]
+    if not provided_results:
+        raise RuntimeError("final evaluation requires a persisted search result")
+    for result in provided_results:
+        result_hashes = _protocol_hashes(result)
+        if result_hashes != {protocol_hash}:
+            raise RuntimeError(
+                "final evaluation search-result protocol hash mismatch"
+            )
+
+    dataset_splits = getattr(evaluator, "dataset_splits", None)
+    dataloaders = getattr(evaluator, "dataloaders", None)
+    if not isinstance(dataset_splits, Mapping) or not isinstance(
+        dataloaders, Mapping
+    ):
+        raise RuntimeError("final evaluation dataset registry is unavailable")
+    dataset = dataset_splits.get(FINAL_EVAL_SPLIT)
+    dataloader = dataloaders.get(FINAL_EVAL_SPLIT)
+    if dataset is None or dataloader is None:
+        raise RuntimeError(
+            f"final evaluation requires the complete {FINAL_EVAL_SPLIT} split"
+        )
+    if dataset is dataset_splits.get(TRAIN_PROBE_SPLIT):
+        raise RuntimeError("final evaluation cannot alias train_probe")
+    example_count = len(dataset)
+    if example_count <= 0:
+        raise RuntimeError("final evaluation validation_full is empty")
+    return {
+        "split_name": FINAL_EVAL_SPLIT,
+        "dataset": dataset,
+        "dataloader": dataloader,
+        "example_count": int(example_count),
+        "dataset_protocol_hash": protocol_hash,
+    }
 
 
 class UnifiedFinalEvaluationModule:
@@ -146,6 +231,13 @@ class UnifiedFinalEvaluationModule:
         limit_p: float,
         limit_s: float,
     ) -> Dict[str, object]:
+        protocol = require_final_evaluation_protocol(
+            self.evaluator,
+            search_results=(search_best_stage1, search_best_stage2),
+            requested_split=FINAL_EVAL_SPLIT,
+        )
+        self.final_eval_split = protocol["split_name"]
+        self.final_eval_protocol = protocol
         self._ensure_results_dir()
         ev = self.evaluator
         num_metrics = ev.get_num_metrics()
@@ -205,7 +297,7 @@ class UnifiedFinalEvaluationModule:
             baseline_stage1_gelu,
             baseline_stage1_softmax,
             use_train=False,
-            split="validation_full",
+            split=self.final_eval_split,
         )
         report_constraints = ev.build_constraint_limits_from_metrics(
             baseline_single[0],
@@ -272,7 +364,7 @@ class UnifiedFinalEvaluationModule:
                     softmax,
                     repeats=self.repeat_n,
                     use_train=False,
-                    split="validation_full",
+                    split=self.final_eval_split,
                     random_noise=True,
                     **noise_cfg,
                 )
@@ -299,7 +391,8 @@ class UnifiedFinalEvaluationModule:
                 variance_cache[sig] = variance_repeat
                 return cached, repeat, variance_repeat
             loss, p, s, t = ev.evaluate_model_with_attention_noise(
-                gelu, softmax, use_train=False, split="validation_full", **noise_cfg
+                gelu, softmax, use_train=False,
+                split=self.final_eval_split, **noise_cfg
             )
             cached = {"loss": float(loss), "p": float(p), "s": float(s), "time_ms": float(t)}
             eval_cache[sig] = cached
@@ -315,7 +408,7 @@ class UnifiedFinalEvaluationModule:
                         softmax,
                         segments=variance_n,
                         use_train=False,
-                        split="validation_full",
+                        split=self.final_eval_split,
                         random_noise=True,
                         **noise_cfg,
                     )
@@ -325,7 +418,7 @@ class UnifiedFinalEvaluationModule:
                         softmax,
                         repeats=variance_n,
                         use_train=False,
-                        split="validation_full",
+                        split=self.final_eval_split,
                         random_noise=True,
                         **noise_cfg,
                     )
@@ -503,6 +596,9 @@ class UnifiedFinalEvaluationModule:
         ev.clear_weight_noise_configuration()
 
         return {
+            "final_eval_split": self.final_eval_split,
+            "dataset_protocol_hash": protocol["dataset_protocol_hash"],
+            "validation_example_count": protocol["example_count"],
             "selected_source": selected_source,
             "opt_gelu": opt_gelu,
             "opt_softmax": opt_softmax,
@@ -1218,7 +1314,10 @@ class UnifiedFinalEvaluationModule:
         ev = self.evaluator
         if repeat_results is None and single_result is None:
             loss, p, s, t = ev.evaluate_model(
-                gelu, softmax, use_train=False, split="validation_full"
+                gelu,
+                softmax,
+                use_train=False,
+                split=getattr(self, "final_eval_split", FINAL_EVAL_SPLIT),
             )
         elif single_result is not None:
             loss, p, s, t = single_result
@@ -2114,6 +2213,12 @@ class UnifiedFinalEvaluationModule:
     ):
         output = {
             "dataset": self.evaluator.dataset_key,
+            "final_eval_split": getattr(
+                self, "final_eval_split", FINAL_EVAL_SPLIT
+            ),
+            "dataset_protocol_hash": getattr(
+                self.evaluator, "dataset_protocol_hash", None
+            ),
             "selected_source": selected_source,
             "baseline_stage1": {
                 "gelu": np.asarray(baseline_stage1_gelu, dtype=int).tolist(),

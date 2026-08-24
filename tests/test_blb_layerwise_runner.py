@@ -1056,25 +1056,26 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             metadata=metadata,
         )
 
-    def test_full_validation_loader_is_uncapped_and_does_not_use_probe_subset(self):
+    def test_probe_loader_uses_exact_registered_train_probe_without_resampling(self):
         source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"))
         method = next(
             node
             for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == "_build_validation_full_batches"
+            and node.name == "_build_probe_batches"
         )
         method_source = ast.get_source_segment(
             source_path.read_text(encoding="utf-8"), method,
         )
 
-        self.assertIn('dataset_splits.get("validation_full")', method_source)
+        self.assertIn('dataset_splits.get("train_probe")', method_source)
         self.assertNotIn("_get_stability_probe", method_source)
         self.assertNotIn("_effective_probe_batch_count", method_source)
         self.assertNotIn("break", method_source)
+        self.assertNotIn('dataset_splits.get("validation_full")', method_source)
 
-    def test_layerwise_branch_routes_promotion_through_authoritative_env(self):
+    def test_layerwise_branch_routes_promotion_through_shared_search_gate_env(self):
         source_path = (
             Path(__file__).resolve().parents[1]
             / "blb_stage2_rl"
@@ -1082,13 +1083,8 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
         source = source_path.read_text(encoding="utf-8")
 
-        self.assertIn("def _build_authoritative_validation_env(", source)
-        self.assertIn(
-            "validation_full_batches = runner._build_validation_full_batches(\n"
-            "        ev, train_cfg,\n"
-            "    )",
-            source,
-        )
+        self.assertIn("def _build_search_gate_env(", source)
+        self.assertNotIn("_build_validation_full_batches", source)
         self.assertIn("promotion_base_env=promotion_base_env", source)
         self.assertIn("authoritative_robust_reference", source)
 
@@ -1191,11 +1187,11 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
         self.assertEqual(len(build_calls), 1)
         self.assertIn("_shared_probe_runner_owner", attribute_names)
-        self.assertTrue({"F1", "F4"}.issubset(view_keys))
+        self.assertEqual(view_keys, {"F1"})
 
-    def test_authoritative_validation_reuses_shared_five_device_probe_pool(self):
+    def test_search_gate_reuses_exact_online_batches_and_probe_view(self):
         from blb_stage2_rl.sequential_runner import (
-            _build_authoritative_validation_env,
+            _build_search_gate_env,
         )
 
         class _ProbeView:
@@ -1224,37 +1220,36 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             def view(self, batch_set_key):
                 return _ProbeView(self, batch_set_key)
 
-        validation_batches = ["full-batch-0", "full-batch-1"]
-        validation_examples = list(range(5))
+        train_probe = list(range(256))
+        probe_batches = ["probe-batch-0", "probe-batch-1"]
         owner = _SharedProbeOwner()
+        probe_view = owner.view("F1")
         base_env = types.SimpleNamespace(
             env_cfg=types.SimpleNamespace(
                 probe_batch_count=1,
                 persistent_probe_install=True,
             ),
-            probe_batches=["online-batch"],
-            probe_runner=owner.view("F1"),
+            probe_batches=probe_batches,
+            probe_runner=probe_view,
             _shared_probe_runner_owner=owner,
             baseline={"scope": "F1"},
             reward_weights={"scope": "F1"},
             bridge=object(),
         )
         evaluator = types.SimpleNamespace(
-            dataset_splits={"validation_full": validation_examples},
+            dataset_splits={"train_probe": train_probe},
             model=object(),
             reversible_handler=object(),
             layers_attribute="encoder.layer",
             is_regression=False,
         )
-        runner = types.SimpleNamespace(
-            _build_validation_full_batches=lambda _ev, _cfg: validation_batches,
-        )
+        runner = types.SimpleNamespace()
 
         with mock.patch(
             "blb_stage2_rl.probe_runner.build_probe_runner",
             side_effect=AssertionError("F4 must not allocate a second pool"),
         ) as duplicate_builder:
-            promotion_env, example_count = _build_authoritative_validation_env(
+            promotion_env, example_count = _build_search_gate_env(
                 runner=runner,
                 ev=evaluator,
                 base_env=base_env,
@@ -1264,7 +1259,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             )
 
         duplicate_builder.assert_not_called()
-        self.assertEqual(example_count, len(validation_examples))
+        self.assertEqual(example_count, len(train_probe))
         self.assertEqual(owner.num_workers, 5)
         self.assertEqual(len(owner._process_workers), 4)
         self.assertEqual(
@@ -1273,15 +1268,11 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
         self.assertEqual(
             owner.registrations,
-            [("F4", tuple(validation_batches))],
+            [],
         )
         self.assertEqual(base_env.probe_runner.batch_set_key, "F1")
-        self.assertEqual(promotion_env.probe_runner.batch_set_key, "F4")
-        self.assertEqual(
-            base_env.probe_runner.pool_id,
-            promotion_env.probe_runner.pool_id,
-        )
-        self.assertEqual(promotion_env.probe_batches, validation_batches)
+        self.assertIs(promotion_env.probe_runner, probe_view)
+        self.assertIs(promotion_env.probe_batches, probe_batches)
         self.assertIsNone(promotion_env._installed_action_hash)
         self.assertFalse(promotion_env.env_cfg.persistent_probe_install)
 
@@ -2181,6 +2172,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         if validator is None:
             return
         checkpoint = {
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
             "rl_variant": "layerwise",
             "algorithm_revision": "v3",
             "algorithm_contract_hash": "algorithm-a",
@@ -2192,7 +2185,30 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             algorithm_revision="v3",
             algorithm_contract_hash="algorithm-a",
             run_context_hash="run-a",
+            dataset_protocol_schema="glue_train_probe_protocol_v1",
+            dataset_protocol_hash="probe-a",
         )
+        with self.assertRaisesRegex(RuntimeError, "train-probe protocol"):
+            validator(
+                {key: value for key, value in checkpoint.items()
+                 if key != "dataset_protocol_hash"},
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
+            )
+        with self.assertRaisesRegex(RuntimeError, "train-probe protocol"):
+            validator(
+                checkpoint,
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-b",
+            )
         with self.assertRaisesRegex(RuntimeError, "run context"):
             validator(
                 checkpoint,
@@ -2200,6 +2216,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision="v3",
                 algorithm_contract_hash="algorithm-a",
                 run_context_hash="run-b",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
         with self.assertRaisesRegex(RuntimeError, "algorithm revision"):
             validator(
@@ -2211,6 +2229,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision="factorized_slot_credit_equivalence_convergence_v6",
                 algorithm_contract_hash="algorithm-a",
                 run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
 
     def test_cuda_rng_role_registry_survives_shrink_and_reexpansion(self):
@@ -2440,6 +2460,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotEqual(old_run_context_hash, current_run_context_hash)
 
         old_checkpoint = {
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
             "rl_variant": LEGACY_SHARED_RL_VARIANT,
             "algorithm_revision": algorithm_revision,
             "algorithm_contract_hash": old_algorithm_hash,
@@ -2451,6 +2473,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=old_algorithm_hash,
             run_context_hash=old_run_context_hash,
+            dataset_protocol_schema="glue_train_probe_protocol_v1",
+            dataset_protocol_hash="probe-a",
         )
         with self.assertRaisesRegex(RuntimeError, "algorithm contract"):
             validate_layerwise_checkpoint_metadata(
@@ -2459,6 +2483,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision=algorithm_revision,
                 algorithm_contract_hash=current_algorithm_hash,
                 run_context_hash=current_run_context_hash,
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
@@ -2476,6 +2502,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
         self.assertLess(validation, branch_source.index("policy.load_state_dict("))
+        self.assertIn(
+            "dataset_protocol_schema=DATASET_PROTOCOL_SCHEMA",
+            branch_source,
+        )
+        self.assertIn(
+            "dataset_protocol_hash=getattr(",
+            branch_source,
+        )
         self.assertLess(
             validation,
             branch_source.index("policy.load_ppo_aux_state_dict("),
@@ -2876,6 +2910,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
+        self.assertIn(
+            '"dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA',
+            branch_source,
+        )
+        self.assertIn(
+            '"dataset_protocol_hash": getattr(',
+            branch_source,
+        )
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
         self.assertIn('"decode_version": LAYERWISE_DECODE_VERSION', branch_source)
         self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
@@ -3029,7 +3071,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertGreaterEqual(branch_source.count("save_layerwise_checkpoint("), 3)
         self.assertIn('strict_best=summary.get("strict_best")', branch_source)
 
-    def test_layerwise_branch_persists_authoritative_run_mode_and_strict_summary(self):
+    def test_layerwise_branch_persists_train_probe_schema_and_strict_summary(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
         )
@@ -3041,7 +3083,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         branch_source = ast.get_source_segment(source, branch)
 
-        self.assertIn('"stage2_layerwise_robust_run_v5"', branch_source)
+        self.assertIn('"schema_version": LAYERWISE_RUN_SCHEMA', branch_source)
+        self.assertIn('"dataset_protocol_hash": getattr(', branch_source)
+        self.assertIn('"search_split": SEARCH_EVIDENCE_SPLIT', branch_source)
         self.assertIn('"layerwise_run_manifest.json"', branch_source)
         self.assertIn("write_strict_json_file(", branch_source)
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)

@@ -28,14 +28,14 @@
       prepare_stage1_task, multi_task_train_stage1,
   )
   tasks = {}
-  for name in ["mrpc", "stsb", "cola", "rte"]:
+  for name in ["mrpc", "rte", "sst2"]:
       ev = create_evaluator(name)  # 你自己的 evaluator 创建逻辑
       tasks[name] = prepare_stage1_task(ev)
   multi_task_train_stage1(tasks, output_path="general_stage1_policy.pt")
 
   # -------- Phase B: 离线部署（在新/旧任务上） --------
   from general_policy_module import offline_find_best_config_stage1
-  ev_new = create_evaluator("qqp")
+  ev_new = create_evaluator("sst2")
   result = offline_find_best_config_stage1(ev_new, "general_stage1_policy.pt")
   print(result["best_config"])
 
@@ -50,7 +50,7 @@
       prepare_stage2_task, multi_task_train_stage2,
   )
   tasks = {}
-  for name in ["mrpc", "stsb", "cola", "rte"]:
+  for name in ["mrpc", "rte", "sst2"]:
       ev = create_evaluator(name)
       fixed_gelu, fixed_softmax = get_stage1_config(name)
       tasks[name] = prepare_stage2_task(ev, fixed_gelu, fixed_softmax)
@@ -70,6 +70,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
+from glue_data_protocol import validate_supported_profile
 
 # ---- 从现有模块导入基类和常量 ----
 import layer_importance_evaluator as _s1
@@ -483,6 +484,13 @@ def _general_ppo_update_stage1(
 # Stage-1 任务准备
 # ===========================================================================
 
+
+def _validate_general_evaluator(evaluator):
+    validate_supported_profile(
+        str(getattr(evaluator, "model_type", "")),
+        str(getattr(evaluator, "data_path", "")),
+    )
+
 def prepare_stage1_task(evaluator, use_train=True, tolerance=None):
     """从 evaluator 准备一个 task config dict，用于 multi_task_train_stage1 或 offline 推断。
 
@@ -495,12 +503,15 @@ def prepare_stage1_task(evaluator, use_train=True, tolerance=None):
     Returns:
         dict，包含多任务训练 / 离线推断所需的全部信息
     """
+    _validate_general_evaluator(evaluator)
     tol = float(tolerance) if tolerance is not None else evaluator.error_threshold
     base_gelu = np.full(evaluator.total_layers, 4, dtype=int)
     base_softmax = np.full(evaluator.total_layers, 6, dtype=int)
     base_cost = evaluator.get_simulated_cost(base_gelu, base_softmax)[0]
     base_loss, base_m1, base_m2, _ = evaluator.stage1_evaluate(
-        base_gelu, base_softmax, use_train=use_train,
+        base_gelu,
+        base_softmax,
+        split=evaluator.get_reward_reference_split_name(),
     )
     task_ctx = compute_task_context(
         base_loss, base_m1, base_m2,
@@ -1548,6 +1559,7 @@ def prepare_stage2_task(evaluator, fixed_gelu, fixed_softmax, split_name=None):
     Returns:
         dict，包含多任务训练 / 离线推断所需的全部信息
     """
+    _validate_general_evaluator(evaluator)
     from layer_importance_evaluator import (
         INPUT_NOISE_SCALING_MAP, INPUT_NOISE_COST_MAP, INPUT_NOISE_SCALING_TO_NORM,
         WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_SCALING_TO_NORM,

@@ -78,6 +78,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
                 ev_runtime_state={},
                 stage1_prev_avg_reward=1.0,
                 stage1_warnings=[],
+                dataset_protocol_hash="probe-a",
                 structured_run_id="stage1-run",
                 structured_jsonl_sizes={
                     "steps.jsonl": 101,
@@ -97,9 +98,15 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
                 restored_model,
                 restored_optimizer,
                 device="cpu",
+                expected_dataset_protocol_hash="probe-a",
             )
 
         self.assertEqual(checkpoint["version"], 2)
+        self.assertEqual(
+            checkpoint["dataset_protocol_schema"],
+            "glue_train_probe_protocol_v1",
+        )
+        self.assertEqual(checkpoint["dataset_protocol_hash"], "probe-a")
         self.assertEqual(checkpoint["structured_run_id"], "stage1-run")
         self.assertEqual(
             checkpoint["structured_jsonl_sizes"],
@@ -162,6 +169,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
                 ev_runtime_state={},
                 stage1_prev_avg_reward=1.0,
                 stage1_warnings=[],
+                dataset_protocol_hash="probe-a",
             )
 
             random.random()
@@ -181,6 +189,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
                 restored_model,
                 restored_optimizer,
                 device="cpu",
+                expected_dataset_protocol_hash="probe-a",
             )
 
             self.assertEqual(checkpoint["python_rng_state"], expected_python)
@@ -209,6 +218,19 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
                     expected_cuda,
                 ):
                     self.assertTrue(torch.equal(actual, expected))
+
+    def test_checkpoint_protocol_guard_precedes_weight_and_rng_restore(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "noise_rl_module_v2.py"
+        ).read_text(encoding="utf-8")
+        start = source.index("def load_stage1_rl_checkpoint(")
+        end = source.index("\n\ndef ", start)
+        method = source[start:end]
+
+        validation = method.index("validate_dataset_protocol_binding(")
+        self.assertLess(validation, method.index("gtrxl_net.load_state_dict("))
+        self.assertLess(validation, method.index("optimizer.load_state_dict("))
+        self.assertLess(validation, method.index("torch.set_rng_state("))
 
     def test_cuda_rng_registry_retains_temporarily_absent_roles(self):
         from noise_rl_module_v2 import (

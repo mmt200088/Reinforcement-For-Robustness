@@ -1,118 +1,5 @@
 #!/usr/bin/env python
-"""
-================================================================================
-GLUE 基准测试提交文件生成器
-================================================================================
-
-根据优化后的 GELU/Softmax 近似配置 以及 噪声 Scaling Factor 配置，在 GLUE
-测试集上运行推理并生成可提交到 https://gluebenchmark.com/ 的 TSV 文件。
-
-支持四种组合模式：
-  1. 纯基线 (--no_approx --no_noise)     : 原始 GELU + exp，无噪声
-  2. 仅近似 (--config X --no_noise)       : GELU/Softmax 多项式近似，无噪声
-  3. 仅噪声 (--no_approx --noise_config Y): 原始函数，注入噪声
-  4. 近似+噪声 (--config X --noise_config Y): 同时使用两阶段优化结果
-
-支持的 GLUE 任务：cola, sst2, mrpc, stsb, mnli, qnli, rte, wnli
-(QQP 和 AX 自动以占位符填充)
-
-================================================================================
-命令行参数说明
-================================================================================
-
-必选（二选一）：
-  --config PATH         GELU/Softmax 近似配置 JSON 文件路径
-                        (与 --no_approx 互斥；不使用 --no_approx 时必须提供)
-  --no_approx           跳过 GELU/Softmax 多项式近似，使用原始函数
-
-噪声相关：
-  --noise_config PATH   噪声 scaling factor 配置 JSON 文件路径
-                        (提供此参数即启用噪声注入)
-  --no_noise            显式禁用噪声注入（默认行为，可省略；与 --noise_config 互斥）
-
-可选：
-  --output_dir DIR      输出目录 (默认: glue_submission)
-  --tasks TASK [TASK..] 仅运行指定任务 (默认: 配置文件中的所有任务)
-  --device DEVICE       推理设备 (默认: cuda)
-  --max_length N        最大序列长度 (默认: 128)
-  --batch_size N        推理批大小 (默认: 16)
-
-================================================================================
-配置文件格式
-================================================================================
-
-统一的合并 JSON（推荐，glue_final_configs_best_{ppo|genetic}.json）结构：
-  顶层按模型变体分节 ("bert-base" / "bert-large" / "gpt-2")，
-  每个任务下同时包含 "stage1" 和 "stage2" 两个子块。
-  --config 和 --noise_config 都接收同一份合并 JSON；
-  本脚本会自动抽取 stage1 用于近似、stage2 用于噪声注入。
-
-  示例：
-  {
-      "bert-base": {
-          "qnli": {
-              "stage1": {
-                  "gelu":    [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1],
-                  "softmax": [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
-              },
-              "stage2": {
-                  "x":     [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
-                  "wq":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-                  "wk":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-                  "wv":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-                  "wo":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-                  "wffn1": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-                  "wffn2": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
-              }
-          },
-          ...
-      }
-  }
-
-取值范围：
-  GELU degree ∈ {0, 1, 2, 4}，其中 0 表示 ReLU；Softmax degree ∈ {2, 3, 4, 5, 6}。
-  x ∈ {22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn2 ∈ {14, 16, 18, 20, 22}；
-  wffn1 ∈ {16, 18, 20, 22, 24}。噪声数值越大 → 隐私保护越强。
-
-兼容性：加载器也能识别旧的分离式 JSON
-  （仅含 "gelu"/"softmax" 或仅含 "x"/"wq"/... 的任务字典）——
-  这种情况下它按原样返回，不做 stage1/stage2 抽取。
-
-================================================================================
-使用示例
-================================================================================
-
-# 1) 纯基线：原始模型，无近似无噪声
-python generate_glue_submission.py --no_approx --output_dir glue_baseline
-
-# 2) 仅 GELU/Softmax 近似（无噪声）
-python generate_glue_submission.py --config glue_final_configs_best_ppo.json --output_dir glue_approx
-
-# 3) 仅噪声注入（无近似）
-python generate_glue_submission.py --no_approx --noise_config glue_final_configs_best_ppo.json --output_dir glue_noise_only
-
-# 4) 近似 + 噪声（完整两阶段优化）同一份合并 JSON 同时用作 --config 和 --noise_config
-python generate_glue_submission.py --config glue_final_configs_best_ppo.json --noise_config glue_final_configs_best_ppo.json --output_dir glue_full
-
-# 5) 指定部分任务
-python generate_glue_submission.py --config glue_final_configs_best_ppo.json --noise_config glue_final_configs_best_ppo.json --tasks qnli sst2 mrpc
-
-# 6) 近似 + GA 最优噪声组合
-python generate_glue_submission.py --config glue_final_configs_best_genetic.json --noise_config glue_final_configs_best_genetic.json --output_dir glue_ga_full
-
-================================================================================
-输出说明
-================================================================================
-
-生成的文件位于 --output_dir 指定目录下：
-  CoLA.tsv, SST-2.tsv, MRPC.tsv, STS-B.tsv,
-  MNLI-m.tsv, MNLI-mm.tsv, QNLI.tsv, RTE.tsv, WNLI.tsv,
-  QQP.tsv (占位符), AX.tsv (占位符),
-  submission.zip (包含上述所有 TSV)
-
-将 submission.zip 上传到 https://gluebenchmark.com/ 即可获得评测结果。
-================================================================================
-"""
+"""Generate MRPC, RTE, and SST-2 GLUE submission files for BERT models."""
 
 import json
 import os
@@ -125,6 +12,10 @@ import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
+from glue_data_protocol import (
+    SUPPORTED_MODEL_FAMILIES,
+    validate_supported_profile,
+)
 from json_utils import read_json_file
 
 try:
@@ -178,141 +69,37 @@ NOISE_ALLOWED_SCALING_FACTORS = {
 }
 
 # ==================== GLUE Task Registry ====================
-TASK_REGISTRY = {
-    'cola': {
-        'model_name': 'textattack/bert-base-uncased-CoLA',
-        'glue_name': 'cola',
-        'num_labels': 2,
-        'input_cols': ('sentence',),
-        'output_file': 'CoLA.tsv',
-        'label_map': {0: '0', 1: '1'},
-        'task_type': 'classification',
-        'test_split': 'test',
+TASK_CONFIGS = {
+    "mrpc": {
+        "glue_name": "mrpc", "num_labels": 2,
+        "input_cols": ("sentence1", "sentence2"),
+        "output_file": "MRPC.tsv", "label_map": {0: "0", 1: "1"},
+        "task_type": "classification", "test_split": "test",
     },
-    'sst2': {
-        'model_name': 'textattack/bert-base-uncased-SST-2',
-        'glue_name': 'sst2',
-        'num_labels': 2,
-        'input_cols': ('sentence',),
-        'output_file': 'SST-2.tsv',
-        'label_map': {0: '0', 1: '1'},
-        'task_type': 'classification',
-        'test_split': 'test',
+    "rte": {
+        "glue_name": "rte", "num_labels": 2,
+        "input_cols": ("sentence1", "sentence2"),
+        "output_file": "RTE.tsv",
+        "label_map": {0: "entailment", 1: "not_entailment"},
+        "task_type": "classification", "test_split": "test",
     },
-    'mrpc': {
-        'model_name': 'textattack/bert-base-uncased-MRPC',
-        'glue_name': 'mrpc',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-        'output_file': 'MRPC.tsv',
-        'label_map': {0: '0', 1: '1'},
-        'task_type': 'classification',
-        'test_split': 'test',
-    },
-    'stsb': {
-        'model_name': 'textattack/bert-base-uncased-STS-B',
-        'glue_name': 'stsb',
-        'num_labels': 1,
-        'input_cols': ('sentence1', 'sentence2'),
-        'output_file': 'STS-B.tsv',
-        'label_map': None,
-        'task_type': 'regression',
-        'test_split': 'test',
-    },
-    'mnli': {
-        'model_name': 'textattack/bert-base-uncased-MNLI',
-        'glue_name': 'mnli',
-        'num_labels': 3,
-        'input_cols': ('premise', 'hypothesis'),
-        'output_file': ['MNLI-m.tsv', 'MNLI-mm.tsv'],
-        'label_map': {0: 'entailment', 1: 'neutral', 2: 'contradiction'},
-        'task_type': 'classification',
-        'test_split': ['test_matched', 'test_mismatched'],
-    },
-    'qnli': {
-        'model_name': 'textattack/bert-base-uncased-QNLI',
-        'glue_name': 'qnli',
-        'num_labels': 2,
-        'input_cols': ('question', 'sentence'),
-        'output_file': 'QNLI.tsv',
-        'label_map': {0: 'entailment', 1: 'not_entailment'},
-        'task_type': 'classification',
-        'test_split': 'test',
-    },
-    'rte': {
-        'model_name': 'textattack/bert-base-uncased-RTE',
-        'glue_name': 'rte',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-        'output_file': 'RTE.tsv',
-        'label_map': {0: 'entailment', 1: 'not_entailment'},
-        'task_type': 'classification',
-        'test_split': 'test',
-    },
-    'wnli': {
-        'model_name': 'textattack/bert-base-uncased-WNLI',
-        'glue_name': 'wnli',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-        'output_file': 'WNLI.tsv',
-        'label_map': {0: '0', 1: '1'},
-        'task_type': 'classification',
-        'test_split': 'test',
-    },
-    'qqp': {
-        'model_name': 'textattack/bert-base-uncased-QQP',
-        'glue_name': 'qqp',
-        'num_labels': 2,
-        'input_cols': ('question1', 'question2'),
-        'output_file': 'QQP.tsv',
-        'label_map': {0: '0', 1: '1'},
-        'task_type': 'classification',
-        'test_split': 'test',
-    },
-    # AX is the GLUE diagnostic set for NLI; predictions are produced by the
-    # MNLI model on the dedicated `ax` dataset (test split only).
-    'ax': {
-        'model_name': 'textattack/bert-base-uncased-MNLI',
-        'glue_name': 'ax',
-        'num_labels': 3,
-        'input_cols': ('premise', 'hypothesis'),
-        'output_file': 'AX.tsv',
-        'label_map': {0: 'entailment', 1: 'neutral', 2: 'contradiction'},
-        'task_type': 'classification',
-        'test_split': 'test',
+    "sst2": {
+        "glue_name": "sst2", "num_labels": 2,
+        "input_cols": ("sentence",),
+        "output_file": "SST-2.tsv", "label_map": {0: "0", 1: "1"},
+        "task_type": "classification", "test_split": "test",
     },
 }
 
-# ---- bert-large model name overrides (yoshitomo-matsubara family) ----
-# GLUE tasks without a reliable bert-large checkpoint are omitted on purpose
-# (mnli/ax/wnli/qqp). Unsupported tasks are skipped with a warning at runtime.
+BERT_BASE_MODEL_NAMES = {
+    "mrpc": "textattack/bert-base-uncased-MRPC",
+    "rte": "textattack/bert-base-uncased-RTE",
+    "sst2": "textattack/bert-base-uncased-SST-2",
+}
 BERT_LARGE_MODEL_NAMES = {
-    'cola': 'yoshitomo-matsubara/bert-large-uncased-cola',
-    'sst2': 'yoshitomo-matsubara/bert-large-uncased-sst2',
-    'mrpc': 'yoshitomo-matsubara/bert-large-uncased-mrpc',
-    'stsb': 'yoshitomo-matsubara/bert-large-uncased-stsb',
-    'qqp': 'yoshitomo-matsubara/bert-large-uncased-qqp',
-    'qnli': 'yoshitomo-matsubara/bert-large-uncased-qnli',
-    'rte':  'yoshitomo-matsubara/bert-large-uncased-rte',
-}
-
-# ---- gpt-2 model name overrides ----
-# PavanNeerudu/gpt2-finetuned-<task> is a family of GPT2ForSequenceClassification
-# checkpoints already fine-tuned on each GLUE training set (correct head shape,
-# backbone converged). We use these directly so RL only needs to optimize the
-# approximation / noise schedule on top of a frozen, task-competent backbone.
-# AX uses the MNLI checkpoint per GLUE convention (AX is the diagnostic set for NLI).
-GPT2_MODEL_NAMES = {
-    'cola': 'PavanNeerudu/gpt2-finetuned-cola',
-    'sst2': 'PavanNeerudu/gpt2-finetuned-sst2',
-    'mrpc': 'PavanNeerudu/gpt2-finetuned-mrpc',
-    'stsb': 'PavanNeerudu/gpt2-finetuned-stsb',
-    'qqp':  'PavanNeerudu/gpt2-finetuned-qqp',
-    'qnli': 'PavanNeerudu/gpt2-finetuned-qnli',
-    'rte':  'PavanNeerudu/gpt2-finetuned-rte',
-    'wnli': 'PavanNeerudu/gpt2-finetuned-wnli',
-    'mnli': 'PavanNeerudu/gpt2-finetuned-mnli',
-    'ax':   'PavanNeerudu/gpt2-finetuned-mnli',
+    "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+    "rte": "yoshitomo-matsubara/bert-large-uncased-rte",
+    "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
 }
 
 
@@ -330,7 +117,7 @@ def _unwrap_variant_config(cfg_map, model_type, cfg_path, stage_key=None):
     """
     if not isinstance(cfg_map, dict):
         raise ValueError(f"Config file '{cfg_path}' is not a JSON object.")
-    has_variant_keys = any(k in cfg_map for k in ('bert-base', 'bert-large', 'gpt-2'))
+    has_variant_keys = any(k in cfg_map for k in SUPPORTED_MODEL_FAMILIES)
     if has_variant_keys:
         if model_type not in cfg_map:
             raise KeyError(
@@ -373,50 +160,21 @@ def _unwrap_variant_config(cfg_map, model_type, cfg_path, stage_key=None):
 
 
 EXPECTED_LINES = {
-    'AX.tsv': 1105,
-    'CoLA.tsv': 1064,
-    'MNLI-mm.tsv': 9848,
-    'MNLI-m.tsv': 9797,
     'MRPC.tsv': 1726,
-    'QNLI.tsv': 5464,
-    'QQP.tsv': 390966,
     'RTE.tsv': 3001,
     'SST-2.tsv': 1822,
-    'STS-B.tsv': 1380,
-    'WNLI.tsv': 147,
 }
 
 PLACEHOLDER_DEFAULTS = {
-    'AX.tsv': 'entailment',
-    'CoLA.tsv': '0',
-    'MNLI-mm.tsv': 'entailment',
-    'MNLI-m.tsv': 'entailment',
     'MRPC.tsv': '0',
-    'QNLI.tsv': 'entailment',
-    'QQP.tsv': '0',
     'RTE.tsv': 'entailment',
     'SST-2.tsv': '0',
-    'STS-B.tsv': '0.000',
-    'WNLI.tsv': '0',
 }
 
 EXPECTED_LABELS = {
-    'AX.tsv': {'entailment', 'neutral', 'contradiction'},
-    'CoLA.tsv': {'0', '1'},
-    'MNLI-mm.tsv': {'entailment', 'neutral', 'contradiction'},
-    'MNLI-m.tsv': {'entailment', 'neutral', 'contradiction'},
     'MRPC.tsv': {'0', '1'},
-    'QNLI.tsv': {'entailment', 'not_entailment'},
-    'QQP.tsv': {'0', '1'},
     'RTE.tsv': {'entailment', 'not_entailment'},
     'SST-2.tsv': {'0', '1'},
-    'WNLI.tsv': {'0', '1'},
-}
-
-TEXTATTACK_MNLI_LABEL_MAP = {
-    0: 'contradiction',
-    1: 'entailment',
-    2: 'neutral',
 }
 
 
@@ -492,23 +250,6 @@ def _extract_applied_noise_state(handler, noise_key, num_layers):
             layer_idx = int(idx)
             scaling_factors[layer_idx] = int(meta.get("scaling_factor"))
             distributions[layer_idx] = str(meta.get("distribution"))
-        return scaling_factors, distributions
-
-    gpt2_slot_map = {
-        'wq': 'query',
-        'wk': 'key',
-        'wv': 'value',
-    }
-    if getattr(handler, "_arch", None) == "gpt2" and noise_key in gpt2_slot_map:
-        qkv_state = getattr(handler, "_gpt2_qkv_state", {})
-        for idx, per_layer in qkv_state.items():
-            slot = gpt2_slot_map[noise_key]
-            if slot not in per_layer:
-                continue
-            scaling_factor, distribution = per_layer[slot]
-            layer_idx = int(idx)
-            scaling_factors[layer_idx] = int(scaling_factor)
-            distributions[layer_idx] = str(distribution)
         return scaling_factors, distributions
 
     projection_key_map = {
@@ -602,24 +343,14 @@ def _extract_generic_label_id(raw_label):
 
 def _generic_class_index_to_glue_label(task_name, class_idx, task_config):
     """Convert a numeric model class index to GLUE's submission label string."""
-    model_name = str(task_config.get('model_name', '')).lower()
-    if task_name in ('mnli', 'ax') and 'textattack/' in model_name:
-        return TEXTATTACK_MNLI_LABEL_MAP[int(class_idx)]
-
     label_map = task_config.get('label_map')
-    if label_map is not None:
-        return str(label_map[int(class_idx)])
-
-    return str(class_idx)
+    return str(label_map[int(class_idx)])
 
 
 def _normalize_glue_label(task_name, raw_label, class_idx=None, task_config=None):
     """Map a model-specific label string to the GLUE-submission label string.
 
-    Different textattack BERT checkpoints use different id2label conventions
-    (e.g. MNLI uses {0:contradiction,1:entailment,2:neutral} on some forks
-    but the opposite ordering on others). To stay robust we always read
-    `model.config.id2label`, then normalize the *string* to the GLUE format.
+    Model checkpoints may expose either generic class IDs or semantic labels.
     """
     s = str(raw_label).strip().lower().replace('-', '_').replace(' ', '_')
     generic_label_id = _extract_generic_label_id(s)
@@ -629,22 +360,12 @@ def _normalize_glue_label(task_name, raw_label, class_idx=None, task_config=None
             return _generic_class_index_to_glue_label(task_name, resolved_idx, task_config)
         return str(generic_label_id)
 
-    # NLI-style tasks
-    if task_name in ('mnli', 'ax'):
-        if 'contradict' in s:
-            return 'contradiction'
-        if 'neutral' in s:
-            return 'neutral'
-        if 'entail' in s:
-            return 'entailment'
-        return s
-    if task_name in ('qnli', 'rte'):
+    if task_name == 'rte':
         if 'not' in s and 'entail' in s:
             return 'not_entailment'
         if 'entail' in s:
             return 'entailment'
         return s
-    # Binary 0/1 tasks (cola, sst2, mrpc, wnli)
     positive_markers = ('1', 'positive', 'acceptable', 'equivalent',
                         'duplicate', 'entailment', 'true', 'pos')
     negative_markers = ('0', 'negative', 'unacceptable', 'not_equivalent',
@@ -662,12 +383,6 @@ def _normalize_glue_label(task_name, raw_label, class_idx=None, task_config=None
 
 
 def logits_to_predictions(logits, task_config, task_name, id2label):
-    if task_config['task_type'] == 'regression':
-        preds = logits.squeeze()
-        if np.ndim(preds) == 0:
-            preds = np.array([preds])
-        return [f"{np.clip(p, 0.0, 5.0):.3f}" for p in preds]
-
     if len(logits.shape) == 1:
         pred_classes = (logits > 0.5).astype(int)
     else:
@@ -718,15 +433,6 @@ def generate_placeholder(filepath, num_predictions, default_label="0"):
 
 
 def _validate_prediction_value(filename, value):
-    if filename == 'STS-B.tsv':
-        try:
-            score = float(value)
-        except ValueError:
-            return False, "STS-B prediction is not a float"
-        if not 0.0 <= score <= 5.0:
-            return False, "STS-B prediction outside [0, 5]"
-        return True, None
-
     allowed = EXPECTED_LABELS.get(filename)
     if allowed is not None and value not in allowed:
         return False, f"prediction '{value}' not in {sorted(allowed)}"
@@ -842,7 +548,7 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
         model_id2label = {int(k): str(v) for k, v in model.config.id2label.items()}
         print(f"  Model label mapping (used for predictions): {model_id2label}")
     else:
-        print(f"  [Warning] model.config.id2label missing; falling back to TASK_REGISTRY label_map")
+        print(f"  [Warning] model.config.id2label missing; falling back to TASK_CONFIGS label_map")
 
     need_handler = (not no_approx) or (not no_noise)
 
@@ -881,36 +587,29 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
         if not no_approx:
             from function_handler import PolynomialGELU, BertSelfAttentionWithAproximation
             layers_obj = eval('model.' + layers_attr)
-            is_gpt2_layers = (layers_attr == 'transformer.h')
-            if is_gpt2_layers:
-                applied_gelu = sum(
-                    1 for L in layers_obj
-                    if isinstance(getattr(getattr(L, 'mlp', None), 'act', None), PolynomialGELU)
+            applied_gelu = sum(
+                1 for layer in layers_obj
+                if isinstance(
+                    layer.intermediate.intermediate_act_fn, PolynomialGELU
                 )
-                applied_relu = sum(
-                    1 for L in layers_obj
-                    if isinstance(getattr(getattr(L, 'mlp', None), 'act', None), torch.nn.ReLU)
+            )
+            applied_relu = sum(
+                1 for layer in layers_obj
+                if isinstance(
+                    layer.intermediate.intermediate_act_fn, torch.nn.ReLU
                 )
-                applied_sm = 0  # softmax approximation not supported on GPT-2
-                print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
-                      f"ReLU layers: {applied_relu}/{len(layers_obj)}, "
-                      f"ApproxSoftmax layers: N/A (GPT-2, Stage 1 disabled)")
-            else:
-                applied_gelu = sum(
-                    1 for L in layers_obj
-                    if isinstance(L.intermediate.intermediate_act_fn, PolynomialGELU)
+            )
+            applied_sm = sum(
+                1 for layer in layers_obj
+                if isinstance(
+                    layer.attention.self, BertSelfAttentionWithAproximation
                 )
-                applied_relu = sum(
-                    1 for L in layers_obj
-                    if isinstance(L.intermediate.intermediate_act_fn, torch.nn.ReLU)
-                )
-                applied_sm = sum(
-                    1 for L in layers_obj
-                    if isinstance(L.attention.self, BertSelfAttentionWithAproximation)
-                )
-                print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
-                      f"ReLU layers: {applied_relu}/{len(layers_obj)}, "
-                      f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
+            )
+            print(
+                f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                f"ReLU layers: {applied_relu}/{len(layers_obj)}, "
+                f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}"
+            )
         if not no_noise:
             verify_noise_configuration(handler, noise_config, num_layers)
     else:
@@ -1066,6 +765,7 @@ def main():
                         help="Output sub-directory name; final path will be "
                              "glue_submission/<output_dir> (default: run)")
     parser.add_argument("--tasks", type=str, nargs='+', default=None,
+                        choices=tuple(TASK_CONFIGS),
                         help="Specific tasks to run (default: all tasks in config)")
     parser.add_argument("--no_approx", action="store_true",
                         help="Skip GELU/Softmax approximation, use original functions (baseline)")
@@ -1083,14 +783,8 @@ def main():
     parser.add_argument("--batch_size", type=int, default=16,
                         help="Inference batch size (default: 16)")
     parser.add_argument("--model_type", type=str, default="bert-base",
-                        choices=["bert-base", "bert-large", "gpt-2"],
-                        help="Pretrained backbone to use for submission: "
-                             "bert-base (textattack/bert-base-uncased-*, all GLUE tasks); "
-                             "bert-large (yoshitomo-matsubara/bert-large-uncased-*, "
-                             "supports cola/sst2/mrpc/stsb/qnli/rte only; mnli/wnli/ax/qqp "
-                             "will be skipped or filled with placeholders); "
-                             "gpt-2 (openai-community/gpt2, 12 layers, uses freshly "
-                             "initialized classification head — fine-tune before use).")
+                        choices=list(SUPPORTED_MODEL_FAMILIES),
+                        help="Supported BERT model family")
     args = parser.parse_args()
 
     # BLB action path (new): switches the whole submission to the BLB Stage-2
@@ -1177,6 +871,8 @@ def main():
         print(f"[Device] using {device}")
 
     model_type = args.model_type
+    for task_name in args.tasks or TASK_CONFIGS:
+        validate_supported_profile(model_type, task_name)
 
     approx_configs = {}
     if args.config is not None:
@@ -1213,15 +909,13 @@ def main():
     else:
         candidate_tasks = set()
         if approx_configs:
-            candidate_tasks.update(t for t in approx_configs if t in TASK_REGISTRY)
+            candidate_tasks.update(t for t in approx_configs if t in TASK_CONFIGS)
         if noise_configs:
-            candidate_tasks.update(t for t in noise_configs if t in TASK_REGISTRY)
-        if 'mnli' in candidate_tasks:
-            candidate_tasks.add('ax')
+            candidate_tasks.update(t for t in noise_configs if t in TASK_CONFIGS)
         if candidate_tasks:
             tasks_to_run = sorted(candidate_tasks)
         else:
-            tasks_to_run = list(TASK_REGISTRY.keys())
+            tasks_to_run = list(TASK_CONFIGS.keys())
 
     approx_str = "OFF (baseline)" if args.no_approx else f"ON (config: {args.config})"
     noise_str = f"ON (config: {args.noise_config})" if use_noise else "OFF"
@@ -1237,55 +931,36 @@ def main():
     task_skips = []
 
     for task_name in tasks_to_run:
-        if task_name not in TASK_REGISTRY:
+        if task_name not in TASK_CONFIGS:
             print(f"\n[Warning] Unknown task '{task_name}', skipping")
             task_skips.append((task_name, "unknown_task"))
             continue
 
-        task_cfg = TASK_REGISTRY[task_name]
-
-        # Swap in the bert-large checkpoint when requested; skip tasks without
-        # a reliable bert-large checkpoint (mnli/wnli/ax — AX is generated from
-        # the MNLI model which is unavailable for bert-large).
-        if model_type == "bert-large":
-            if task_name not in BERT_LARGE_MODEL_NAMES:
-                print(f"\n[Warning] Task '{task_name}' has no bert-large checkpoint, "
-                      f"skipping (will fall back to placeholder if applicable).")
-                task_skips.append((task_name, "unsupported_model_checkpoint"))
-                continue
-            task_cfg = dict(task_cfg)
-            task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
-        elif model_type == "gpt-2":
-            if task_name not in GPT2_MODEL_NAMES:
-                print(f"\n[Warning] Task '{task_name}' has no gpt-2 checkpoint, skipping.")
-                task_skips.append((task_name, "unsupported_model_checkpoint"))
-                continue
-            task_cfg = dict(task_cfg)
-            task_cfg['model_name'] = GPT2_MODEL_NAMES[task_name]
+        task_cfg = dict(TASK_CONFIGS[task_name])
+        model_names = (
+            BERT_BASE_MODEL_NAMES
+            if model_type == "bert-base"
+            else BERT_LARGE_MODEL_NAMES
+        )
+        task_cfg['model_name'] = model_names[task_name]
 
         if args.no_approx:
             gelu = None
             softmax = None
         else:
-            approx_task_name = task_name
-            if approx_task_name == 'ax' and approx_task_name not in approx_configs and 'mnli' in approx_configs:
-                approx_task_name = 'mnli'
-            if approx_task_name not in approx_configs:
+            if task_name not in approx_configs:
                 print(f"\n[Warning] No approx config for task '{task_name}' in {args.config}, skipping")
                 task_skips.append((task_name, "missing_approx_config"))
                 continue
-            gelu = approx_configs[approx_task_name]['gelu']
-            softmax = approx_configs[approx_task_name]['softmax']
+            gelu = approx_configs[task_name]['gelu']
+            softmax = approx_configs[task_name]['softmax']
 
         if use_noise:
-            noise_task_name = task_name
-            if noise_task_name == 'ax' and noise_task_name not in noise_configs and 'mnli' in noise_configs:
-                noise_task_name = 'mnli'
-            if noise_task_name not in noise_configs:
+            if task_name not in noise_configs:
                 print(f"\n[Warning] No noise config for task '{task_name}' in {args.noise_config}, skipping")
                 task_skips.append((task_name, "missing_noise_config"))
                 continue
-            task_noise = noise_configs[noise_task_name]
+            task_noise = noise_configs[task_name]
             missing_keys = [k for k in NOISE_KEYS if k not in task_noise]
             if missing_keys:
                 print(f"\n[Error] Noise config for '{task_name}' missing keys: {missing_keys}")
@@ -1507,7 +1182,7 @@ def _process_blb_task(
         model_id2label = {int(k): str(v) for k, v in model.config.id2label.items()}
         print(f"  Model label mapping: {model_id2label}")
     else:
-        print("  [Warning] model.config.id2label missing; falling back to TASK_REGISTRY label_map")
+        print("  [Warning] model.config.id2label missing; falling back to TASK_CONFIGS label_map")
 
     handler = ReversibleLayerHandler(model)
     layers_attr = detect_layer_attribute(model)
@@ -1810,8 +1485,8 @@ def generate_blb_glue_submission(
     remove_stale_submission_files(output_dir)
 
     blb_task = str(blb_task).strip().lower()
-    if blb_task not in TASK_REGISTRY:
-        raise KeyError(f"Unknown BLB task '{blb_task}'; valid tasks: {sorted(TASK_REGISTRY)}")
+    model_type = str(model_type).strip().lower()
+    validate_supported_profile(model_type, blb_task)
 
     log_fn(f"[BLB GLUE] model_type={model_type}, blb_task={blb_task}, profile={profile}")
     log_fn(f"[BLB GLUE] output_dir={output_dir}, device={device_resolved}, seed={seed}")
@@ -1823,11 +1498,13 @@ def generate_blb_glue_submission(
     skips = []
     blb_materialization = {}
     # 1) Inference on the BLB-trained task with the BLB action installed.
-    blb_cfg = dict(TASK_REGISTRY[blb_task])
-    if model_type == "bert-large" and blb_task in BERT_LARGE_MODEL_NAMES:
-        blb_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[blb_task]
-    elif model_type == "gpt-2" and blb_task in GPT2_MODEL_NAMES:
-        blb_cfg['model_name'] = GPT2_MODEL_NAMES[blb_task]
+    blb_cfg = dict(TASK_CONFIGS[blb_task])
+    model_names = (
+        BERT_BASE_MODEL_NAMES
+        if model_type == "bert-base"
+        else BERT_LARGE_MODEL_NAMES
+    )
+    blb_cfg['model_name'] = model_names[blb_task]
     try:
         blb_materialization = _process_blb_task(
             task_name=blb_task,
@@ -1854,29 +1531,14 @@ def generate_blb_glue_submission(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    # 2) Baseline inference for every other GLUE task (original GELU + exp,
-    # no noise). MNLI implies AX (AX uses the MNLI model on the diagnostic set).
+    # 2) Baseline inference for every other supported task.
     other_tasks = [
-        name for name in sorted(TASK_REGISTRY.keys())
+        name for name in sorted(TASK_CONFIGS.keys())
         if name != blb_task
     ]
-    # de-dup mnli/ax pair: AX always uses the MNLI checkpoint, so we still need
-    # to enumerate it separately for the test split.
     for task_name in other_tasks:
-        task_cfg = dict(TASK_REGISTRY[task_name])
-        if model_type == "bert-large":
-            if task_name not in BERT_LARGE_MODEL_NAMES:
-                log_fn(f"[Warning] '{task_name}' has no bert-large checkpoint; "
-                       "will be filled with placeholders.")
-                skips.append((task_name, "unsupported_model_checkpoint"))
-                continue
-            task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
-        elif model_type == "gpt-2":
-            if task_name not in GPT2_MODEL_NAMES:
-                log_fn(f"[Warning] '{task_name}' has no gpt-2 checkpoint; will be filled with placeholders.")
-                skips.append((task_name, "unsupported_model_checkpoint"))
-                continue
-            task_cfg['model_name'] = GPT2_MODEL_NAMES[task_name]
+        task_cfg = dict(TASK_CONFIGS[task_name])
+        task_cfg['model_name'] = model_names[task_name]
         try:
             process_task(
                 task_name, task_cfg, gelu_degrees=None, softmax_degrees=None,

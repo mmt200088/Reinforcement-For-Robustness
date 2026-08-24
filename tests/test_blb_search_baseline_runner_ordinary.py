@@ -198,13 +198,55 @@ def _run_kwargs(output_dir, **overrides):
         "rf_n_estimators": 128,
         "rf_min_samples_leaf": 2,
         "communication_importance_ratio": 1.0,
-        "manifest": {"backend": "greedy"},
+        "manifest": {
+            "backend": "greedy",
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
+            "search_split": "train_probe",
+        },
     }
     values.update(overrides)
     return values
 
 
+def _protocol_manifest(**overrides):
+    payload = {
+        "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+        "dataset_protocol_hash": "probe-a",
+        "search_split": "train_probe",
+    }
+    payload.update(overrides)
+    return payload
+
+
 class OrdinaryRunnerApiTest(unittest.TestCase):
+    def test_resume_rejects_missing_protocol_before_search_replay(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(
+                search_baseline_runner,
+                "run_search",
+                side_effect=_fake_run_search,
+            ):
+                search_baseline_runner.run_layerwise_search_baseline(
+                    **_run_kwargs(tmpdir)
+                )
+            manifest_path = os.path.join(tmpdir, "manifest.json")
+            with open(manifest_path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            manifest.pop("dataset_protocol_schema", None)
+            manifest.pop("dataset_protocol_hash", None)
+            with open(manifest_path, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle)
+
+            with mock.patch.object(
+                search_baseline_runner,
+                "run_search",
+                side_effect=AssertionError("stale run must not replay"),
+            ), self.assertRaisesRegex(RuntimeError, "train-probe protocol"):
+                search_baseline_runner.run_layerwise_search_baseline(
+                    **_run_kwargs(tmpdir)
+                )
+
     def test_runtime_evaluator_has_no_physical_trial_wal_parameters(self):
         parameters = inspect.signature(search_baseline_runner.LayerwiseRuntimeEvaluator.__init__).parameters
 
@@ -308,6 +350,8 @@ class OrdinaryRunnerApiTest(unittest.TestCase):
         self.assertIsNotNone(contract_matches)
         legacy_invocation = {
             "schema_version": "stage2_search_invocation_v4",
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
             "search_backend": "coinn_ga",
             "seed": 42,
             "fixed_gelu": [1, 2],
@@ -326,6 +370,12 @@ class OrdinaryRunnerApiTest(unittest.TestCase):
         self.assertTrue(invocation_matches(
             legacy_invocation,
             requested_invocation,
+        ))
+        missing_protocol = json.loads(json.dumps(requested_invocation))
+        missing_protocol.pop("dataset_protocol_hash")
+        self.assertFalse(invocation_matches(
+            legacy_invocation,
+            missing_protocol,
         ))
         changed_invocation = json.loads(json.dumps(requested_invocation))
         changed_invocation["fixed_gelu"] = [2, 2]
@@ -561,7 +611,7 @@ class OrdinaryRunnerPersistenceTest(unittest.TestCase):
                 backend="coinn_ga",
                 evaluation_budget=11_464,
                 patience_generations=5,
-                manifest={"backend": "coinn_ga"},
+                manifest=_protocol_manifest(backend="coinn_ga"),
                 strict_validator=strict_validator,
             )
             with (
@@ -744,10 +794,10 @@ class OrdinaryRunnerPersistenceTest(unittest.TestCase):
                     handle.write(b"partial-strict-evidence\n")
                 raise RuntimeError("strict interruption")
 
-            manifest = {
-                "backend": "greedy",
-                "strict_candidate_store": store_path,
-            }
+            manifest = _protocol_manifest(
+                backend="greedy",
+                strict_candidate_store=store_path,
+            )
             with (
                 mock.patch.object(
                     search_baseline_runner,

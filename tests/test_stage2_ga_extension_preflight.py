@@ -12,7 +12,7 @@ from json_utils import stable_json_hash
 
 
 class Stage2GAExtensionPreflightTests(unittest.TestCase):
-    def test_failed_extension_attempt_archives_legacy_pending_strict_context(self):
+    def test_legacy_extension_without_train_probe_protocol_is_rejected(self):
         legacy_invocation = {
             "search_backend": "coinn_ga",
             "scientific_parameters": {
@@ -116,9 +116,12 @@ class Stage2GAExtensionPreflightTests(unittest.TestCase):
                     "blb_stage2_rl.search_baseline_runner."
                     "_validate_ga_completion_proof",
                 ),
+                self.assertRaisesRegex(RuntimeError, "train-probe protocol"),
             ):
-                result = sequential_runner._preflight_completed_search_resume(
-                    runner=SimpleNamespace(),
+                sequential_runner._preflight_completed_search_resume(
+                    runner=SimpleNamespace(evaluator=SimpleNamespace(
+                        dataset_protocol_hash="probe-a",
+                    )),
                     train_cfg=SimpleNamespace(search_backend="coinn_ga"),
                     fixed_gelu=[1, 2],
                     fixed_softmax=[6, 6],
@@ -127,17 +130,9 @@ class Stage2GAExtensionPreflightTests(unittest.TestCase):
                     blb_progress_dir=tmpdir,
                 )
 
-            archived_context_path = os.path.join(
-                output_dir,
-                "pending_strict_resume_context.pre_ga200_extension.json",
-            )
-            self.assertIsNone(result)
-            self.assertFalse(os.path.exists(os.path.join(
-                output_dir,
-                "pending_strict_resume_context.json",
+            self.assertTrue(os.path.exists(os.path.join(
+                output_dir, "pending_strict_resume_context.json",
             )))
-            with open(archived_context_path, encoding="utf-8") as handle:
-                self.assertEqual(json.load(handle), legacy_context)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,11 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
+from glue_data_protocol import (
+    PROTOCOL_SCHEMA,
+    TRAIN_PROBE_SPLIT,
+    validate_dataset_protocol_binding,
+)
 from json_utils import (
     json_default,
     read_json_file,
@@ -40,7 +45,8 @@ _REPLAY_SEMANTICS = (
     "population, RNG, and local-search state; no serialized optimizer state "
     "is restored"
 )
-_MANIFEST_SCHEMA = "stage1_gelu_search_manifest_v1"
+_MANIFEST_SCHEMA = "stage1_gelu_search_train_probe_manifest_v1"
+_CHECKPOINT_SCHEMA = "stage1_gelu_search_train_probe_checkpoint_v1"
 _REQUIRED_COMPLETED_ARTIFACTS = (
     "observations.jsonl",
     "history.json",
@@ -113,6 +119,11 @@ class Stage1EvaluatorAdapter:
         self.constraints = constraints
         self.on_evaluation = on_evaluation
         self.evaluation_count = 0
+        self.dataset_protocol_hash = getattr(
+            evaluator, "dataset_protocol_hash", None
+        )
+        if not str(self.dataset_protocol_hash or ""):
+            raise ValueError("Stage-1 search requires dataset_protocol_hash")
         self._cost_cache: dict[Stage1Action, tuple[float, list[float]]] = {}
         if not callable(getattr(evaluator, "stage1_evaluate", None)):
             raise TypeError("evaluator must provide stage1_evaluate")
@@ -153,7 +164,7 @@ class Stage1EvaluatorAdapter:
             gelu_degrees,
             softmax_degrees,
             use_train=False,
-            split="validation_full",
+            split=TRAIN_PROBE_SPLIT,
         )
         loss, metrics, inference_time_ms, runtime_metadata = _runtime_metrics(
             runtime_result,
@@ -170,8 +181,9 @@ class Stage1EvaluatorAdapter:
             metadata={
                 **dict(runtime_metadata),
                 "evaluation_index": evaluation_index,
-                "split": "validation_full",
+                "split": TRAIN_PROBE_SPLIT,
                 "use_train": False,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "wall_seconds": float(time.perf_counter() - started),
                 "inference_time_ms": inference_time_ms,
                 "cost_components": cost_components,
@@ -286,6 +298,9 @@ def _observation_store(
 def _compact_result(result: SearchResult) -> dict[str, Any]:
     payload = result.as_dict(include_observations=False, include_history=False)
     payload["schema_version"] = "stage1_gelu_search_compact_result_v3"
+    payload["dataset_protocol_hash"] = result.best.metadata.get(
+        "dataset_protocol_hash"
+    )
     return payload
 
 
@@ -313,7 +328,7 @@ def _checkpoint_payload(
         latest_evaluation = observations[-1]
     count = len(observations) if observation_count is None else int(observation_count)
     payload = {
-        "schema_version": "stage1_gelu_search_checkpoint_v2",
+        "schema_version": _CHECKPOINT_SCHEMA,
         "status": str(status),
         "backend": normalize_search_backend(backend),
         "config": config.as_dict(),
@@ -383,8 +398,12 @@ def save_search_checkpoint(
                 "gelu_degree_categories": list(GELU_DEGREES),
                 "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
                 "constraints": observations[0].constraints.as_dict(),
-                "split": "validation_full",
+                "split": TRAIN_PROBE_SPLIT,
                 "use_train": False,
+                "dataset_protocol_hash": observations[0].metadata.get(
+                    "dataset_protocol_hash"
+                ),
+                "dataset_protocol_schema": PROTOCOL_SCHEMA,
             }
         )
     )
@@ -1189,10 +1208,19 @@ def load_completed_search_result(output_dir: str | Path) -> SearchResult:
         raise RuntimeError("Stage-1 manifest schema version is unsupported")
     if str(manifest.get("status")) != "complete":
         raise RuntimeError("Stage-1 manifest status is not complete")
-    if str(checkpoint.get("schema_version")) != (
-            "stage1_gelu_search_checkpoint_v2"
-    ):
+    if str(checkpoint.get("schema_version")) != _CHECKPOINT_SCHEMA:
         raise RuntimeError("Stage-1 checkpoint schema version is unsupported")
+    protocol_hash = str(manifest.get("dataset_protocol_hash") or "")
+    validate_dataset_protocol_binding(
+        manifest,
+        expected_hash=protocol_hash,
+        artifact="Stage-1 manifest",
+    )
+    validate_dataset_protocol_binding(
+        dict(checkpoint.get("contract") or {}),
+        expected_hash=protocol_hash,
+        artifact="Stage-1 checkpoint",
+    )
     if str(checkpoint.get("status")) != "complete":
         raise RuntimeError("Stage-1 checkpoint status is not complete")
     if dict(summary) != dict(payload):
@@ -1311,6 +1339,11 @@ def _validate_preload_contract(
     if saved_config.as_dict() != config.as_dict():
         raise RuntimeError("Stage-1 resume search configuration does not match")
     saved_contract = dict(payload.get("contract") or {})
+    validate_dataset_protocol_binding(
+        saved_contract,
+        expected_hash=str(contract.get("dataset_protocol_hash") or ""),
+        artifact="Stage-1 resume checkpoint",
+    )
     for name, value in contract.items():
         if saved_contract.get(name) != value:
             raise RuntimeError(
@@ -1458,6 +1491,18 @@ class Stage1SearchRunner:
         self.config = config or SearchConfig()
         self.output_dir = None if output_dir is None else Path(output_dir)
         self.manifest = _ordinary_manifest_fields(manifest)
+        adapter_protocol_hash = self.adapter.dataset_protocol_hash
+        manifest_protocol_hash = self.manifest.get("dataset_protocol_hash")
+        if (
+                manifest_protocol_hash is not None
+                and manifest_protocol_hash != adapter_protocol_hash
+        ):
+            raise ValueError(
+                "Stage-1 manifest dataset protocol hash does not match evaluator"
+            )
+        self.manifest["dataset_protocol_hash"] = adapter_protocol_hash
+        self.manifest["dataset_protocol_schema"] = PROTOCOL_SCHEMA
+        self.manifest["search_split"] = TRAIN_PROBE_SPLIT
         self.checkpoint_callback = checkpoint_callback
         self.checkpoint_interval = int(checkpoint_interval)
         self.stop_requested = stop_requested
@@ -1481,8 +1526,10 @@ class Stage1SearchRunner:
             "gelu_degree_categories": list(GELU_DEGREES),
             "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
             "constraints": self.adapter.constraints.as_dict(),
-            "split": "validation_full",
+            "split": TRAIN_PROBE_SPLIT,
             "use_train": False,
+            "dataset_protocol_hash": self.adapter.dataset_protocol_hash,
+            "dataset_protocol_schema": PROTOCOL_SCHEMA,
         }
         if (
                 preload_path is None
@@ -1733,7 +1780,7 @@ class Stage1SearchRunner:
                 result=result,
                 manifest={
                     **self.manifest,
-                    "split": "validation_full",
+                    "split": TRAIN_PROBE_SPLIT,
                     "gelu_degree_categories": list(GELU_DEGREES),
                     "softmax_degrees": (
                         [FIXED_SOFTMAX_DEGREE]

@@ -65,6 +65,15 @@ def write_strict_json_file(path: str | Path, payload: Any) -> None:
     os.replace(tmp_path, path)
 
 
+def write_dataset_protocol(
+    root_dir: str | Path,
+    payload: Dict[str, Any],
+) -> Path:
+    path = Path(root_dir) / "dataset_protocol.json"
+    write_strict_json_file(path, payload)
+    return path
+
+
 def make_unique_run_id(
     base_run_id: str,
     *,

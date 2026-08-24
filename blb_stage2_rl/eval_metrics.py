@@ -3,15 +3,15 @@
 The Stage-2 codebase has several inference entrypoints: online RL probes,
 multi-GPU probe workers, Paean final-eval, and fixed-action experiments.  These
 helpers keep the metric aggregation semantics identical across those paths:
-batch losses are weighted by sample count, MRPC/QQP metric2 is weighted F1, and
+batch losses are weighted by sample count, metric2 is weighted F1, and
 repeat evaluations report population mean/std over complete trials.
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+from glue_data_protocol import dataset_from_profile
 
 
 def logits_to_classes(logits: Any) -> np.ndarray:
@@ -24,8 +24,8 @@ def logits_to_classes(logits: Any) -> np.ndarray:
 
 
 def uses_weighted_f1_metric2(metric_profile: str) -> bool:
-    normalized = str(metric_profile or "").lower()
-    return "mrpc" in normalized or "qqp" in normalized
+    dataset_from_profile(metric_profile)
+    return True
 
 
 def accuracy_from_labels(labels: Any, preds: Any) -> float:
@@ -63,19 +63,6 @@ def _binary_zero_one_weighted_f1(labels_arr: np.ndarray, preds_arr: np.ndarray) 
                  + ((support_pos / total) * pos_f1))
 
 
-def _binary_zero_one_mcc(labels_arr: np.ndarray, preds_arr: np.ndarray) -> float:
-    label_pos = labels_arr == 1
-    pred_pos = preds_arr == 1
-    total = float(labels_arr.size)
-    support_pos = float(np.count_nonzero(label_pos))
-    pred_pos_count = float(np.count_nonzero(pred_pos))
-    tp = float(np.count_nonzero(pred_pos & label_pos))
-    fp = pred_pos_count - tp
-    fn = support_pos - tp
-    tn = total - tp - fp - fn
-    denom = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-    return float(((tp * tn) - (fp * fn)) / denom) if denom > 0.0 else 0.0
-
 
 def weighted_f1_from_labels(labels: Any, preds: Any) -> float:
     labels_arr = np.asarray(labels).reshape(-1)
@@ -101,69 +88,6 @@ def weighted_f1_from_labels(labels: Any, preds: Any) -> float:
     return float(out)
 
 
-def matthews_corrcoef_from_labels(labels: Any, preds: Any) -> float:
-    labels_arr = np.asarray(labels).reshape(-1)
-    preds_arr = np.asarray(preds).reshape(-1)
-    if labels_arr.size == 0:
-        return 0.0
-    if _is_zero_one_array(labels_arr) and _is_zero_one_array(preds_arr):
-        return _binary_zero_one_mcc(labels_arr, preds_arr)
-    classes = np.union1d(labels_arr, preds_arr)
-    if classes.size <= 1:
-        return 0.0
-    if classes.size == 2:
-        neg, pos = classes[0], classes[1]
-        tp = float(np.sum((preds_arr == pos) & (labels_arr == pos)))
-        tn = float(np.sum((preds_arr == neg) & (labels_arr == neg)))
-        fp = float(np.sum((preds_arr == pos) & (labels_arr == neg)))
-        fn = float(np.sum((preds_arr == neg) & (labels_arr == pos)))
-        denom = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-        return float(((tp * tn) - (fp * fn)) / denom) if denom > 0.0 else 0.0
-    # Multi-class MCC. Kept here for completeness; current GLUE use is binary.
-    conf = np.zeros((classes.size, classes.size), dtype=float)
-    cls_to_idx = {cls: i for i, cls in enumerate(classes.tolist())}
-    for y_true, y_pred in zip(labels_arr, preds_arr):
-        conf[cls_to_idx[y_true], cls_to_idx[y_pred]] += 1.0
-    t_sum = conf.sum(axis=1)
-    p_sum = conf.sum(axis=0)
-    n_correct = np.trace(conf)
-    n_samples = conf.sum()
-    cov_ytyp = (n_correct * n_samples) - np.dot(t_sum, p_sum)
-    cov_ypyp = (n_samples ** 2) - np.dot(p_sum, p_sum)
-    cov_ytyt = (n_samples ** 2) - np.dot(t_sum, t_sum)
-    denom = math.sqrt(cov_ytyt * cov_ypyp)
-    return float(cov_ytyp / denom) if denom > 0.0 else 0.0
-
-
-def _average_ranks(values: np.ndarray) -> np.ndarray:
-    order = np.argsort(values, kind="mergesort")
-    ranks = np.empty(values.size, dtype=float)
-    i = 0
-    while i < values.size:
-        j = i + 1
-        while j < values.size and values[order[j]] == values[order[i]]:
-            j += 1
-        avg_rank = (i + j - 1) / 2.0
-        ranks[order[i:j]] = avg_rank
-        i = j
-    return ranks
-
-
-def pearson_corr(x: Any, y: Any) -> float:
-    x_arr = np.asarray(x, dtype=float).reshape(-1)
-    y_arr = np.asarray(y, dtype=float).reshape(-1)
-    if x_arr.size < 2 or y_arr.size < 2:
-        return 0.0
-    x_c = x_arr - x_arr.mean()
-    y_c = y_arr - y_arr.mean()
-    denom = math.sqrt(float(np.dot(x_c, x_c) * np.dot(y_c, y_c)))
-    return float(np.dot(x_c, y_c) / denom) if denom > 0.0 else 0.0
-
-
-def spearman_corr(x: Any, y: Any) -> float:
-    return pearson_corr(_average_ranks(np.asarray(x, dtype=float).reshape(-1)),
-                        _average_ranks(np.asarray(y, dtype=float).reshape(-1)))
-
 
 def metric_pair_for_dataset(
         dataset_key: str,
@@ -172,24 +96,15 @@ def metric_pair_for_dataset(
         *,
         predictions_are_classes: bool = False,
         ) -> Tuple[float, float]:
-    ds = str(dataset_key or "").lower()
+    dataset_from_profile(dataset_key)
     labels_arr = np.asarray(labels).reshape(-1)
-    if ds == "stsb":
-        preds = np.asarray(logits_or_predictions, dtype=float).reshape(-1)
-        return pearson_corr(preds, labels_arr), spearman_corr(preds, labels_arr)
     pred_classes = (
         np.asarray(logits_or_predictions).reshape(-1).astype(int)
         if predictions_are_classes
         else logits_to_classes(logits_or_predictions)
     )
-    if ds == "cola":
-        metric1 = matthews_corrcoef_from_labels(labels_arr, pred_classes)
-        return metric1, metric1
     metric1 = accuracy_from_labels(labels_arr, pred_classes)
-    if uses_weighted_f1_metric2(ds):
-        metric2 = weighted_f1_from_labels(labels_arr, pred_classes)
-    else:
-        metric2 = metric1
+    metric2 = weighted_f1_from_labels(labels_arr, pred_classes)
     return metric1, metric2
 
 
@@ -262,17 +177,11 @@ def finalize_probe_trial_metrics(
         ) -> Optional[Tuple[float, float, float]]:
     if not losses:
         return None
+    dataset_from_profile(metric_profile)
+    if is_regression:
+        raise ValueError("regression metrics are unsupported")
     loss, m1, m2 = weighted_probe_batch_means(losses, m1s, m2s, counts)
-    if is_regression and preds and labels:
-        all_preds = _flatten_probe_arrays(preds)
-        all_labels = _flatten_probe_arrays(labels)
-        m1, m2 = metric_pair_for_dataset(metric_profile, all_labels, all_preds)
-    elif (
-            not is_regression
-            and uses_weighted_f1_metric2(metric_profile)
-            and preds
-            and labels
-            ):
+    if preds and labels:
         all_preds = _flatten_probe_arrays(preds)
         all_labels = _flatten_probe_arrays(labels)
         m2 = weighted_f1_from_labels(all_labels, all_preds)

@@ -19,6 +19,24 @@ from json_utils import stable_json_hash
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class EmbeddedFinalEvaluationProtocolSourceTests(unittest.TestCase):
+    def test_embedded_entrypoint_validates_protocol_before_runner_dispatch(self):
+        source = (ROOT / "Paean" / "embedded.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "run_embedded_final_eval"
+        )
+        function_source = ast.get_source_segment(source, function)
+
+        self.assertIn("require_final_evaluation_protocol(", function_source)
+        self.assertLess(
+            function_source.index("require_final_evaluation_protocol("),
+            function_source.index("should_run_blb_action_eval ="),
+        )
+
+
 def _load_function(rel_path: str, name: str, **globals_):
     path = ROOT / rel_path
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -57,6 +75,7 @@ def _selection_binding(result_path, *, gelu_degrees=(4, 2)):
         "gelu_degrees": list(gelu_degrees),
         "softmax_degrees": [6, 6],
         "num_layers": 2,
+        "dataset_protocol_hash": "probe-a",
     }
     return {
         **selection,
@@ -66,19 +85,6 @@ def _selection_binding(result_path, *, gelu_degrees=(4, 2)):
         ).hexdigest(),
         "selection_hash": stable_json_hash(selection),
     }
-
-
-def _mrpc_reproducibility():
-    payload = {
-        "schema_version": "mrpc_reproducibility_v1",
-        "dataset_revision": "fixture-revision",
-        "canonical_rows": [{"idx": 0, "label": 1}],
-        "full_validation_ids": [0],
-        "probe_ids": [0],
-    }
-    return SimpleNamespace(
-        fixture=SimpleNamespace(as_payload=lambda: payload),
-    )
 
 
 class OrdinaryTwoStageBindingTest(unittest.TestCase):
@@ -126,8 +132,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 model_type="bert-base",
                 total_layers=2,
                 batch_size=16,
+                dataset_protocol_hash="probe-a",
                 stage1_comparator_selection_binding=binding,
-                mrpc_reproducibility=_mrpc_reproducibility(),
             )
             runner = SimpleNamespace(evaluator=evaluator)
             train_cfg = SimpleNamespace(
@@ -150,7 +156,10 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 )
 
         load_completed.assert_called_once_with(os.path.dirname(result_path))
-        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v4")
+        self.assertEqual(
+            invocation["schema_version"],
+            "stage2_search_train_probe_invocation_v1",
+        )
         self.assertEqual(invocation["search_backend"], "bo_rf")
         self.assertEqual(invocation["seed"], 1729)
         self.assertEqual(invocation["num_layers"], 2)
@@ -158,6 +167,11 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertEqual(invocation["fixed_softmax"], [6, 6])
         self.assertEqual(invocation["stage1_result_path"], result_path)
         self.assertEqual(invocation["stage1_selection_binding"], binding)
+        self.assertEqual(
+            invocation["dataset_protocol_schema"],
+            "glue_train_probe_protocol_v1",
+        )
+        self.assertEqual(invocation["dataset_protocol_hash"], "probe-a")
         self.assertEqual(
             invocation["scientific_parameters"]["stage2_inference_batch_size"],
             64,
@@ -186,10 +200,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             invocation["rng_contract"]["online_stream"],
             "ppo_global_evaluation_index_v1",
         )
-        self.assertEqual(
-            invocation["mrpc_reproducibility_identity"]["dataset_revision"],
-            "fixture-revision",
-        )
+        self.assertNotIn("mrpc_reproducibility_identity", invocation)
         for removed in (
             "invocation_hash",
             "stage1_result_sha256",
@@ -219,8 +230,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             evaluator = SimpleNamespace(
                 model_type="bert-base",
                 total_layers=2,
+                dataset_protocol_hash="probe-a",
                 stage1_comparator_selection_binding=binding,
-                mrpc_reproducibility=_mrpc_reproducibility(),
             )
             with mock.patch(
                 "stage1_rl.search_runner.load_completed_search_result",
@@ -261,8 +272,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 model_type="bert-base",
                 total_layers=2,
                 batch_size=16,
+                dataset_protocol_hash="probe-a",
                 stage1_comparator_selection_binding=binding,
-                mrpc_reproducibility=_mrpc_reproducibility(),
             )
             with mock.patch(
                 "stage1_rl.search_runner.load_completed_search_result",
@@ -363,6 +374,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "result_path": "stage1/result.json",
             "result_sha256": "a" * 64,
             "selection_hash": "b" * 64,
+            "dataset_protocol_hash": "probe-a",
         }
         common = {
             "train_cfg": SimpleNamespace(
@@ -370,7 +382,11 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 profile="mrpc",
                 stage2_inference_batch_size=64,
             ),
-            "evaluator": SimpleNamespace(model_type="bert-base", batch_size=16),
+            "evaluator": SimpleNamespace(
+                model_type="bert-base",
+                batch_size=16,
+                dataset_protocol_hash="probe-a",
+            ),
             "fusion_map": {"block4": []},
             "max_sfs": {"block4": []},
             "fixed_gelu": np.asarray([4, 2], dtype=int),
@@ -437,7 +453,11 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 profile="mrpc",
                 stage2_inference_batch_size=64,
             ),
-            "evaluator": SimpleNamespace(model_type="bert-base", batch_size=16),
+            "evaluator": SimpleNamespace(
+                model_type="bert-base",
+                batch_size=16,
+                dataset_protocol_hash="probe-a",
+            ),
             "fusion_map": {"block4": []},
             "max_sfs": {"block4": []},
             "fixed_gelu": np.asarray([4, 2], dtype=int),
@@ -990,7 +1010,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             Mapping=dict,
             os=os,
             _build_search_invocation_contract=lambda **_kwargs: {
-                "schema_version": "stage2_search_invocation_v4",
+                "schema_version": "stage2_search_train_probe_invocation_v1",
+                "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+                "dataset_protocol_hash": "probe-a",
                 "search_backend": "bo_rf",
             },
         )
@@ -998,7 +1020,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             output_dir = os.path.join(tmpdir, "search_bo_rf")
             os.makedirs(output_dir)
             invocation = {
-                "schema_version": "stage2_search_invocation_v4",
+                "schema_version": "stage2_search_train_probe_invocation_v1",
+                "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+                "dataset_protocol_hash": "probe-a",
                 "search_backend": "bo_rf",
             }
             resume_contract = {
@@ -1021,6 +1045,10 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                     "manifest.json",
                     {
                         "status": "search_complete_pending_strict",
+                        "dataset_protocol_schema": (
+                            "glue_train_probe_protocol_v1"
+                        ),
+                        "dataset_protocol_hash": "probe-a",
                         "resume_contract": resume_contract,
                     },
                 ),
@@ -1036,7 +1064,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                     json.dump(payload, handle)
 
             restored = preflight(
-                runner=SimpleNamespace(evaluator=SimpleNamespace()),
+                runner=SimpleNamespace(evaluator=SimpleNamespace(
+                    dataset_protocol_hash="probe-a",
+                )),
                 train_cfg=SimpleNamespace(
                     search_backend="bo_rf",
                     search_full_validation=True,

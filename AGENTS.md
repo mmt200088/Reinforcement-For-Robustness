@@ -60,6 +60,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   well utilized. Do not change research semantics, reward/evaluation validity,
   or reported scientific conclusions merely to make runs faster; preserve
   outputs unless the user explicitly asks for a behavior change.
+- Six-profile data protocol, added 2026-08-25: active scientific code supports
+  only BERT-base and BERT-large on MRPC, RTE, and SST-2. Profile, Stage-1,
+  Stage-2, comparator calibration, promotion banks, and strict selection use
+  the exact ordered 256-example stratified training probe identified by
+  `fixtures/reproducibility/glue_train_probe_v1.json`. The complete GLUE
+  validation split is reserved for post-search plaintext final evaluation.
+  Every run, candidate identity, invocation, checkpoint, and final result must
+  carry `glue_train_probe_protocol_v1` and the matching protocol hash. Old or
+  mismatched state fails closed and must be restarted fresh. The external
+  512-example encrypted-inference validation set is outside this repository.
 - Stage-2 prerequisite GELU source, updated 2026-07-11: Stage-2 currently
   defaults to `--stage2-fixed-config-source all4`, resolving GELU to degree 4
   and Softmax to degree 6 in every layer. This is a reversible experiment

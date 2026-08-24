@@ -1,6 +1,6 @@
 
 {
-  "_description": "LayerNorm variance-like block (block1 WNLI): computes (x - mean)^2 * 1/D from GELU_out. M = 4 multiplications: (1) Bs rotation + CTPT with FFN2 weight (sf=20); (2) Gs rotation + 3 rot-sum + CTPT with 1/D (sf=20); (3) asymmetric CTCT with external 'result of ct*pt (square)' ciphertext at fixed scale 30 bit (propagate_scale uses s -> s + 30); (4) 3 rot-sum + CTPT with 1/D (sf=20). Initial ciphertext 'GELU_out' enters at sf = t_base + h_sf = 30 (fresh noise table).",
+  "_description": "LayerNorm variance-like block (block1): computes (x - mean)^2 * 1/D from GELU_out. M = 4 multiplications: (1) Bs rotation + CTPT with FFN2 weight (sf=20); (2) Gs rotation + 3 rot-sum + CTPT with 1/D (sf=20); (3) asymmetric CTCT with external 'result of ct*pt (square)' ciphertext at fixed scale 30 bit (propagate_scale uses s -> s + 30); (4) 3 rot-sum + CTPT with 1/D (sf=20). Initial ciphertext 'GELU_out' enters at sf = t_base + h_sf = 30 (fresh noise table).",
 
   "global": {
     "h_sf": 2,

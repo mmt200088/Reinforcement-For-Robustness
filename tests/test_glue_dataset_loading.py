@@ -9,6 +9,11 @@ import types
 import unittest
 from unittest import mock
 
+from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
+    GlueDataProtocolError,
+    SUPPORTED_DATASETS,
+)
 from mrpc_reproducibility import (
     MRPC_DATASET_REVISION,
     MRPCReproducibilityContext,
@@ -96,6 +101,48 @@ def _import_rl_tune():
 
 
 class GlueDatasetLoadingRegressionTests(unittest.TestCase):
+    def test_public_glue_registry_contains_only_supported_tasks(self):
+        rl_tune = _import_rl_tune()
+        self.assertEqual(
+            tuple(rl_tune.GLUE_PARQUET_SPLITS),
+            SUPPORTED_DATASETS,
+        )
+        self.assertEqual(
+            tuple(rl_tune.GLUE_REQUIRED_COLUMNS),
+            SUPPORTED_DATASETS,
+        )
+        self.assertIsNone(rl_tune._glue_parquet_data_files("stsb"))
+
+    def test_loader_rejects_unsupported_task_before_dataset_access(self):
+        rl_tune = _import_rl_tune()
+        loader = mock.Mock(side_effect=AssertionError("loader must not run"))
+        with self.assertRaisesRegex(ValueError, "unsupported dataset"):
+            rl_tune.load_glue_dataset_equivalent(
+                "stsb",
+                load_dataset_fn=loader,
+            )
+        loader.assert_not_called()
+
+    def test_primary_loader_uses_pinned_glue_revision(self):
+        rl_tune = _import_rl_tune()
+        calls = []
+
+        def fake_load_dataset(path, task, **kwargs):
+            calls.append((path, task, kwargs))
+            return _MRPCDatasetDict()
+
+        loaded = rl_tune.load_glue_dataset_equivalent(
+            "mrpc",
+            load_dataset_fn=fake_load_dataset,
+        )
+
+        self.assertIsInstance(loaded, _MRPCDatasetDict)
+        self.assertEqual(calls, [(
+            "nyu-mll/glue",
+            "mrpc",
+            {"revision": GLUE_DATASET_REVISION},
+        )])
+
     def test_reproducibility_fixture_selects_ordered_full_and_probe_views(self):
         rl_tune = _import_rl_tune()
         data = _MRPCDatasetDict(list(reversed(_MRPC_ROWS)))
@@ -167,8 +214,8 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             )
 
         source = inspect.getsource(rl_tune.train)
-        self.assertEqual(source.count("**tokenizer_revision_kwargs"), 2)
-        self.assertEqual(source.count("**model_revision_kwargs"), 3)
+        self.assertEqual(source.count("**tokenizer_revision_kwargs"), 1)
+        self.assertEqual(source.count("**model_revision_kwargs"), 1)
 
     def test_train_wires_raw_row_fixture_before_validation_preprocessing(self):
         rl_tune = _import_rl_tune()
@@ -180,7 +227,7 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             source,
         )
         self.assertIn("mrpc_views.full_validation", source)
-        self.assertIn("mrpc_views.stability_probe", source)
+        self.assertNotIn("mrpc_views.stability_probe", source)
         self.assertIn("MRPCReproducibilityContext(", source)
         self.assertIn(
             "mrpc_reproducibility=mrpc_reproducibility",
@@ -201,6 +248,65 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             source.index("load_mrpc_fixture("),
             source.index("load_glue_dataset_equivalent("),
         )
+
+    def test_train_wires_shared_probe_before_tokenization(self):
+        rl_tune = _import_rl_tune()
+        source = inspect.getsource(rl_tune.train)
+
+        self.assertIn(
+            'glue_train_probe_fixture_path: str = '
+            '"fixtures/reproducibility/glue_train_probe_v1.json"',
+            source,
+        )
+        self.assertIn("load_train_probe_fixture(", source)
+        self.assertIn("resolve_glue_protocol_views(", source)
+        self.assertIn("train_probe_data =", source)
+        self.assertIn("GlueDataProtocolContext(", source)
+        self.assertIn("glue_data_protocol=glue_protocol_context", source)
+        self.assertLess(
+            source.index("load_train_probe_fixture("),
+            source.index("AutoTokenizer.from_pretrained("),
+        )
+        self.assertLess(
+            source.index("resolve_glue_protocol_views("),
+            source.index("train_probe_data ="),
+        )
+
+    def test_train_contains_only_supported_bert_classification_dispatch(self):
+        source = inspect.getsource(_import_rl_tune().train)
+
+        for forbidden in (
+                "AutoModelForCausalLM",
+                "LlamaTokenizer",
+                'data_path.endswith(".json")',
+                'data_path.lower() == \'mnli\'',
+                'data["validation_matched"]',
+                'data["validation_mismatched"]',
+                '_dp == "stsb"',
+                '_dp == "qnli"',
+                '_dp in ("sst2", "cola")',
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_train_rejects_unsupported_model_before_runtime_initialization(self):
+        rl_tune = _import_rl_tune()
+
+        def forbidden_runtime_access(*_args, **_kwargs):
+            raise AssertionError("runtime initialization must not execute")
+
+        evaluator_stub = types.SimpleNamespace(
+            set_ppo_update_interval=forbidden_runtime_access,
+        )
+        with mock.patch.dict(
+                sys.modules,
+                {"layer_importance_evaluator": evaluator_stub},
+                clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "unsupported model"):
+                rl_tune.train(
+                    base_model="gpt2",
+                    data_path="mrpc",
+                )
 
     def test_train_rejects_missing_fixture_before_runtime_access(self):
         rl_tune = _import_rl_tune()
@@ -332,25 +438,19 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 ValueError, "MRPC reproducibility probe size mismatch"):
             method(evaluator, "validation_full", 1, probe_seed=42)
 
-    def test_stage2_fixture_probe_failure_cannot_fall_back_to_other_data(self):
+    def test_stage2_probe_reads_registered_train_probe_without_resampling(self):
         source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
         method_start = source.index("    def _build_probe_batches(")
         method_end = source.index(
-            "    def _build_validation_full_batches(", method_start
+            "    def _build_rescale_bridge(", method_start
         )
         method = source[method_start:method_end]
 
-        self.assertIn(
-            'getattr(ev, "mrpc_reproducibility", None)', method
-        )
+        self.assertIn('dataset_splits.get("train_probe")', method)
         self.assertIn("drop_last=False", method)
-        self.assertLess(
-            method.index('getattr(ev, "mrpc_reproducibility", None)'),
-            method.index(
-                'ds = ev.dataset_splits.get(split_name) '
-                'or ev.dataset_splits.get("train")'
-            ),
-        )
+        self.assertNotIn("_get_stability_probe", method)
+        self.assertNotIn('dataset_splits.get("validation_full")', method)
+        self.assertNotIn('dataset_splits.get("train")', method)
 
     def test_raw_row_fixture_validation_runs_on_primary_remote_success(self):
         rl_tune = _import_rl_tune()
@@ -534,12 +634,16 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 log_text = f.read()
 
         self.assertEqual(data, {"train": "ok"})
-        self.assertEqual(calls, [("nyu-mll/glue", ("mrpc",), {})])
+        self.assertEqual(calls, [(
+            "nyu-mll/glue",
+            ("mrpc",),
+            {"revision": GLUE_DATASET_REVISION},
+        )])
         self.assertEqual(disk_calls, [local_mrpc])
         self.assertIn("route=local_saved_to_disk", log_text)
         self.assertIn(f"path={local_mrpc}", log_text)
 
-    def test_unpinned_mrpc_local_dataset_does_not_require_idx(self):
+    def test_supported_local_dataset_requires_stable_idx(self):
         rl_tune = _import_rl_tune()
 
         class FakeDatasetDict(dict):
@@ -549,21 +653,11 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 "test": ["sentence1", "sentence2", "label"],
             }
 
-        with tempfile.TemporaryDirectory() as td:
-            local_mrpc = os.path.join(td, "mrpc")
-            os.makedirs(local_mrpc)
-            with mock.patch.dict(
-                    os.environ, {"GLUE_LOCAL_DATASET_DIR": td}, clear=False,
-            ):
-                loaded = rl_tune.load_glue_dataset_equivalent(
-                    "mrpc",
-                    load_dataset_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                        RuntimeError("network unavailable")
-                    ),
-                    load_from_disk_fn=lambda _path: FakeDatasetDict({"train": "ok"}),
-                )
-
-        self.assertEqual(loaded, {"train": "ok"})
+        with self.assertRaisesRegex(ValueError, "idx"):
+            rl_tune._validate_glue_dataset_equivalence(
+                FakeDatasetDict({"train": "ok"}),
+                "mrpc",
+            )
 
     def test_uses_hf_local_files_cache_before_remote_parquet_fallback(self):
         rl_tune = _import_rl_tune()
@@ -595,7 +689,11 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 log_text = f.read()
 
         self.assertEqual(data, {"train": "ok"})
-        self.assertEqual(calls[0], ("nyu-mll/glue", ("mrpc",), {}))
+        self.assertEqual(calls[0], (
+            "nyu-mll/glue",
+            ("mrpc",),
+            {"revision": GLUE_DATASET_REVISION},
+        ))
         self.assertEqual(calls[1][0], "nyu-mll/glue")
         self.assertEqual(calls[1][1], ("mrpc",))
         self.assertTrue(getattr(calls[1][2]["download_config"], "local_files_only"))
@@ -693,7 +791,11 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                         log_text = f.read()
 
         self.assertEqual(data, {"train": "ok"})
-        self.assertEqual(calls[0], ("nyu-mll/glue", ("mrpc",), {}))
+        self.assertEqual(calls[0], (
+            "nyu-mll/glue",
+            ("mrpc",),
+            {"revision": GLUE_DATASET_REVISION},
+        ))
         self.assertEqual(calls[1][0], "nyu-mll/glue")
         self.assertTrue(getattr(calls[1][2]["download_config"], "local_files_only"))
         self.assertEqual(calls[2][0], "parquet")
@@ -739,11 +841,10 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "equivalent parquet"):
             load_glue_dataset_equivalent("mrpc", load_dataset_fn=fake_load_dataset)
 
-    def test_unknown_glue_task_preserves_original_loader_error(self):
+    def test_unknown_glue_task_fails_before_loader_access(self):
         load_glue_dataset_equivalent = _import_rl_tune().load_glue_dataset_equivalent
+        loader = mock.Mock(side_effect=AssertionError("loader must not run"))
 
-        def fake_load_dataset(path, *args, **kwargs):
-            raise RuntimeError("primary loader failure")
-
-        with self.assertRaisesRegex(RuntimeError, "primary loader failure"):
-            load_glue_dataset_equivalent("unknown_task", load_dataset_fn=fake_load_dataset)
+        with self.assertRaisesRegex(GlueDataProtocolError, "unsupported dataset"):
+            load_glue_dataset_equivalent("unknown_task", load_dataset_fn=loader)
+        loader.assert_not_called()

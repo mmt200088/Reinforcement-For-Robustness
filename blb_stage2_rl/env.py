@@ -109,7 +109,7 @@ def summarize_optimizer_invalid_outputs(
 @dataclass
 class BLBStage2EnvConfig:
     """``BLBStage2Env`` 的运行参数。"""
-    profile: str = "default"
+    profile: str = "mrpc"
     num_trials_per_step: int = 3            # spec §5.3 推荐 3 次取 std
     # ADR-012 borderline retest (2026-06-12): a metric fail whose worst
     # per-channel deficit is within reward_weights.near_miss_band gets ONE

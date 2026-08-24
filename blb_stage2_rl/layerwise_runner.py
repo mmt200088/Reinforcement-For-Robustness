@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
+from glue_data_protocol import validate_dataset_protocol_binding
 
 from .candidate_store import (
     CandidateStore,
@@ -391,8 +392,21 @@ def validate_layerwise_checkpoint_metadata(
         algorithm_revision: str,
         algorithm_contract_hash: str,
         run_context_hash: str,
+        dataset_protocol_schema: str,
+        dataset_protocol_hash: str,
         ) -> None:
     """Reject checkpoints from a different algorithm or experiment context."""
+    validate_dataset_protocol_binding(
+        checkpoint,
+        expected_hash=dataset_protocol_hash,
+        artifact="layerwise checkpoint",
+    )
+    if str(checkpoint.get("dataset_protocol_schema") or "") != str(
+        dataset_protocol_schema
+    ):
+        raise RuntimeError(
+            "layerwise checkpoint train-probe protocol mismatch; start a fresh run"
+        )
     checks = (
         ("variant", "rl_variant", rl_variant),
         ("algorithm revision", "algorithm_revision", algorithm_revision),
@@ -5097,7 +5111,7 @@ def train_layerwise(
             ranking_evidence=(
                 "not_eligible_protected_k1"
                 if k1_only_reject else (
-                    "F4_validation_full"
+                    "F4_train_probe"
                     if promotion.evidence is not None else "F1_prefilter_only"
                 )
             ),

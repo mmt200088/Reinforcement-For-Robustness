@@ -1,11 +1,5 @@
 #!/usr/bin/env python
-"""
-Analyze all intermediate tensor distributions across BERT and GPT-2 layers
-on representative datasets — layer-wise statistics only.
-
-Supported architectures:
-  BERT  — fine-tuned on GLUE classification tasks (post-norm transformer)
-  GPT-2 — pretrained causal LM on WikiText-2      (pre-norm transformer)
+"""Analyze intermediate tensors for the six supported BERT/GLUE profiles.
 
 Probe points (in transformer-block order):
   Global (not per-layer):
@@ -20,31 +14,21 @@ Probe points (in transformer-block order):
     8.  attn_probs    — Softmax(scores)
     9.  attn_context  — attn_probs × V (heads concatenated)
    10.  attn_output   — context × W_O
-   11.  post_attn_ln  — after 1st sub-block (BERT: res+LN; GPT-2: res only)
+   11.  post_attn_ln  — after the first residual and LayerNorm
    12.  gelu_input    — FFN1 dense output (GELU input)
    13.  gelu_output   — GELU(FFN1)
    14.  ffn2_output   — FFN2 dense output
-   15.  post_ffn_ln   — after 2nd sub-block (BERT: res+LN; GPT-2: res only)
+   15.  post_ffn_ln   — after the second residual and LayerNorm
 
-Usage:
-    nohup python analyze_all_distribution_new.py --tasks sst2 mrpc stsb qnli bl_cola bl_sst2 --max_length 128 --output_dir all_analysis_new > all_analysis_new/run.log 2>&1 &
-
-    # GPT-2 only (quick test)
-    nohup python analyze_all_distribution_new.py --tasks gpt2_wt2 --output_dir all_analysis_new > all_analysis_new/run.log 2>&1 &
-
-    # GPT-2 Medium (24 layers; consider smaller batch/length for memory)
-    nohup python analyze_all_distribution_new.py --tasks gpt2m_wt2 --batch_size 16 --max_length 512 --output_dir all_analysis_new > all_analysis_new/run.log 2>&1 &
-
-    # Mix BERT + GPT-2
-    nohup python analyze_all_distribution_new.py --tasks sst2 gpt2_wt2 --max_samples 5000 --output_dir all_analysis_new > all_analysis_new/run.log 2>&1 &
-
-    
+Formal profiling always uses the shared deterministic 256-example training
+probe. ``max_samples`` may be 0 or 256 only.
 """
 
 import os
 import csv
 import argparse
 import queue
+import sys
 import threading
 import numpy as np
 import torch
@@ -54,54 +38,36 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 from transformers import (
     AutoModelForSequenceClassification,
-    AutoModelForCausalLM,
     AutoTokenizer,
     DataCollatorWithPadding,
-    default_data_collator,
 )
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PARENT_DIR = os.path.dirname(_THIS_DIR)
+if _PARENT_DIR not in sys.path:
+    sys.path.insert(0, _PARENT_DIR)
+
+from glue_data_protocol import (  # noqa: E402
+    GLUE_DATASET_REVISION,
+    GlueDataProtocolContext,
+    TRAIN_PROBE_SIZE,
+    load_train_probe_fixture,
+    resolve_glue_protocol_views,
+    resolve_model_family,
+)
+from json_utils import write_json_file  # noqa: E402
+
 # ==================== Task Registry ====================
 
 TASK_REGISTRY = {
-    # ---- BERT (GLUE classification, post-norm, 12 layers) ----
-    'cola': {
-        'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-CoLA',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'cola',
-        'num_labels': 2, 'input_cols': ('sentence',),
-    },
-    'sst2': {
-        'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-SST-2',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'sst2',
-        'num_labels': 2, 'input_cols': ('sentence',),
-    },
     'mrpc': {
         'arch': 'bert', 'num_layers': 12,
         'model_name': 'textattack/bert-base-uncased-MRPC',
         'dataset_name': 'nyu-mll/glue', 'dataset_config': 'mrpc',
         'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
-    },
-    'stsb': {
-        'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-STS-B',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'stsb',
-        'num_labels': 1, 'input_cols': ('sentence1', 'sentence2'),
-    },
-    'mnli': {
-        'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-MNLI',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'mnli',
-        'num_labels': 3, 'input_cols': ('premise', 'hypothesis'),
-    },
-    'qnli': {
-        'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-QNLI',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'qnli',
-        'num_labels': 2, 'input_cols': ('question', 'sentence'),
     },
     'rte': {
         'arch': 'bert', 'num_layers': 12,
@@ -109,11 +75,11 @@ TASK_REGISTRY = {
         'dataset_name': 'nyu-mll/glue', 'dataset_config': 'rte',
         'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
     },
-    'wnli': {
+    'sst2': {
         'arch': 'bert', 'num_layers': 12,
-        'model_name': 'textattack/bert-base-uncased-WNLI',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'wnli',
-        'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
+        'model_name': 'textattack/bert-base-uncased-SST-2',
+        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'sst2',
+        'num_labels': 2, 'input_cols': ('sentence',),
     },
     'mrpc_large': {
         'arch': 'bert', 'num_layers': 24,
@@ -132,30 +98,6 @@ TASK_REGISTRY = {
         'model_name': 'yoshitomo-matsubara/bert-large-uncased-sst2',
         'dataset_name': 'nyu-mll/glue', 'dataset_config': 'sst2',
         'num_labels': 2, 'input_cols': ('sentence',),
-    },
-    # ---- BERT-Large (GLUE classification, post-norm, 24 layers) ----
-    'bl_cola': {
-        'arch': 'bert', 'num_layers': 24,
-        'model_name': 'yoshitomo-matsubara/bert-large-uncased-cola',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'cola',
-        'num_labels': 2, 'input_cols': ('sentence',),
-    },
-    'bl_sst2': {
-        'arch': 'bert', 'num_layers': 24,
-        'model_name': 'assemblyai/bert-large-uncased-sst2',
-        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'sst2',
-        'num_labels': 2, 'input_cols': ('sentence',),
-    },
-    # ---- GPT-2 (causal LM on WikiText-2, pre-norm) ----
-    'gpt2_wt2': {
-        'arch': 'gpt2', 'num_layers': 12,
-        'model_name': 'gpt2',
-        'dataset_name': 'wikitext', 'dataset_config': 'wikitext-2-raw-v1',
-    },
-    'gpt2m_wt2': {
-        'arch': 'gpt2', 'num_layers': 24,
-        'model_name': 'gpt2-medium',
-        'dataset_name': 'wikitext', 'dataset_config': 'wikitext-2-raw-v1',
     },
 }
 
@@ -185,14 +127,6 @@ PROBE_POINTS = [
     'ffn2_output_nobias',
     'post_ffn_ln',
     'post_ffn_ln_nobias',
-    # Pre-norm LayerNorm input/output (GPT-2 only; BERT leaves these empty)
-    'ln1_input',
-    'ln1_output',
-    'ln1_output_nobias',
-    'ln2_input',
-    'ln2_output',
-    'ln2_output_nobias',
-    # LayerNorm internal intermediates
     'ln1_mean_sum',
     'ln1_mean',
     'ln1_diff_sq',
@@ -235,12 +169,6 @@ PROBE_DISPLAY = {
     'ffn2_output_nobias': 'FFN2 (pre-bias, h·W₂)',
     'post_ffn_ln':  'Post-FFN sub-block',
     'post_ffn_ln_nobias':  'Post-FFN LN (pre-β)',
-    'ln1_input':    'LN₁ input (pre-norm)',
-    'ln1_output':   'LN₁ output (pre-norm)',
-    'ln1_output_nobias': 'LN₁ output (pre-β)',
-    'ln2_input':    'LN₂ input (pre-norm)',
-    'ln2_output':   'LN₂ output (pre-norm)',
-    'ln2_output_nobias': 'LN₂ output (pre-β)',
     'ln1_mean_sum': 'LN₁ Σxᵢ (mean sum)',
     'ln1_mean':     'LN₁ μ = Σxᵢ/D',
     'ln1_diff_sq':  'LN₁ (xᵢ−μ)²',
@@ -282,12 +210,6 @@ PROBE_HIST_RANGE = {
     'ffn2_output_nobias': (-15.0, 15.0, 300),
     'post_ffn_ln':  (-5.0, 5.0, 300),
     'post_ffn_ln_nobias':  (-5.0, 5.0, 300),
-    'ln1_input':    (-15.0, 15.0, 300),
-    'ln1_output':   (-5.0, 5.0, 300),
-    'ln1_output_nobias': (-5.0, 5.0, 300),
-    'ln2_input':    (-15.0, 15.0, 300),
-    'ln2_output':   (-5.0, 5.0, 300),
-    'ln2_output_nobias': (-5.0, 5.0, 300),
     'ln1_mean_sum': (-2000.0, 2000.0, 300),
     'ln1_mean':     (-3.0, 3.0, 300),
     'ln1_diff_sq':  (0.0, 50.0, 300),
@@ -328,12 +250,6 @@ PROBE_COLORS = {
     'ffn2_output_nobias': '#d2b4de',
     'post_ffn_ln':  '#8e44ad',
     'post_ffn_ln_nobias':  '#bb8fce',
-    'ln1_input':    '#16a085',
-    'ln1_output':   '#1abc9c',
-    'ln1_output_nobias': '#76d7c4',
-    'ln2_input':    '#2c3e50',
-    'ln2_output':   '#34495e',
-    'ln2_output_nobias': '#85929e',
     'ln1_mean_sum': '#e6194B',
     'ln1_mean':     '#fabebe',
     'ln1_diff_sq':  '#f58231',
@@ -572,8 +488,8 @@ def _make_pre_hook(probe, layer, q):
 def _make_pre_bias_hook(probe, layer, q):
     """Forward hook that subtracts ``mod.bias`` from ``out`` and enqueues it.
 
-    Works uniformly for ``nn.Linear`` (``out = X·Wᵀ + b``), ``Conv1D`` used by
-    GPT-2 (``out = X·W + b``) and ``LayerNorm`` (``out = (x−μ)/σ · γ + β``):
+    Works uniformly for ``nn.Linear`` (``out = X·Wᵀ + b``) and ``LayerNorm``
+    (``out = (x−μ)/σ · γ + β``):
     in every case ``out − bias`` recovers the pure matmul / scaled-norm
     output before the bias / β shift was added.
 
@@ -587,27 +503,6 @@ def _make_pre_bias_hook(probe, layer, q):
         else:
             pre = (out - bias).detach()
         _enqueue(probe, layer, pre, q)
-    return hook
-
-
-def _make_qkv_pre_bias_hook(layer, ne, q):
-    """GPT-2 ``c_attn`` outputs the concatenated [Q | K | V] stack.
-
-    Equivalent of ``_make_qkv_hook`` but emits the pre-bias variant for each
-    of the three slices.  Bias for the combined Conv1D has the same shape as
-    the output's last dim, so subtracting it before ``split`` is equivalent
-    to subtracting per-slice biases after splitting.
-    """
-    def hook(mod, _inp, out):
-        bias = getattr(mod, 'bias', None)
-        if bias is None:
-            pre = out.detach()
-        else:
-            pre = (out - bias).detach()
-        qp, kp, vp = pre.split(ne, dim=-1)
-        _enqueue('query_proj_nobias', layer, qp, q)
-        _enqueue('key_proj_nobias',   layer, kp, q)
-        _enqueue('value_proj_nobias', layer, vp, q)
     return hook
 
 
@@ -669,17 +564,7 @@ class _ActWrapper(nn.Module):
 
 
 def _make_attn_wrapper(fwd, li, q):
-    """Wrap a self-attention forward to capture qkt_raw / attn_scores / probs / context.
-
-    Works for both BERT (BertSelfAttention) and GPT-2 (GPT2Attention) because
-    both internally use ``torch.matmul`` for QK^T and probs@V, and
-    ``F.softmax`` for the attention softmax.
-
-    The 1st matmul is QK^T, the 2nd is probs@V (the true context = convex
-    combination of value vectors).  For BERT the module returns the context
-    directly; for GPT-2 the module continues with merge_heads + c_proj +
-    dropout, so we must capture the 2nd matmul explicitly.
-    """
+    """Wrap BERT self-attention and capture its internal matrix operations."""
     def _wrapped(*args, **kwargs):
         captured = {}
         mm_count = [0]
@@ -801,142 +686,13 @@ def _install_bert_hooks(model, q):
     return handles, restore
 
 
-# ==================== GPT-2 Hook Installation ====================
-
-
-def _install_gpt2_hooks(model, q):
-    """GPT-2 uses pre-norm: LN → Attn → Res, then LN → MLP → Res.
-
-    Module layout per block ``model.transformer.h[i]``:
-      .ln_1          — LayerNorm before attention
-      .attn.c_attn   — combined Q/K/V projection  (Conv1D, out_dim = 3*n_embd)
-      .attn.c_proj   — output projection W_O       (Conv1D)
-      .ln_2          — LayerNorm before MLP
-      .mlp.c_fc      — FFN1                        (Conv1D)
-      .mlp.act       — GELU activation
-      .mlp.c_proj    — FFN2                        (Conv1D)
-    """
-    handles = []
-    restore = []
-    n_embd = model.config.n_embd
-
-    # Global: input_ids
-    def _ids_hook(_mod, inp):
-        if inp[0] is not None:
-            _enqueue('input_ids', 0, inp[0].detach().float(), q)
-    handles.append(
-        model.transformer.wte.register_forward_pre_hook(_ids_hook))
-
-    # Global: after_embed (output of embedding dropout = wte + wpe)
-    handles.append(
-        model.transformer.drop.register_forward_hook(
-            lambda _m, _i, o: _enqueue('after_embed', 0, o.detach(), q)))
-
-    num_layers = model.config.n_layer
-    for i in range(num_layers):
-        block = model.transformer.h[i]
-        attn = block.attn
-
-        # Q / K / V  — split from combined c_attn output + accum_max
-        def _make_qkv_hook(li, ne):
-            def hook(mod, inp, out):
-                qp, kp, vp = out.split(ne, dim=-1)
-                x = inp[0].detach()
-                w_abs = mod.weight.detach().abs()
-                acc = _ORIG_MATMUL(x.abs(), w_abs)
-                if mod.bias is not None:
-                    acc = acc + mod.bias.detach().abs()
-                qa, ka, va = acc.split(ne, dim=-1)
-                _enqueue('query_proj', li, qp.detach(), q,
-                         accum_ma=qa.max().item())
-                _enqueue('key_proj', li, kp.detach(), q,
-                         accum_ma=ka.max().item())
-                _enqueue('value_proj', li, vp.detach(), q,
-                         accum_ma=va.max().item())
-            return hook
-        handles.append(attn.c_attn.register_forward_hook(_make_qkv_hook(i, n_embd)))
-        handles.append(attn.c_attn.register_forward_hook(
-            _make_qkv_pre_bias_hook(i, n_embd, q)))
-
-        # Attention internals (qkt_raw, attn_scores, attn_probs, attn_context)
-        orig_fwd = attn.forward
-        attn.forward = _make_attn_wrapper(orig_fwd, i, q)
-        restore.append(('fwd', attn, orig_fwd))
-
-        # attn_output = output of W_O projection (linear → accum_max + pre-bias)
-        handles.append(attn.c_proj.register_forward_hook(
-            _make_linear_hook('attn_output', i, q)))
-        handles.append(attn.c_proj.register_forward_hook(
-            _make_pre_bias_hook('attn_output_nobias', i, q)))
-
-        # ---- LayerNorm probes (pre-norm architecture) ----
-        # ln_1: input = block input (prev residual); output = normalized → attn
-        handles.append(block.ln_1.register_forward_pre_hook(
-            _make_pre_hook('ln1_input', i, q)))
-        handles.append(block.ln_1.register_forward_hook(
-            _make_hook('ln1_output', i, q)))
-        handles.append(block.ln_1.register_forward_hook(
-            _make_pre_bias_hook('ln1_output_nobias', i, q)))
-        handles.append(block.ln_1.register_forward_pre_hook(
-            _make_ln_internals_pre_hook('ln1', i, q)))
-
-        # ln_2: input = residual + attn_output; output = normalized → MLP
-        # Also fill post_attn_ln with the same tensor (ln_2 input) for compat
-        def _make_ln2_pre_hook(li):
-            def hook(_mod, inp):
-                t = inp[0].detach()
-                _enqueue('ln2_input', li, t, q)
-                _enqueue('post_attn_ln', li, t, q)
-            return hook
-        handles.append(block.ln_2.register_forward_pre_hook(
-            _make_ln2_pre_hook(i)))
-        handles.append(block.ln_2.register_forward_hook(
-            _make_hook('ln2_output', i, q)))
-        handles.append(block.ln_2.register_forward_hook(
-            _make_pre_bias_hook('ln2_output_nobias', i, q)))
-        handles.append(block.ln_2.register_forward_pre_hook(
-            _make_ln_internals_pre_hook('ln2', i, q)))
-
-        # gelu_input = FFN1 output (linear → accum_max + pre-bias)
-        handles.append(block.mlp.c_fc.register_forward_hook(
-            _make_linear_hook('gelu_input', i, q)))
-        handles.append(block.mlp.c_fc.register_forward_hook(
-            _make_pre_bias_hook('gelu_input_nobias', i, q)))
-
-        # gelu_output
-        act = block.mlp.act
-        if isinstance(act, nn.Module):
-            handles.append(act.register_forward_hook(
-                _make_hook('gelu_output', i, q)))
-        else:
-            block.mlp.act = _ActWrapper(act, i, q)
-            restore.append(('gpt2_act', block.mlp, act))
-
-        # ffn2_output = FFN2 output (linear → accum_max + pre-bias)
-        handles.append(block.mlp.c_proj.register_forward_hook(
-            _make_linear_hook('ffn2_output', i, q)))
-        handles.append(block.mlp.c_proj.register_forward_hook(
-            _make_pre_bias_hook('ffn2_output_nobias', i, q)))
-
-        # post_ffn_ln: block output = residual + MLP output
-        def _make_block_hook(li):
-            def hook(_mod, _inp, out):
-                _enqueue('post_ffn_ln', li, out[0].detach(), q)
-            return hook
-        handles.append(block.register_forward_hook(_make_block_hook(i)))
-
-    return handles, restore
-
-
-# ==================== Unified Hook Dispatch ====================
+# ==================== BERT Hook Dispatch ====================
 
 
 def install_hooks(model, arch, q):
-    if arch == 'bert':
-        return _install_bert_hooks(model, q)
-    if arch == 'gpt2':
-        return _install_gpt2_hooks(model, q)
-    raise ValueError(f'Unknown architecture: {arch}')
+    if arch != 'bert':
+        raise ValueError(f'Unsupported architecture: {arch}')
+    return _install_bert_hooks(model, q)
 
 
 def remove_hooks(handles, restore):
@@ -949,9 +705,6 @@ def remove_hooks(handles, restore):
         elif tag == 'bert_act':
             parent, orig = rest
             parent.intermediate_act_fn = orig
-        elif tag == 'gpt2_act':
-            parent, orig = rest
-            parent.act = orig
 
 
 # ==================== Stats Worker Thread ====================
@@ -972,11 +725,47 @@ def _stats_worker(q, collector, lock):
 # ==================== Data Preparation ====================
 
 
+_PROFILE_FIXTURE_PATH = os.path.join(
+    _PARENT_DIR,
+    "fixtures",
+    "reproducibility",
+    "glue_train_probe_v1.json",
+)
+
+
+def write_profile_protocol(output_dir, task_name, payload):
+    return write_json_file(
+        os.path.join(output_dir, f"{task_name}_dataset_protocol.json"),
+        payload,
+        ensure_ascii=True,
+    )
+
+
 def _prepare_bert_data(cfg, tokenizer, max_length, batch_size, max_samples):
-    data = load_dataset(cfg['dataset_name'], cfg['dataset_config'])
-    split = data['train']
-    if 0 < max_samples < len(split):
-        split = split.select(range(max_samples))
+    if int(max_samples) not in (0, TRAIN_PROBE_SIZE):
+        raise ValueError(
+            "formal BERT profiling always uses the fixed train probe; "
+            f"max_samples must be 0 or {TRAIN_PROBE_SIZE}"
+        )
+    data = load_dataset(
+        cfg['dataset_name'],
+        cfg['dataset_config'],
+        revision=GLUE_DATASET_REVISION,
+    )
+    fixture = load_train_probe_fixture(_PROFILE_FIXTURE_PATH)
+    views = resolve_glue_protocol_views(
+        data,
+        dataset=cfg['dataset_config'],
+        fixture=fixture,
+    )
+    context = GlueDataProtocolContext(
+        model_family=resolve_model_family(cfg['model_name']),
+        dataset=cfg['dataset_config'],
+        train_probe=views.train_probe,
+        validation_full=views.validation_full,
+        identity=views.identity,
+    )
+    split = views.train_probe
     print(f'  Samples: {len(split)}')
 
     input_cols = cfg['input_cols']
@@ -1002,37 +791,8 @@ def _prepare_bert_data(cfg, tokenizer, max_length, batch_size, max_samples):
             pad_to_multiple_of=8,
         ),
     )
-    return dl
+    return dl, context.as_payload()
 
-
-def _prepare_gpt2_data(cfg, tokenizer, max_length, batch_size, max_samples):
-    data = load_dataset(cfg['dataset_name'], cfg['dataset_config'])
-    split = data['train']
-
-    def _tok(examples):
-        return tokenizer(examples['text'], truncation=False)
-
-    tokenized = split.map(_tok, batched=True, remove_columns=split.column_names)
-
-    block_size = max_length
-
-    def _group(examples):
-        concatenated = {k: sum(examples[k], []) for k in examples.keys()}
-        total = (len(concatenated['input_ids']) // block_size) * block_size
-        return {
-            k: [vals[i:i + block_size] for i in range(0, total, block_size)]
-            for k, vals in concatenated.items()
-        }
-
-    lm_ds = tokenized.map(_group, batched=True)
-    if 0 < max_samples < len(lm_ds):
-        lm_ds = lm_ds.select(range(max_samples))
-    print(f'  Samples (chunks of {block_size}): {len(lm_ds)}')
-
-    lm_ds.set_format(type='torch', columns=['input_ids', 'attention_mask'])
-    dl = DataLoader(lm_ds, batch_size=batch_size, shuffle=False,
-                    collate_fn=default_data_collator)
-    return dl
 
 
 # ==================== Plotting ====================
@@ -1373,29 +1133,21 @@ def process_task(task_name, cfg, output_dir, device,
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token or '[PAD]'
 
-    if arch == 'bert':
-        model = AutoModelForSequenceClassification.from_pretrained(
-            cfg['model_name'],
-            num_labels=cfg['num_labels'],
-            pad_token_id=tokenizer.pad_token_id,
-            trust_remote_code=True,
-        )
-    elif arch == 'gpt2':
-        model = AutoModelForCausalLM.from_pretrained(
-            cfg['model_name'],
-            pad_token_id=tokenizer.pad_token_id,
-        )
-    else:
-        raise ValueError(f'Unknown arch: {arch}')
+    model = AutoModelForSequenceClassification.from_pretrained(
+        cfg['model_name'],
+        num_labels=cfg['num_labels'],
+        pad_token_id=tokenizer.pad_token_id,
+        trust_remote_code=True,
+    )
 
     model.to(device).eval()
     print(f'  Model : {cfg["model_name"]}')
 
     # ---- Prepare data ----
-    if arch == 'bert':
-        dl = _prepare_bert_data(cfg, tokenizer, max_length, batch_size, max_samples)
-    else:
-        dl = _prepare_gpt2_data(cfg, tokenizer, max_length, batch_size, max_samples)
+    dl, protocol_payload = _prepare_bert_data(
+        cfg, tokenizer, max_length, batch_size, max_samples
+    )
+    write_profile_protocol(output_dir, task_name, protocol_payload)
 
     # ---- Collect ----
     collector = LayerWiseCollector(num_layers=num_layers)
@@ -1578,21 +1330,19 @@ def process_task(task_name, cfg, output_dir, device,
 
 def main():
     bert_tasks = [k for k, v in TASK_REGISTRY.items() if v['arch'] == 'bert']
-    gpt2_tasks = [k for k, v in TASK_REGISTRY.items() if v['arch'] == 'gpt2']
 
     parser = argparse.ArgumentParser(
-        description='Analyze intermediate distributions in BERT / GPT-2')
+        description='Analyze intermediate distributions in supported BERT profiles')
     parser.add_argument('--output_dir', type=str, default='all_analysis')
     parser.add_argument(
         '--tasks', type=str, nargs='+', default=None,
-        help=(f'Tasks to run.  BERT: {bert_tasks}  GPT-2: {gpt2_tasks}  '
-              f'Default: all BERT tasks'))
+        help=f'Tasks to run: {bert_tasks}. Default: all supported tasks')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--max_length', type=int, default=128,
-                        help='Sequence length (default 128; GPT-2 supports up to 1024)')
+                        help='Sequence length (default: 128)')
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--max_samples', type=int, default=0,
-                        help='Max samples per task, 0 = all')
+                        help='Formal probe size; accepted values are 0 and 256')
     args = parser.parse_args()
 
     device = args.device

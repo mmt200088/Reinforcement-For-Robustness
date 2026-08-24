@@ -63,6 +63,7 @@ from function_handler import (
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
+from glue_data_protocol import TRAIN_PROBE_SPLIT, validate_dataset
 from mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
     validate_mrpc_evaluation_setup,
@@ -79,7 +80,11 @@ from elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
-from rl_data_points import RLDataPointWriter, make_unique_run_id
+from rl_data_points import (
+    RLDataPointWriter,
+    make_unique_run_id,
+    write_dataset_protocol,
+)
 import os
 import random
 import hashlib
@@ -628,31 +633,31 @@ RUNNING_REWARD_HISTORY_SIZE = 100  # 滑动窗口大小
 RUNNING_REWARD_MIN_SAMPLES = 10    # 开始标准化前的最小样本数
 RUNNING_REWARD_EPSILON = 1e-8      # 防止除零的小常数
 
-# ==================== 显式历史编码配置（PDF优化方案一） ====================
+# ==================== 显式历史编码配置（显式历史编码） ====================
 # 状态向量维度：17维原始特征 + 12维GELU历史 + 12维Softmax历史 + 3维预算余量 = 44维
 STATE_DIM_ORIGINAL = 17  # 原始状态维度
 STATE_DIM_HISTORY = 24   # 历史编码维度（12 GELU + 12 Softmax）
-STATE_DIM_BUDGET = 3     # 预算感知维度（敏锐度优化PDF 3.3: Loss/Metric1/Metric2余量）
+STATE_DIM_BUDGET = 3     # 预算感知维度（敏感度建模 3.3: Loss/Metric1/Metric2余量）
 STATE_DIM_TOTAL = STATE_DIM_ORIGINAL + STATE_DIM_HISTORY + STATE_DIM_BUDGET  # 总维度 = 44
-# PDF 6.2 步骤1：将填充值从 -1.0 改为 0.0
+# 状态掩码 步骤1：将填充值从 -1.0 改为 0.0
 # 理由：在ReLU/SiLU激活的网络中，0输入通常产生0输出，天然表示"无信息"
 # -1.0 是一个强烈的信号值，会干扰特征提取
-HISTORY_MASK_VALUE = 0.0  # 未访问层的掩码值（PDF 6.2：零值填充）
+HISTORY_MASK_VALUE = 0.0  # 未访问层的掩码值（状态掩码：零值填充）
 
-# ==================== LSTM 策略价值网络配置（LSTM PDF优化方案） ====================
-LSTM_HIDDEN_DIM = 128        # LSTM隐藏层维度（PDF 3.2：128足以编码12步历史）
-LSTM_NUM_LAYERS = 2          # LSTM堆叠层数（PDF 3.2：双层增强表达能力）
-LSTM_DROPOUT = 0.1           # LSTM层间Dropout（PDF 3.2）
+# ==================== LSTM 策略价值网络配置（LSTM 策略网络） ====================
+LSTM_HIDDEN_DIM = 128        # LSTM隐藏层维度（设计 3.2：128足以编码12步历史）
+LSTM_NUM_LAYERS = 2          # LSTM堆叠层数（设计 3.2：双层增强表达能力）
+LSTM_DROPOUT = 0.1           # LSTM层间Dropout（设计 3.2）
 LSTM_CONT_DIM = 6            # 连续特征维度（cost_deviation + complexity_debt + progress + 3 budget）
-LSTM_POS_DIM = 16            # 层级位置嵌入维度（PDF 3.1.1）
-LSTM_ACT_G_DIM = 8           # GELU动作嵌入维度（PDF 3.1.2）
-LSTM_ACT_S_DIM = 8           # Softmax动作嵌入维度（PDF 3.1.2）
-LSTM_PROJ_DIM = 32           # 连续特征投影维度（PDF 3.1.3）
+LSTM_POS_DIM = 16            # 层级位置嵌入维度（设计 3.1.1）
+LSTM_ACT_G_DIM = 8           # GELU动作嵌入维度（设计 3.1.2）
+LSTM_ACT_S_DIM = 8           # Softmax动作嵌入维度（设计 3.1.2）
+LSTM_PROJ_DIM = 32           # 连续特征投影维度（设计 3.1.3）
 SOS_TOKEN_GELU = 4           # GELU前一动作的SOS标记（词表大小=5: 0,1,2,3为动作, 4为SOS）
 SOS_TOKEN_SOFTMAX = 5        # Softmax前一动作的SOS标记（词表大小=6: 0-4为动作, 5为SOS）
 LSTM_MINI_BATCH_EPISODES = 8 # LSTM PPO更新时的mini-batch大小（按episode数）
 
-# ==================== GTrXL 策略价值网络配置（Transformer PDF优化方案） ====================
+# ==================== GTrXL 策略价值网络配置（GTrXL 策略网络） ====================
 GTRXL_D_MODEL = 64              # Token 维度（与 LSTM 输入维度一致：16+8+8+32=64）
 GTRXL_N_HEADS = 4               # 多头注意力头数（64/4=16 per head）
 GTRXL_N_LAYERS = 3              # GTrXL Block 堆叠层数
@@ -662,7 +667,7 @@ GTRXL_WARMUP_STEPS = 500        # 学习率线性预热步数（PPO update 计�
 GTRXL_ENTROPY_LOWER_BOUND = 0.005  # 最小熵约束下界（防止 Mode Collapse）
 GTRXL_MINI_BATCH_EPISODES = 8   # GTrXL PPO更新时的mini-batch大小（按episode数）
 
-# ==================== 敏锐度优化PDF：数据集相关配置 ====================
+# ==================== 敏感度建模：数据集相关配置 ====================
 # 根据数据集选择不同的评估指标（细分版）
 # type: regression / classification
 # metrics: 该数据集使用的指标列表
@@ -693,28 +698,16 @@ def resolve_ppo_learning_rate(raw_value, default_lr=PPO_LR_INITIAL):
 
 
 DATASET_METRICS_CONFIG = {
-    'sst2':  {'type': 'classification', 'metrics': ['accuracy'],
-              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
-    'qnli':  {'type': 'classification', 'metrics': ['accuracy'],
-              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
-    'mnli':  {'type': 'classification', 'metrics': ['matched_accuracy', 'mismatched_accuracy'],
-              'metric_names': ['M-Acc.', 'MM-Acc.'], 'metric_full_names': ['Matched Accuracy', 'Mismatched Accuracy']},
-    'cola':  {'type': 'classification', 'metrics': ['mcc'],
-              'metric_names': ['MCC'], 'metric_full_names': ['Matthews Correlation']},
-    'stsb':  {'type': 'regression', 'metrics': ['pearson', 'spearman'],
-              'metric_names': ['Pear.', 'Spear.'], 'metric_full_names': ['Pearson', 'Spearman']},
-    'mrpc':  {'type': 'classification', 'metrics': ['accuracy', 'f1'],
-              'metric_names': ['Acc.', 'F1'], 'metric_full_names': ['Accuracy', 'F1']},
-    'rte':   {'type': 'classification', 'metrics': ['accuracy'],
-              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
-    'wnli':  {'type': 'classification', 'metrics': ['accuracy'],
-              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
+    dataset: {
+        'type': 'classification',
+        'metrics': ['accuracy', 'weighted_f1'],
+        'metric_names': ['Acc.', 'F1'],
+        'metric_full_names': ['Accuracy', 'Weighted F1'],
+    }
+    for dataset in ('mrpc', 'rte', 'sst2')
 }
-# 向后兼容
-REGRESSION_DATASETS = ['stsb']
-CLASSIFICATION_DATASETS = ['mrpc', 'mnli', 'sst2', 'cola', 'qnli', 'rte', 'wnli']
 
-# ==================== 敏锐度优化PDF：差分奖励与对数障碍配置 ====================
+# ==================== 敏感度建模：差分奖励与对数障碍配置 ====================
 # 优化方案二：信号放大与差分奖励重构
 STAGE1_ENABLE_DIFFERENTIAL_REWARD = os.environ.get(
     "STAGE1_ENABLE_DIFFERENTIAL_REWARD", "0"
@@ -725,16 +718,16 @@ LOG_BARRIER_VIOLATION_SCALE = 10.0  # 违反约束时的指数惩罚系数
 LOG_BARRIER_VIOLATION_STEEPNESS = 20.0  # 违反约束时的指数陡度
 LOG_BARRIER_SATISFACTION_SCALE = 0.5   # 满足约束时的对数奖励系数
 
-# ==================== 敏锐度优化PDF：解耦归一化配置（Disentangled PopArt） ====================
+# ==================== 敏感度建模：解耦归一化配置（Disentangled PopArt） ====================
 # 优化方案二（4.3）：分别维护成本和精度的统计量
 
-# ==================== 敏锐度优化PDF：PPO-Lagrangian配置 ====================
+# ==================== 敏感度建模：PPO-Lagrangian配置 ====================
 # 优化方案四：自适应惩罚系数
 LAGRANGIAN_LR = 0.01              # 拉格朗日乘子学习率
 LAGRANGIAN_INITIAL = 0.1          # 初始拉格朗日乘子值
 LAGRANGIAN_MAX = 10.0             # 拉格朗日乘子上限
 
-# ==================== 敏锐度优化PDF：课程学习配置 ====================
+# ==================== 敏感度建模：课程学习配置 ====================
 # 优化方案四（6.2）：从宽松到严格的约束调度
 CURRICULUM_PHASE1_RATIO = 0.30    # 探索期：前30%的episodes
 CURRICULUM_PHASE2_RATIO = 0.40    # 收紧期：中间40%的episodes
@@ -742,7 +735,7 @@ CURRICULUM_PHASE3_RATIO = 0.30    # 精调期：后30%的episodes
 CURRICULUM_INITIAL_SLACK = 1.2    # 探索期约束放宽系数（1.2倍目标值）
 CURRICULUM_SAFETY_BUFFER = 0.95   # 精调期约束收紧系数（0.95倍目标值，略严于目标）
 
-# ==================== 敏锐度优化PDF：超参数调整 ====================
+# ==================== 敏感度建模：超参数调整 ====================
 # 优化方案（第三步）：熵系数线性衰减 + Critic学习率调整
 PPO_ENTROPY_START = 0.05          # 熵系数起始值（高探索）
 PPO_ENTROPY_END = 0.001           # 熵系数结束值（强制收敛）
@@ -847,34 +840,6 @@ def _rl_opt_entropy_recovery_mul():
 # 的历史 import 不变；Stage-1 行为逐字一致。
 from rl_local_optimum import detect_rl_local_optimum  # noqa: E402,F401
 
-# ==================== 验证集引导（Validation Guided）配置 ====================
-# 在计算奖励时使用验证集而非训练集，防止过拟合，提高泛化能力
-#
-# 原理与优势：
-# 1. 防止过拟合：使用训练集计算奖励可能导致Agent学习到只在训练集上表现好的配置
-# 2. 提高泛化性：验证集作为未见数据的代理，迫使Agent寻找在新数据上也稳健的策略
-# 3. 更真实的优化目标：实际部署时关心的是在新数据上的表现，而非训练数据
-#
-# 实施策略：
-# - Stage-1 baseline、RL reward 和 final eval 均使用验证集全集
-#   validation_full；过程中不切训练集或 validation proxy，也不做窗口二次确认。
-# - 约束设定：基于 validation_full baseline。
-USE_VALIDATION_FOR_REWARD = True  # Stage-1 协议要求保持 True
-
-# ==================== 验证集引导搜索配置 ====================
-# [已禁用] 不再将验证集拆分为 val_search_full / val_holdout / val_proxy，统一使用 validation_full。
-USE_VALIDATION_SEARCH_PROTOCOL = False
-VALIDATION_SMALL_TASKS = {"mrpc", "rte", "cola", "wnli"}
-# VALIDATION_HOLDOUT_RATIO_DEFAULT = 0.20   # [已禁用]
-# VALIDATION_HOLDOUT_RATIO_SMALL = 0.30     # [已禁用]
-# VALIDATION_PROXY_RATIO_DEFAULT = 0.15     # [已禁用]
-# VALIDATION_PROXY_RATIO_SMALL = 0.50       # [已禁用]
-RL_DATASET_SPLIT_SEED = 42
-
-USE_TRAIN_ANCHOR = False
-TRAIN_ANCHOR_SIZE_DEFAULT = 256
-TRAIN_ANCHOR_SIZE_SMALL = 128
-
 def orthogonal_init(layer, gain=1.0):
     """正交初始化"""
     if isinstance(layer, nn.Linear):
@@ -950,10 +915,10 @@ class RunningMeanStd:
         return x * self.std + self.mean
 
 
-# ==================== 敏锐度优化PDF：解耦归一化（Disentangled PopArt） ====================
+# ==================== 敏感度建模：解耦归一化（Disentangled PopArt） ====================
 class DisentangledNormalizer:
     """
-    敏锐度优化PDF 4.3：解耦的奖励归一化
+    敏感度建模 4.3：解耦的奖励归一化
     分别维护成本和精度的统计量，防止精度信号被成本信号掩盖
     
     实施逻辑：
@@ -1027,20 +992,20 @@ class ResidualBlock(nn.Module):
 # ==================== PDF网络优化方案：状态编码器 ====================
 class StateEncoder(nn.Module):
     """
-    状态编码器 - PDF 4.1节 & 5.2节 + 敏锐度优化PDF 3.3
+    状态编码器 - PDF 4.1节 & 5.2节 + 敏感度建模 3.3
     将异构的原始输入（44维）转化为统一的语义向量
     
     输入分解为四个流：
     1. 层级流 (Layer Stream): Index 0-11，通过Embedding映射
     2. 指标流 (Metric Stream): Index 12-16，通过全连接层映射
     3. 历史序列流 (History Stream): Index 17-40，通过Transformer Encoder处理
-    4. 预算感知流 (Budget Stream): Index 41-43，通过全连接层映射（敏锐度优化PDF 3.3）
+    4. 预算感知流 (Budget Stream): Index 41-43，通过全连接层映射（敏感度建模 3.3）
     """
     def __init__(self, embed_dim=64, num_layers=12):
         super(StateEncoder, self).__init__()
         self.num_layers = num_layers
         
-        # 1. 层级 ID 嵌入（PDF 3.1.1：Entity Embedding）
+        # 1. 层级 ID 嵌入（设计 3.1.1：Entity Embedding）
         self.layer_embed = nn.Embedding(num_layers, 32)
         
         # 2. 连续指标映射（Index 12-16: cost_deviation, gelu_norm, softmax_norm, complexity_debt, progress）
@@ -1049,7 +1014,7 @@ class StateEncoder(nn.Module):
             nn.SiLU()
         )
         
-        # 3. 历史序列处理 (Transformer) - PDF 3.1.2
+        # 3. 历史序列处理 (Transformer) - 设计 3.1.2
         # 输入维度为 2 (Gelu值, Softmax值)
         self.hist_proj = nn.Linear(2, 32)
         self.pos_embed = nn.Parameter(torch.zeros(1, num_layers, 32))  # 可学习位置编码
@@ -1064,13 +1029,13 @@ class StateEncoder(nn.Module):
         )
         self.hist_transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
         
-        # 4. 敏锐度优化PDF 3.3：预算感知流（Index 41-43: loss_budget, m1_budget, m2_budget）
+        # 4. 敏感度建模 3.3：预算感知流（Index 41-43: loss_budget, m1_budget, m2_budget）
         self.budget_proj = nn.Sequential(
             nn.Linear(3, 32),
             nn.SiLU()
         )
         
-        # 5. 融合层 - PDF 4.1.2 + 敏锐度优化PDF
+        # 5. 融合层 - PDF 4.1.2 + 敏感度建模
         # 拼接四个流的输出：Layer(32) + Metric(32) + Hist(32) + Budget(32) = 128
         self.fusion = nn.Sequential(
             nn.Linear(32 * 4, embed_dim),
@@ -1084,7 +1049,7 @@ class StateEncoder(nn.Module):
     def forward(self, state_vector):
         """
         Args:
-            state_vector: (Batch, 44) 或 (44,) 的状态向量（敏锐度优化PDF扩展）
+            state_vector: (Batch, 44) 或 (44,) 的状态向量（敏感度建模扩展）
         Returns:
             (Batch, embed_dim) 的编码向量
         """
@@ -1115,7 +1080,7 @@ class StateEncoder(nn.Module):
         hist_softmax = state_vector[:, 2 * N + 5 : 3 * N + 5].unsqueeze(-1)  # (Batch, N, 1)
         hist_seq = torch.cat([hist_gelu, hist_softmax], dim=-1)              # (Batch, N, 2)
         
-        # PDF 6.2：使用零值填充后，需要用当前层索引来判断有效历史
+        # 状态掩码：使用零值填充后，需要用当前层索引来判断有效历史
         # 生成 Padding Mask: 根据当前层索引判断哪些历史位置是有效的
         # 如果当前层是 layer_i，则 layer_0 到 layer_{i-1} 是有效的（已访问过的）
         # Transformer mask: True 表示要被忽略
@@ -1126,7 +1091,7 @@ class StateEncoder(nn.Module):
         # layer_indices 是当前层，历史中 index < current_layer 的位置是有效的
         padding_mask = position_indices >= layer_indices.unsqueeze(1)  # (Batch, 12)
         
-        # PDF 6.2：零值填充不需要替换，直接使用
+        # 状态掩码：零值填充不需要替换，直接使用
         hist_seq_clean = hist_seq
         
         # Transformer Forward
@@ -1140,7 +1105,7 @@ class StateEncoder(nn.Module):
         valid_count = mask_float.sum(dim=1).clamp(min=1e-6)  # (Batch, 1) 避免除以0
         h_pooled = (h_out * mask_float).sum(dim=1) / valid_count  # (Batch, 32)
         
-        # D. 敏锐度优化PDF 3.3：解析 Budget (last 3 dims = [3N+5 : 3N+8])
+        # D. 敏感度建模 3.3：解析 Budget (last 3 dims = [3N+5 : 3N+8])
         expected_dim = 3 * N + 8
         if state_vector.size(1) >= expected_dim:
             budget = state_vector[:, 3 * N + 5 : 3 * N + 8]
@@ -1237,13 +1202,13 @@ class PolicyNetwork(nn.Module):
 class ValueNetwork(nn.Module):
     """
     价值网络（ResMLP Critic）- PDF 4.3节
-    Critic 拥有独立的 StateEncoder 实例，不与 Actor 共享，以防止梯度干扰（PDF 3.2.1）
+    Critic 拥有独立的 StateEncoder 实例，不与 Actor 共享，以防止梯度干扰（设计 3.2.1）
     使用 3 个 ResidualBlock，比 Actor 深一层，增加表达能力
     """
     def __init__(self, state_dim=STATE_DIM_TOTAL, hidden_dim=64, res_hidden_dim=128, num_layers=12):
         super(ValueNetwork, self).__init__()
         
-        # 独立的状态编码器（PDF 3.2.1：解耦架构）
+        # 独立的状态编码器（设计 3.2.1：解耦架构）
         self.encoder = StateEncoder(embed_dim=hidden_dim, num_layers=num_layers)
         
         # 残差骨干网络：3个残差块（PDF 4.3节：比Actor深一层）
@@ -1271,10 +1236,10 @@ class ValueNetwork(nn.Module):
         return value.squeeze(-1)
 
 
-# ==================== 敏锐度优化PDF：双头非对称Critic架构 ====================
+# ==================== 敏感度建模：双头非对称Critic架构 ====================
 class DualHeadValueNetwork(nn.Module):
     """
-    敏锐度优化PDF 5.1：双头非对称Critic架构
+    敏感度建模 5.1：双头非对称Critic架构
     
     解决问题：单一Critic为了拟合大幅波动的Cost，会主导共享层的特征提取，
     导致无法提取到关于Accuracy的微弱特征。
@@ -1332,10 +1297,10 @@ class DualHeadValueNetwork(nn.Module):
         return cost_weight * v_cost + acc_weight * v_acc
 
 
-# ==================== GTrXL PDF优化方案：GRU门控模块 ====================
+# ==================== GTrXL 策略网络：GRU门控模块 ====================
 class GRUGate(nn.Module):
     """
-    GTrXL 核心组件：GRU 门控机制（PDF 3.2节）
+    GTrXL 核心组件：GRU 门控机制（设计 3.2节）
     
     用 GRU 的门控逻辑替代传统 Transformer 的加法残差连接 (x + sublayer(x))。
     训练初期门控偏置使 z ≈ 0，子层输出被抑制，输入直通；
@@ -1365,7 +1330,7 @@ class GRUGate(nn.Module):
         return (1 - z) * x + z * h_hat
 
 
-# ==================== GTrXL PDF优化方案：GTrXL Block ====================
+# ==================== GTrXL 策略网络：GTrXL Block ====================
 class GTrXLBlock(nn.Module):
     """
     单个 GTrXL Block（PDF 4.2节）
@@ -1418,10 +1383,10 @@ class GTrXLBlock(nn.Module):
         return x
 
 
-# ==================== GTrXL PDF优化方案：GTrXL策略价值网络 ====================
+# ==================== GTrXL 策略网络：GTrXL策略价值网络 ====================
 class GTrXLStrategyNetwork(nn.Module):
     """
-    基于GTrXL的策略价值网络（Transformer PDF优化方案）
+    基于GTrXL的策略价值网络（GTrXL 策略网络）
     
     替代 LSTMStrategyNetwork，解决 LSTM 的信息压缩瓶颈和长程依赖缺失问题。
     
@@ -1644,10 +1609,10 @@ class GTrXLStrategyNetwork(nn.Module):
         return logprobs, entropy, values
 
 
-# ==================== LSTM PDF优化方案：LSTM策略价值网络 ====================
+# ==================== LSTM 策略网络：LSTM策略价值网络 ====================
 class LSTMStrategyNetwork(nn.Module):
     """
-    基于LSTM的策略价值网络（LSTM PDF优化方案）
+    基于LSTM的策略价值网络（LSTM 策略网络）
     
     核心改进：将架构搜索问题建模为序列决策过程（POMDP），
     利用LSTM的时间记忆特性捕捉Transformer层间的量化误差传播。
@@ -1665,12 +1630,12 @@ class LSTMStrategyNetwork(nn.Module):
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
         
-        # 1. 嵌入层（PDF 3.1）
+        # 1. 嵌入层（设计 3.1）
         self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)            # 层索引 0-11
         self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)    # 0-3动作 + 4=SOS
         self.embed_prev_s = nn.Embedding(SOS_TOKEN_SOFTMAX + 1, LSTM_ACT_S_DIM) # 0-4动作 + 5=SOS
         
-        # 2. 连续特征投影（PDF 3.1.3 + 3.1.4）
+        # 2. 连续特征投影（设计 3.1.3 + 3.1.4）
         # 输入6维: cost_deviation, complexity_debt, progress, loss_budget, m1_budget, m2_budget
         self.fc_continuous = nn.Sequential(
             nn.Linear(LSTM_CONT_DIM, LSTM_PROJ_DIM),
@@ -1678,7 +1643,7 @@ class LSTMStrategyNetwork(nn.Module):
             nn.SiLU()
         )
         
-        # 3. LSTM核心控制器（PDF 3.2）
+        # 3. LSTM核心控制器（设计 3.2）
         # 输入维度 = 16(pos) + 8(prev_g) + 8(prev_s) + 32(continuous) = 64
         lstm_input_dim = LSTM_POS_DIM + LSTM_ACT_G_DIM + LSTM_ACT_S_DIM + LSTM_PROJ_DIM
         self.lstm = nn.LSTM(
@@ -1689,7 +1654,7 @@ class LSTMStrategyNetwork(nn.Module):
             dropout=LSTM_DROPOUT
         )
         
-        # 4. 多头策略网络 Actor（PDF 3.3.1）
+        # 4. 多头策略网络 Actor（设计 3.3.1）
         self.actor_head = nn.Sequential(
             nn.Linear(hidden_dim, 64),
             nn.Tanh()
@@ -1697,7 +1662,7 @@ class LSTMStrategyNetwork(nn.Module):
         self.head_g = nn.Linear(64, 4)   # GELU logits (4个动作: degree 4/2/1/0)
         self.head_s = nn.Linear(64, 5)   # Softmax logits (5个动作)
         
-        # 5. 价值网络 Critic（PDF 3.3.2）
+        # 5. 价值网络 Critic（设计 3.3.2）
         self.critic_head = nn.Sequential(
             nn.Linear(hidden_dim, 64),
             nn.Tanh(),
@@ -1708,7 +1673,7 @@ class LSTMStrategyNetwork(nn.Module):
         self._initialize_weights()
     
     def _initialize_weights(self):
-        """正交初始化 + LSTM遗忘门偏置初始化（PDF 3.2 + 7.1）"""
+        """正交初始化 + LSTM遗忘门偏置初始化（设计 3.2 + 7.1）"""
         # 线性层正交初始化
         for module in [self.actor_head, self.critic_head, self.fc_continuous]:
             for layer in module:
@@ -1758,14 +1723,14 @@ class LSTMStrategyNetwork(nn.Module):
         emb_ps = self.embed_prev_s(prev_s_actions)       # (B, S, 8)
         feat_c = self.fc_continuous(cont_features)        # (B, S, 32)
         
-        # 拼接输入（PDF 3.1.5: dim = 16+8+8+32 = 64）
+        # 拼接输入（设计 3.1.5: dim = 16+8+8+32 = 64）
         lstm_input = torch.cat([emb_l, emb_pg, emb_ps, feat_c], dim=-1)
         
         # LSTM前向传播
         self.lstm.flatten_parameters()
         lstm_out, new_hidden = self.lstm(lstm_input, hidden)  # (B, S, 128)
         
-        # Actor解码（PDF 3.3.1）
+        # Actor解码（设计 3.3.1）
         actor_feat = self.actor_head(lstm_out)  # (B, S, 64)
         logits_g = self.head_g(actor_feat)      # (B, S, 4)
         logits_s = self.head_s(actor_feat)      # (B, S, 5)
@@ -1774,7 +1739,7 @@ class LSTMStrategyNetwork(nn.Module):
         if gelu_mask is not None:
             logits_g = logits_g.masked_fill(~gelu_mask, float('-inf'))
         
-        # Critic解码（PDF 3.3.2）
+        # Critic解码（设计 3.3.2）
         values = self.critic_head(lstm_out).squeeze(-1)  # (B, S)
         
         return logits_g, logits_s, values, new_hidden
@@ -1851,7 +1816,7 @@ class LSTMStrategyNetwork(nn.Module):
         return logprobs, entropy, values
 
 
-# ==================== LSTM PDF优化方案：循环网络专用Rollout Buffer ====================
+# ==================== LSTM 策略网络：循环网络专用Rollout Buffer ====================
 def _pack_recurrent_rollout_arrays(episodes):
     if not episodes:
         raise RuntimeError("RecurrentRolloutBuffer is empty")
@@ -2080,12 +2045,12 @@ class RecurrentRolloutBuffer:
 class TransformerOptEnv:
     """
     Transformer优化环境
-    已实施PDF优化策略：
+    已实施状态与奖励优化策略：
     - 策略一：奖励函数重构（稠密化中间奖励、指数障碍软约束、安全边界）
     - 策略三：回报归一化（固定缩放）
     - 策略四：状态空间增强（累积复杂度债务、成本偏差相对化）
-    - PDF优化方案一：显式历史编码（Flattened History）- 解决序列依赖性问题
-    - 敏锐度优化PDF：预算感知状态特征、差分奖励、对数障碍函数、课程学习
+    - 显式历史编码：显式历史编码（Flattened History）- 解决序列依赖性问题
+    - 敏感度建模：预算感知状态特征、差分奖励、对数障碍函数、课程学习
     """
     def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
                  constraint_limits=None, prev_metrics=None, num_metrics=2,
@@ -2093,7 +2058,7 @@ class TransformerOptEnv:
         """
         初始化环境
         
-        敏锐度优化PDF扩展参数：
+        敏感度建模扩展参数：
         - constraint_limits: 约束阈值字典 {'loss': float, 'metric1': float, 'metric2': float}
                             用于课程学习的动态约束调整
         - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
@@ -2111,7 +2076,7 @@ class TransformerOptEnv:
         # degree 0 regardless of this legacy eligibility vector.
         self.gelu_degree0_eligible = np.zeros(total_layers, dtype=bool)
         
-        # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
+        # 敏感度建模 3.3：约束阈值（用于预算感知和课程学习）
         if constraint_limits is None:
             # 默认约束：0.5%偏差
             self.constraint_limits = {
@@ -2122,7 +2087,7 @@ class TransformerOptEnv:
         else:
             self.constraint_limits = constraint_limits
         
-        # 敏锐度优化PDF 4.1：差分奖励所需的上一episode指标
+        # 敏感度建模 4.1：差分奖励所需的上一episode指标
         if prev_metrics is None:
             self.prev_episode_metrics = {
                 'loss': self.baseline_loss,
@@ -2142,14 +2107,14 @@ class TransformerOptEnv:
         # 策略一：计算基线每层成本（用于稠密奖励计算）
         self.max_cost_per_layer = GELU_COST[4] + SOFTMAX_COST[6]  # 6.0
         
-        # PDF优化方案一：显式历史编码
+        # 显式历史编码：显式历史编码
         # 动作归一化映射（将degree映射到[0,1]区间）
         # GELU: degree 4->0.0, 2->0.5, 1->1.0, 0->1.25 (高精度->低精度)
         self.gelu_degree_to_norm = {4: 0.0, 2: 0.5, 1: 1.0, 0: 1.25}
         # Softmax: degree 6->0.0, 5->0.25, 4->0.5, 3->0.75, 2->1.0
         self.softmax_degree_to_norm = {6: 0.0, 5: 0.25, 4: 0.5, 3: 0.75, 2: 1.0}
         
-        # 敏锐度优化PDF：存储当前episode的最终指标（用于下一episode的差分奖励）
+        # 敏感度建模：存储当前episode的最终指标（用于下一episode的差分奖励）
         self.current_episode_metrics = None
         
         self.reset()
@@ -2166,7 +2131,7 @@ class TransformerOptEnv:
         # 策略一：累计的中间奖励
         self.accumulated_dense_reward = 0.0
         
-        # PDF优化方案一：初始化动作历史缓冲区
+        # 显式历史编码：初始化动作历史缓冲区
         # gelu_history[i] 存储第i层的GELU动作（归一化后），未访问层为掩码值
         self.gelu_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
         # softmax_history removed (A): softmax fixed at degree 6; not in state.
@@ -2236,11 +2201,11 @@ class TransformerOptEnv:
         # 5. 进度指示 (Progress Indicator) - 帮助Critic理解当前位置
         progress = self.current_layer / self.total_layers
         
-        # ========== 新增24维历史编码（PDF优化方案一 + PDF 6.2零值填充） ==========
-        # 6. GELU动作历史 (12维) - 已访问层为归一化动作值，未访问层为0（PDF 6.2）
+        # ========== 新增24维历史编码（显式历史编码 + 状态掩码零值填充） ==========
+        # 6. GELU动作历史 (12维) - 已访问层为归一化动作值，未访问层为0（状态掩码）
         # 注意：self.gelu_history 在step()中更新（softmax_history 已移除）
         
-        # ========== 敏锐度优化PDF 3.3：预算感知特征 (3维) ==========
+        # ========== 敏感度建模 3.3：预算感知特征 (3维) ==========
         # 使用上一episode的指标估计当前预算余量
         # 当 budget > 0 时表示满足约束，< 0 表示违反约束
         # 智能体需要保持 budget > 0
@@ -2278,8 +2243,8 @@ class TransformerOptEnv:
             [gelu_norm],                       # 1维: 上一步GELU动作
             [complexity_debt],                 # 1维: 复杂度债务
             [progress],                        # 1维: 进度指示
-            self.gelu_history,                 # 12维: GELU完整历史（PDF优化方案一）
-            [loss_budget, m1_budget, m2_budget]  # 3维: 预算感知（敏锐度优化PDF 3.3）
+            self.gelu_history,                 # 12维: GELU完整历史（显式历史编码）
+            [loss_budget, m1_budget, m2_budget]  # 3维: 预算感知（敏感度建模 3.3）
         ])
         return state.astype(np.float32)
 
@@ -2325,7 +2290,7 @@ class TransformerOptEnv:
         self.prev_gelu_degree = gelu_degree
         self.prev_softmax_degree = softmax_degree
 
-        # PDF优化方案一：更新GELU动作历史缓冲区（softmax_history 已移除）
+        # 显式历史编码：更新GELU动作历史缓冲区（softmax_history 已移除）
         self.gelu_history[self.current_layer] = self.gelu_degree_to_norm[gelu_degree]
 
         # 策略一（3.1）：计算稠密中间奖励（gelu-only）
@@ -2341,7 +2306,7 @@ class TransformerOptEnv:
             'gelu_config': self.gelu_config.copy(),
             'softmax_config': self.softmax_config.copy(),
             'dense_reward': dense_reward,  # 记录稠密奖励
-            'gelu_history': self.gelu_history.copy(),      # PDF优化方案一：记录历史
+            'gelu_history': self.gelu_history.copy(),      # 显式历史编码：记录历史
         }
 
         self.current_layer += 1
@@ -2360,7 +2325,7 @@ class TransformerOptEnv:
     
     def _compute_final_reward(self):
         """
-        敏锐度优化PDF：约束障碍函数 + 可选差分奖励 + 解耦奖励
+        敏感度建模：约束障碍函数 + 可选差分奖励 + 解耦奖励
         
         实现要点：
         1. 差分精度奖励默认关闭；可用 STAGE1_ENABLE_DIFFERENTIAL_REWARD=1 打开
@@ -2385,13 +2350,13 @@ class TransformerOptEnv:
         
         r_accuracy_diff = 0.0
         if STAGE1_ENABLE_DIFFERENTIAL_REWARD:
-            # ==================== 敏锐度优化PDF 4.1：差分精度奖励 ====================
+            # ==================== 敏感度建模 4.1：差分精度奖励 ====================
             # 1. 计算与上一episode的差值
             delta_loss = self.prev_episode_metrics['loss'] - loss  # 正值表示loss变小（改善）
             delta_m1 = m1 - self.prev_episode_metrics['metric1']   # 正值表示metric变大（改善）
             delta_m2 = m2 - self.prev_episode_metrics['metric2']   # 正值表示metric变大（改善）
 
-            # 2. 使用根号变换放大微小信号（敏锐度优化PDF 4.1）
+            # 2. 使用根号变换放大微小信号（敏感度建模 4.1）
             # 例如: 1e-4 -> 1e-2，信号强度提升100倍
             def amplify_signal(delta):
                 sign = 1.0 if delta >= 0 else -1.0
@@ -2407,7 +2372,7 @@ class TransformerOptEnv:
             else:
                 r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
         
-        # ==================== 敏锐度优化PDF 4.2：对数障碍约束奖励 ====================
+        # ==================== 敏感度建模 4.2：对数障碍约束奖励 ====================
         def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
             """
             对数障碍函数：当接近约束边界时梯度急剧增大
@@ -2466,13 +2431,13 @@ class TransformerOptEnv:
     
     def get_separated_rewards(self):
         """
-        敏锐度优化PDF：获取分离的成本/精度奖励（用于双头Critic）
+        敏感度建模：获取分离的成本/精度奖励（用于双头Critic）
         """
         return getattr(self, 'last_cost_reward', 0.0), getattr(self, 'last_acc_reward', 0.0)
     
     def update_prev_metrics(self):
         """
-        敏锐度优化PDF：更新上一episode指标（在episode结束后调用）
+        敏感度建模：更新上一episode指标（在episode结束后调用）
         用于下一episode的差分奖励计算
         """
         if self.current_episode_metrics is not None:
@@ -2490,7 +2455,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage1_rl_lr=None,
                  stage2_rl_lr=None,
                  stage1_rl_devices="",
-                 device='cuda', data_path='stsb', test_data_mm=None,
+                 device='cuda', data_path='mrpc', test_data_mm=None,
                  run_output_dir='',
                  final_eval_config_source='search',
                  final_eval_config_path='glue_final_configs_best_ppo.json',
@@ -2625,13 +2590,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_osr_allow_fingerprint_mismatch=False,
                   rl_algo="ppo",
                   grpo_kl_beta=0.0,
+                  glue_data_protocol=None,
                   mrpc_reproducibility=None,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
         
-        敏锐度优化PDF扩展：
+        敏感度建模扩展：
         - data_path: 数据集名称，用于选择评估指标
             各数据集使用不同指标（详见 DATASET_METRICS_CONFIG）
         - test_data_mm: MNLI mismatched 验证集（仅 MNLI 使用）
@@ -2657,6 +2623,24 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
         except Exception:
             self.stage2_workers_per_device = 1
+        self.glue_data_protocol = glue_data_protocol
+        self.dataset_protocol = (
+            self.glue_data_protocol.as_payload()
+            if self.glue_data_protocol is not None
+            else None
+        )
+        self.dataset_protocol_hash = (
+            self.glue_data_protocol.dataset_protocol_hash
+            if self.glue_data_protocol is not None
+            else None
+        )
+        if (
+                self.glue_data_protocol is not None
+                and self.glue_data_protocol.validation_full is not test_data
+        ):
+            raise ValueError(
+                "validation data does not match the GLUE protocol context"
+            )
         self.mrpc_reproducibility = mrpc_reproducibility
         if self.mrpc_reproducibility is not None:
             if str(data_path).strip().lower() != "mrpc":
@@ -2733,7 +2717,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
         )
         
-        # ==================== 敏锐度优化PDF：数据集检测与指标选择 ====================
+        # ==================== 敏感度建模：数据集检测与指标选择 ====================
         self.data_path = data_path
         self.is_regression = self._detect_task_type()
         self._log_task_type()
@@ -2770,8 +2754,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self._prepare_rl_datasets(
             train_data=train_data,
+            train_probe=(
+                self.glue_data_protocol.train_probe
+                if self.glue_data_protocol is not None
+                else train_data
+            ),
             validation_data=test_data,
-            validation_data_mm=test_data_mm,
         )
         
         try:
@@ -2903,6 +2891,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             flattened=self.decoupled_layout,
         )
         self.run_output_dir = output_layout["run_output_dir"]
+        self.dataset_protocol_path = None
+        if self.dataset_protocol is not None and self.run_output_dir:
+            self.dataset_protocol_path = write_dataset_protocol(
+                self.run_output_dir,
+                self.dataset_protocol,
+            )
         self.log_file = output_layout["log_file"]
         self.noise_log_file = output_layout["noise_log_file"]
         self.active_log_file = self.log_file
@@ -2974,10 +2968,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Critic 在归一化空间学习，推理时反归一化
         self.return_normalizer = RunningMeanStd()
         
-        # ==================== 敏锐度优化PDF：解耦归一化 ====================
+        # ==================== 敏感度建模：解耦归一化 ====================
         self.disentangled_normalizer = DisentangledNormalizer()
         
-        # ==================== 敏锐度优化PDF：PPO-Lagrangian ====================
+        # ==================== 敏感度建模：PPO-Lagrangian ====================
         # 可学习的拉格朗日乘子
         self.lagrangian_loss = LAGRANGIAN_INITIAL
         self.lagrangian_m1 = LAGRANGIAN_INITIAL
@@ -3196,7 +3190,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-2 PPO can update at least once."
             )
         
-        # ==================== 敏锐度优化PDF：课程学习状态 ====================
+        # ==================== 敏感度建模：课程学习状态 ====================
         self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
         self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
 
@@ -3962,8 +3956,8 @@ class LayerImportanceEvaluator(TrainerCallback):
     ):
         """解耦 stage1-only 完成时：归档 config + 基础指标 + 曲线进 stage1/record/，并打 COMPLETED。
 
-        全程 best-effort：任何异常只记日志，绝不让训练在收尾处崩溃。基础指标用训练中
-        记录的（已是 validation_full 明文评估）最优一档；重型同-cost 51 组对比是独立工具。
+        全程 best-effort：任何异常只记日志，绝不让训练在收尾处崩溃。基础指标来自
+        训练中固定的 train_probe；重型同-cost 51 组对比是独立工具。
         """
         try:
             import datetime as _dt
@@ -4008,7 +4002,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if ys:
                     _plt.figure(figsize=(8, 4))
                     _plt.plot(range(1, len(ys) + 1), ys, lw=1)
-                    _plt.xlabel("episode"); _plt.ylabel("metric1 (validation_full)")
+                    _plt.xlabel("episode"); _plt.ylabel("metric1 (train_probe)")
                     _plt.title("Stage-1 metric1 curve")
                     metric_curve_path = os.path.join(wd, "stage1_metric_curve.png")
                     _plt.savefig(metric_curve_path, dpi=150); _plt.close()
@@ -4025,8 +4019,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "total_degree_cost": gelu_cost + softmax_cost,
             }
             final_eval = {
-                "source": "training_best_validation_full",
-                "note": "basic single-eval snapshot (训练中记录的 validation_full 明文最优档); "
+                "source": "training_best_train_probe",
+                "note": "basic single-eval snapshot (训练中记录的 train_probe 最优档); "
                         "重型同-cost 51 组对比见独立 final-eval 工具。",
                 "metric1": m1,
                 "metric2": m2,
@@ -4041,13 +4035,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "completed_at": _dt.datetime.now().isoformat(),
                 "episodes": int(completed_episodes) if completed_episodes is not None else None,
                 "stage1_accuracy_tolerance": getattr(self, "stage1_accuracy_tolerance", None),
+                "dataset_protocol_hash": self.dataset_protocol_hash,
             }
             report_md = (
                 f"# Stage-1 record: {combo}\n\n"
                 f"- gelu_degree_per_layer: {gelu}\n"
                 f"- softmax_degree_per_layer: {softmax}\n"
                 f"- total_degree_cost: {gelu_cost + softmax_cost}\n"
-                f"- best validation_full metric1: {m1}\n"
+                f"- best train_probe metric1: {m1}\n"
                 f"- best_reward: {best_reward}, best_cost: {best_cost}\n"
                 f"- episodes: {completed_episodes}\n"
             )
@@ -4158,24 +4153,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         return gelu, softmax, label, source
     
     def _detect_task_type(self):
-        """
-        敏锐度优化PDF：检测任务类型（回归/分类）
-        根据数据集名称确定使用哪种评估指标
-        同时设置 self.dataset_config 和 self.dataset_key
-        """
-        data_name = self.data_path.lower()
-        
-        for ds_key, ds_cfg in DATASET_METRICS_CONFIG.items():
-            if ds_key in data_name:
-                self.dataset_key = ds_key
-                self.dataset_config = ds_cfg
-                return ds_cfg['type'] == 'regression'
-        
-        # 默认假设为回归任务 (stsb 行为)
-        print(f"[警告] 未知数据集（Unknown dataset）'{data_name}'，假定为回归任务（pearson + spearman）")
-        self.dataset_key = 'stsb'
-        self.dataset_config = DATASET_METRICS_CONFIG['stsb']
-        return True
+        self.dataset_key = validate_dataset(self.data_path)
+        self.dataset_config = DATASET_METRICS_CONFIG[self.dataset_key]
+        return False
     
     def _log_task_type(self):
         """记录任务类型信息"""
@@ -4201,25 +4181,6 @@ class LayerImportanceEvaluator(TrainerCallback):
     def get_num_metrics(self) -> int:
         """返回当前数据集的评估指标数量 (1 或 2)"""
         return len(self.dataset_config['metrics'])
-
-    def _is_small_validation_task(self):
-        return getattr(self, "dataset_key", None) in VALIDATION_SMALL_TASKS
-
-    # [已禁用] 不再使用 val_search / val_holdout / val_proxy 划分。
-    # def _get_validation_holdout_ratio(self):
-    #     if self._is_small_validation_task():
-    #         return VALIDATION_HOLDOUT_RATIO_SMALL
-    #     return VALIDATION_HOLDOUT_RATIO_DEFAULT
-
-    # def _get_validation_proxy_ratio(self):
-    #     if self._is_small_validation_task():
-    #         return VALIDATION_PROXY_RATIO_SMALL
-    #     return VALIDATION_PROXY_RATIO_DEFAULT
-
-    def _get_train_anchor_size(self):
-        if self._is_small_validation_task():
-            return TRAIN_ANCHOR_SIZE_SMALL
-        return TRAIN_ANCHOR_SIZE_DEFAULT
 
     def _make_dataloader(self, dataset, *, batch_size=None):
         if dataset is None:
@@ -4422,64 +4383,25 @@ class LayerImportanceEvaluator(TrainerCallback):
         cache[key] = (subset, subset_mm)
         return cache[key]
 
-    def _prepare_rl_datasets(self, train_data, validation_data, validation_data_mm=None):
+    def _prepare_rl_datasets(self, train_data, train_probe, validation_data):
         self.dataset_splits = {}
         self.dataset_splits_mm = {}
         self.dataloaders = {}
         self.dataloaders_mm = {}
-        self.current_val_proxy_window = None
-        self.current_val_proxy_subset_id = None
 
         self._register_dataset_split("train", train_data)
-
-        if USE_TRAIN_ANCHOR and train_data is not None:
-            anchor_size = min(len(train_data), self._get_train_anchor_size())
-            train_anchor = self._sample_dataset_by_size(
-                train_data,
-                subset_size=anchor_size,
-                seed=RL_DATASET_SPLIT_SEED + 11,
-            )
-            self._register_dataset_split("train_anchor", train_anchor)
-
-        if validation_data is not None:
-            self._register_dataset_split("validation_full", validation_data, validation_data_mm)
-            print(
-                "[数据集协议（Dataset Protocol）] "
-                f"完整验证集（validation_full）={len(validation_data)}  "
-                f"（统一使用 validation_full，不再拆分 search/holdout/proxy）"
-            )
-            if validation_data_mm is not None:
-                print(
-                    "[数据集协议（Dataset Protocol）] "
-                    f"MNLI不匹配验证集（mnli_mismatched）={len(validation_data_mm)}"
-                )
-        elif USE_VALIDATION_FOR_REWARD:
-            print("[警告] 验证集引导的奖励已启用，但未提供验证数据集。")
+        self._register_dataset_split("train_probe", train_probe)
+        self._register_dataset_split("validation_full", validation_data)
 
         self.dataloader_train = self.dataloaders.get("train")
         self.dataloader_test = self.dataloaders.get("validation_full")
-        self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
-
-    def refresh_validation_proxy(self, window_index, stage_label="RL", quiet=False):
-        """[已简化] 不再从 val_search_full 抽 proxy，直接返回 validation_full。"""
-        self.current_val_proxy_window = int(window_index)
-        self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
-        if self.has_dataset_split("validation_full"):
-            return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full for reward evaluation; training-set fallback is disabled.")
+        self.dataloader_test_mm = None
 
     def get_reward_reference_split_name(self):
-        if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("validation_full"):
-                return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full as the reward reference split.")
+        return TRAIN_PROBE_SPLIT
 
     def get_online_reward_split_name(self):
-        """Stage-1 在线奖励也统一使用 validation_full（不再切 proxy）。"""
-        if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("validation_full"):
-                return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full for online reward.")
+        return TRAIN_PROBE_SPLIT
 
     def _resolve_eval_split(self, use_train=True, split=None):
         if split is not None:
@@ -4642,7 +4564,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     
     def _update_curriculum_phase(self, episode):
         """
-        敏锐度优化PDF 6.2：课程学习阶段更新
+        敏感度建模 6.2：课程学习阶段更新
         - 阶段一（探索期，前30%）：放宽约束阈值（1.2倍目标值）
         - 阶段二（收紧期，中间40%）：线性收紧约束阈值
         - 阶段三（精调期，后30%）：略严于目标的约束（0.95倍）
@@ -4669,7 +4591,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     
     def get_curriculum_constraints(self, base_limits):
         """
-        敏锐度优化PDF：获取当前课程阶段的约束阈值
+        敏感度建模：获取当前课程阶段的约束阈值
         
         Args:
             base_limits: 基线约束字典 {'loss': float, 'metric1': float, 'metric2': float}
@@ -6491,15 +6413,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self._eval_infra_ready = True
         ds = self.dataset_key
         try:
-            mnli_metric2_fn = None
-            if ds == 'mnli':
-                mm_dataloader = None
-                if split_name is not None:
-                    mm_dataloader = self.dataloaders_mm.get(split_name)
-                elif not use_train:
-                    mm_dataloader = self.dataloader_test_mm
-                if not use_train and mm_dataloader is not None:
-                    mnli_metric2_fn = lambda: self._evaluate_accuracy_on_dataloader(mm_dataloader)
             result = run_installed_model_on_dataloader(
                 _model,
                 dataloader,
@@ -6507,7 +6420,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 metric_profile=ds,
                 use_train=bool(use_train),
                 split_name=split_name,
-                mnli_metric2_fn=mnli_metric2_fn,
                 loss_average="batch",
             )
             avg_loss = result.loss
@@ -7174,7 +7086,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(cost_ref_gelu, cost_ref_softmax)
         num_metrics = self.get_num_metrics()
         base_loss = base_p = base_s = None
-        base_loss_train = base_p_train = base_s_train = None
         reward_reference_split = self.get_reward_reference_split_name()
 
         if self.skip_stage1_rl:
@@ -7185,29 +7096,26 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.run_output_dir, "stage1_search", "skipped")
 
             if not self.skip_final_eval:
-                # 统一 final-eval 仍需要约束阈值；仅在需要最终评估时静默计算。
-                if USE_VALIDATION_FOR_REWARD:
-                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
-                        base_gelu,
-                        base_softmax,
-                        split=reward_reference_split,
-                    )
-                else:
-                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(base_gelu, base_softmax, use_train=True)
+                base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
+                    base_gelu,
+                    base_softmax,
+                    split=reward_reference_split,
+                )
                 limit_loss = base_loss * (1.0 + self.error_threshold)
                 limit_p = base_p * (1.0 - self.correlation_drop_ratio)
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
             # ---------------------------------------------------------
-            # Phase 1: Baseline (validation_full only)
+            # Phase 1: Baseline on the fixed training probe.
             # ---------------------------------------------------------
             self.log(
-                "\n--- 阶段1（Phase 1）: 建立基线（验证集全集 validation_full）"
-                "（Establishing Baseline on validation_full） ---"
+                "\n--- 阶段1（Phase 1）: 建立基线 "
+                "(Establishing Baseline on train_probe) ---"
             )
-            if reward_reference_split != "validation_full":
+            if reward_reference_split != TRAIN_PROBE_SPLIT:
                 raise RuntimeError(
-                    f"Stage-1 baseline must use validation_full, got {reward_reference_split!r}."
+                    "Stage-1 baseline must use train_probe, got "
+                    f"{reward_reference_split!r}."
                 )
 
             # Stage-1 评估是 matmul 主导的 fp32 BERT forward（bert-large 尤甚）。
@@ -7242,7 +7150,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"(GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})"
             )
 
-            # 使用验证集全集 baseline 作为约束基准
             base_loss = base_loss_val
             base_p = base_p_val
             base_s = base_s_val
@@ -7252,7 +7159,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
 
-            self.log("约束条件（Constraints）（基于验证集全集 validation_full）：")
+            self.log("约束条件（Constraints）（基于 train_probe）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
         # 供绘图使用：仅 RL 时会填充
@@ -7359,7 +7266,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             self.log(
                 f"\n--- 阶段2（Phase 2）: {backend} Stage-1 search "
-                "(validation_full) ---"
+                "(train_probe) ---"
             )
             self.log(
                 "  [优雅停止] 可发送一次 SIGINT，或创建 "
@@ -7381,7 +7288,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                             type(self.model).__name__,
                         )),
                         "dataset": str(self.data_path),
-                        "split": "validation_full",
+                        "split": TRAIN_PROBE_SPLIT,
+                        "dataset_protocol_hash": self.dataset_protocol_hash,
                         "comparator_smoke": bool(self.comparator_smoke),
                         "stage1_bound_into_stage2": not self.comparator_stage1_only,
                         "stage2_backend": (
@@ -7482,6 +7390,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "gelu_degrees": list(selected_stage1.gelu_degrees),
                 "softmax_degrees": list(selected_stage1.softmax_degrees),
                 "num_layers": int(self.total_layers),
+                "dataset_protocol_hash": self.dataset_protocol_hash,
             }
             stage1_selection_binding = {
                 **stage1_selection_payload,
@@ -7508,6 +7417,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     else "least_violating"
                 ),
                 "backend": backend,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "evaluation": selected_stage1.as_dict(),
                 "result_path": stage1_result_path,
                 "selection_binding": stage1_selection_binding,
@@ -7595,7 +7505,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 step_info_chunk_idx[0] = new_idx
                 return f
 
-            # 初始化GTrXL策略价值网络（Transformer PDF优化方案）
+            # 初始化GTrXL策略价值网络（GTrXL 策略网络）
             # GTrXL骨干 + 独立Actor/Critic头
             # - 3层GTrXL Block (d_model=64, n_heads=4, GRU门控)
             # - 多头Actor: GELU Head (4, with action masking) + Softmax Head (5)
@@ -7638,14 +7548,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             
             # 创建用于RL的评估器包装
             class RLEvaluatorWrapper:
-                def __init__(wrapper_self, evaluator, split_name=None, use_train=None):
+                def __init__(wrapper_self, evaluator, split_name):
                     wrapper_self.evaluator = evaluator
-                    if split_name is not None:
-                        wrapper_self.split_name = split_name
-                    elif use_train is None:
-                        wrapper_self.split_name = "train"
-                    else:
-                        wrapper_self.split_name = "train" if use_train else "validation_full"
+                    wrapper_self.split_name = split_name
                 
                 def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
                     return wrapper_self.evaluator.stage1_evaluate(
@@ -7654,26 +7559,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                         split=wrapper_self.split_name,
                     )
             
-            # ==================== 验证集引导（Validation Guided）====================
-            if USE_VALIDATION_FOR_REWARD:
-                self.refresh_validation_proxy(window_index=0, stage_label="Stage-1 RL")
-                online_reward_split = self.get_online_reward_split_name()
-                proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
-                    base_gelu,
-                    base_softmax,
-                    split=online_reward_split,
-                )
-                self.log(
-                    f"[信息] 使用 {online_reward_split} 进行在线奖励计算 "
-                    f"（约束保持在 {reward_reference_split} 上）"
-                )
-                rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
-            else:
-                self.log("[信息] 使用训练集（TRAINING set）进行奖励计算")
-                rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
-            
-            if not USE_VALIDATION_FOR_REWARD:
-                proxy_base_loss, proxy_base_p, proxy_base_s = base_loss_train, base_p_train, base_s_train
+            online_reward_split = self.get_online_reward_split_name()
+            proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
+                base_gelu,
+                base_softmax,
+                split=online_reward_split,
+            )
+            self.log(
+                f"[信息] 使用 {online_reward_split} 进行在线奖励计算 "
+                f"（约束保持在 {reward_reference_split} 上）"
+            )
+            rl_evaluator = RLEvaluatorWrapper(self, online_reward_split)
 
             env = TransformerOptEnv(
                 self.total_layers,
@@ -7687,8 +7583,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 },
                 num_metrics=self.get_num_metrics(),
             )
-            if USE_VALIDATION_FOR_REWARD:
-                rl_evaluator.split_name = online_reward_split
             env.prev_episode_metrics = {
                 "loss": proxy_base_loss,
                 "metric1": proxy_base_p,
@@ -7741,6 +7635,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "stage1_step_info_file": self.stage1_step_info_file,
                 "total_layers": int(self.total_layers),
                 "search_algorithm": self.search_algorithm,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "rl_algo": self.rl_algo,
                 "stage1_episodes_requested": (
                     None
@@ -7801,9 +7696,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "metric1": float(limit_p),
                     "metric2": float(limit_s),
                 },
-                eval_split_name=(
-                    online_reward_split if USE_VALIDATION_FOR_REWARD else "train"
-                ),
+                eval_split_name=online_reward_split,
                 proxy_prev_metrics={
                     "loss": proxy_base_loss,
                     "metric1": proxy_base_p,
@@ -7906,7 +7799,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                         "Re-run with --fresh to retrain from scratch."
                     )
                 ckpt = load_stage1_rl_checkpoint(
-                    _stage1_resume_ckpt_path, gtrxl_net, optimizer, device=self.device,
+                    _stage1_resume_ckpt_path,
+                    gtrxl_net,
+                    optimizer,
+                    device=self.device,
+                    expected_dataset_protocol_hash=self.dataset_protocol_hash,
                 )
                 _stage1_cuda_rng_role_registry = list(
                     ckpt.get("cuda_rng_state_by_role") or ()
@@ -8277,7 +8174,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     'gelu': np.array(env.gelu_config),
                     'softmax': np.array(env.softmax_config),
                     'cost': env.accumulated_cost,
-                    'reward': episode_reward
+                    'reward': episode_reward,
+                    'dataset_protocol_hash': self.dataset_protocol_hash,
                 }
 
                 if episode_reward > window_best_reward:
@@ -8288,6 +8186,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         'softmax': np.array(env.softmax_config),
                         'cost': env.accumulated_cost,
                         'reward': episode_reward,
+                        'dataset_protocol_hash': self.dataset_protocol_hash,
                     }
                 
                 _stage1_is_new_best = bool(episode_reward > best_reward)
@@ -8312,6 +8211,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage1_data_writer.write_episode({
                     "episode": int(episode + 1),
                     "episode_zero_based": int(episode),
+                    "split": online_reward_split,
+                    "dataset_protocol_hash": self.dataset_protocol_hash,
                     "reward": float(episode_reward),
                     "loss": float(_episode_metrics["loss"]),
                     "metric1": float(_episode_metrics["metric1"]),
@@ -8549,24 +8450,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                     window_best_cost = float('inf')
                     window_best_config = None
 
-                    if (not stage1_entropy_converged
-                            and USE_VALIDATION_FOR_REWARD
+                    if (
+                            not stage1_entropy_converged
                             and (
                                 self.stage1_rl_unbounded_until_entropy
                                 or (episode + 1) < self.stage1_rl_episode_limit
-                            )):
-                        next_window_idx = gtrxl_ppo_update_count
-                        self.refresh_validation_proxy(
-                            window_index=next_window_idx,
-                            stage_label="Stage-1 RL",
-                        )
-                        online_reward_split = self.get_online_reward_split_name()
-                        rl_evaluator.split_name = online_reward_split
-                        proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
-                            base_gelu,
-                            base_softmax,
-                            split=online_reward_split,
-                        )
+                            )
+                    ):
                         env.prev_episode_metrics = {
                             "loss": proxy_base_loss,
                             "metric1": proxy_base_p,
@@ -8612,6 +8502,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        dataset_protocol_hash=self.dataset_protocol_hash,
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
@@ -8694,6 +8585,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        dataset_protocol_hash=self.dataset_protocol_hash,
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
@@ -8778,6 +8670,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     },
                     stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                     stage1_warnings=stage1_warnings,
+                    dataset_protocol_hash=self.dataset_protocol_hash,
                     structured_run_id=stage1_data_writer.run_id,
                     structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                     detail_file_sizes=_stage1_detail_file_sizes,
@@ -8954,7 +8847,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     episodes_ma = episodes
 
                 dataset_info = f" ({self.data_path})"
-                val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
+                val_guided_info = " [Train Probe]"
                 
                 if _num_m == 1:
                     fig, axes = plt.subplots(1, 3, figsize=(18, 5))

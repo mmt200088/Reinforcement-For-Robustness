@@ -4,6 +4,7 @@ import json
 import re
 import glob
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, List, Union
 
 import fire
@@ -27,7 +28,11 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 #     prepare_model_for_int8_training,
 #     set_peft_model_state_dict,
 # )
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, LlamaTokenizer, DataCollatorWithPadding, AutoModel  # noqa: F402
+from transformers import (  # noqa: F402
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+)
 from cli_parse_utils import (
     parse_bool_flag,
     parse_degree_config,
@@ -36,6 +41,15 @@ from cli_parse_utils import (
     parse_positive_int,
     parse_stage1_episode_limit,
     parse_stage2_episode_limit,
+)
+from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
+    GlueDataProtocolContext,
+    load_train_probe_fixture,
+    resolve_glue_protocol_views,
+    resolve_model_family,
+    validate_dataset,
+    validate_supported_profile,
 )
 from mrpc_reproducibility import (
     MRPC_FULL_EXAMPLE_COUNT,
@@ -83,33 +97,15 @@ def seed_everything(seed: int) -> int:
 
 
 GLUE_PARQUET_SPLITS = {
-    "cola": ("train", "validation", "test"),
-    "sst2": ("train", "validation", "test"),
     "mrpc": ("train", "validation", "test"),
-    "stsb": ("train", "validation", "test"),
-    "qqp": ("train", "validation", "test"),
-    "qnli": ("train", "validation", "test"),
     "rte": ("train", "validation", "test"),
-    "wnli": ("train", "validation", "test"),
-    "mnli": (
-        "train",
-        "validation_matched",
-        "validation_mismatched",
-        "test_matched",
-        "test_mismatched",
-    ),
+    "sst2": ("train", "validation", "test"),
 }
 
 GLUE_REQUIRED_COLUMNS = {
-    "cola": ("sentence", "label"),
-    "sst2": ("sentence", "label"),
-    "mrpc": ("sentence1", "sentence2", "label"),
-    "stsb": ("sentence1", "sentence2", "label"),
-    "qqp": ("question1", "question2", "label"),
-    "qnli": ("question", "sentence", "label"),
-    "rte": ("sentence1", "sentence2", "label"),
-    "wnli": ("sentence1", "sentence2", "label"),
-    "mnli": ("premise", "hypothesis", "label"),
+    "mrpc": ("sentence1", "sentence2", "label", "idx"),
+    "rte": ("sentence1", "sentence2", "label", "idx"),
+    "sst2": ("sentence", "label", "idx"),
 }
 
 
@@ -400,6 +396,7 @@ def _try_load_local_glue_dataset(
         data = load_dataset_fn(
             "nyu-mll/glue",
             task,
+            revision=GLUE_DATASET_REVISION,
             download_config=DownloadConfig(local_files_only=True),
         )
         _finalize_glue_load_success(
@@ -483,6 +480,7 @@ def load_glue_dataset_equivalent(
         mrpc_reproducibility_fixture=None,
         ):
     task = str(task_name).strip().lower()
+    validate_dataset(task)
     # GLUE data loading has 4 possible routes (HF remote / local save_to_disk /
     # local parquet / HF cache local-only). When debugging "why does this run
     # see stale data?", knowing which route fired is essential — so we log
@@ -490,7 +488,11 @@ def load_glue_dataset_equivalent(
     # branches already log their own route; here we log when the primary
     # remote loader succeeds.
     try:
-        data = load_dataset_fn("nyu-mll/glue", task)
+        data = load_dataset_fn(
+            "nyu-mll/glue",
+            task,
+            revision=GLUE_DATASET_REVISION,
+        )
         _finalize_glue_load_success(
             data,
             task,
@@ -507,7 +509,7 @@ def load_glue_dataset_equivalent(
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
         primary_endpoint = _extract_hf_endpoint_from_error(primary_exc)
-        revision = _extract_hf_revision_from_error(primary_exc)
+        revision = GLUE_DATASET_REVISION
         candidate_endpoints = _glue_equivalent_candidate_endpoints(primary_endpoint)
         if _glue_parquet_data_files(task, endpoint=candidate_endpoints[0], revision=revision) is None:
             raise
@@ -568,8 +570,9 @@ def load_glue_dataset_equivalent(
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
-        data_path: str = "yahma/alpaca-cleaned",
+        data_path: str = "mrpc",
         output_dir: str = "./lora-alpaca",
+        glue_train_probe_fixture_path: str = "fixtures/reproducibility/glue_train_probe_v1.json",
         mrpc_reproducibility_fixture_path: str = "",
         adapter_name: str = "lora",
         load_8bit: bool = False,
@@ -795,6 +798,10 @@ def train(
         wandb_log_model: str = "",  # options: false | true
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
 ):
+    data_path = validate_dataset(data_path)
+    model_family = resolve_model_family(base_model)
+    validate_supported_profile(model_family, data_path)
+
     skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
@@ -973,9 +980,15 @@ def train(
             "requires stage1_entropy_stop_threshold"
         )
 
+    glue_fixture_path = Path(
+        str(glue_train_probe_fixture_path or "").strip()
+    ).expanduser()
+    if not glue_fixture_path.is_absolute():
+        glue_fixture_path = Path(__file__).resolve().parent / glue_fixture_path
+    glue_fixture = load_train_probe_fixture(glue_fixture_path)
+
     mrpc_fixture = None
     mrpc_views = None
-    mrpc_probe_data = None
     mrpc_reproducibility = None
     fixture_path = str(
         mrpc_reproducibility_fixture_path or ""
@@ -1084,11 +1097,6 @@ def train(
         f"blb_v3_action_mask_baseline_logit_bonus: {blb_v3_action_mask_baseline_logit_bonus}\n"
         f"blb_v3_action_mask_source: {blb_v3_action_mask_source}\n"
     )
-    assert (
-        base_model
-    ), "Please specify a --base_model, e.g. --base_model='decapoda-research/llama-7b-hf'"
-    gradient_accumulation_steps = batch_size // micro_batch_size
-
     run_output_dir = str(output_dir or "").strip()
     trainer_output_dir = (
         os.path.join(run_output_dir, "trainer_output")
@@ -1120,60 +1128,28 @@ def train(
     if len(wandb_log_model) > 0:
         os.environ["WANDB_LOG_MODEL"] = wandb_log_model
 
-    if 'llama' in base_model and 'llama3' not in base_model:
-        # Due to the name of transformers' LlamaTokenizer, we have to do this
-        tokenizer = LlamaTokenizer.from_pretrained(
-            base_model,
-            **tokenizer_revision_kwargs,
-        )
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(
-            base_model,
-            trust_remote_code=True,
-            **tokenizer_revision_kwargs,
-        )
-
-
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model,
+        trust_remote_code=True,
+        **tokenizer_revision_kwargs,
+    )
     tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
 
+    model_load_kwargs = {}
     if load_8bit:
         from transformers import BitsAndBytesConfig
-        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            base_model,
-            torch_dtype=torch.float16,
-            device_map=device_map,
-            trust_remote_code=True,
-            quantization_config=quantization_config,
-            **model_revision_kwargs,
+        model_load_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_8bit=True
         )
-    else:
-        config = AutoConfig.from_pretrained(
-            base_model,
-            **model_revision_kwargs,
-        )
-        # config.use_causal_lm = False  # Key: disable causal mask for MRPC.
-        _dp = data_path.lower()
-        if _dp == "stsb":
-            _num_labels = 1
-        elif _dp == "mnli":
-            _num_labels = 3
-        else:
-            _num_labels = 2
-        print(f"Auto-detected num_labels={_num_labels} for dataset '{data_path}'")
-
-        model = AutoModelForSequenceClassification.from_pretrained(
-            base_model,
-            num_labels=_num_labels,
-            # load_in_8bit=False,
-            # torch_dtype=torch.float16,
-            device_map={"": int(os.environ.get("LOCAL_RANK") or 0)},
-            # device_map ="cpu",
-            trust_remote_code=True,
-            # pad_token_id=tokenizer.eos_token_id
-            pad_token_id=tokenizer.pad_token_id,
-            **model_revision_kwargs,
-        )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        base_model,
+        num_labels=2,
+        device_map=device_map,
+        trust_remote_code=True,
+        pad_token_id=tokenizer.pad_token_id,
+        **model_revision_kwargs,
+        **model_load_kwargs,
+    )
 
     # ---------------------------------------------------------------
     # Freeze the backbone. The downstream pipeline (layer_importance_
@@ -1193,75 +1169,19 @@ def train(
     model.to("cuda")
 
 
-    def tokenize(prompt, add_eos_token=True):
-        # there's probably a way to do this with the tokenizer settings
-        # but again, gotta move fast
-        
-        result = tokenizer(
-            prompt,
-            truncation=True,
-            max_length=cutoff_len,
-            padding=False,
-            return_tensors=None
-        )
-        if (
-                result["input_ids"][-1] != tokenizer.eos_token_id
-                and len(result["input_ids"]) < cutoff_len
-                and add_eos_token
-        ):
-            result["input_ids"].append(tokenizer.eos_token_id)
-            if "chatglm" not in base_model:
-                result["attention_mask"].append(1)
-
-        result["labels"] = result["input_ids"].copy()
-
-        if "chatglm" in base_model:
-            return {"input_ids": result["input_ids"], "labels": result["labels"]}
-        else:
-            return result
-
-    # Tokenize helper.
     def tokenize_fn(examples):
-        _dp = data_path.lower()
-        if _dp in ("sst2", "cola"):
+        if data_path == "sst2":
             tokenized = tokenizer(
                 examples["sentence"],
                 truncation=True, padding=False, max_length=128, return_tensors=None,
             )
-        elif _dp == "qnli":
-            tokenized = tokenizer(
-                examples["question"],
-                examples["sentence"],
-                truncation=True, padding=False, max_length=128, return_tensors=None,
-            )
-        elif _dp == "mnli":
-            tokenized = tokenizer(
-                examples["premise"],
-                examples["hypothesis"],
-                truncation=True, padding=False, max_length=128, return_tensors=None,
-            )
-        else:  # mrpc, stsb, rte, wnli
+        else:
             tokenized = tokenizer(
                 examples["sentence1"],
                 examples["sentence2"],
                 truncation=True, padding=False, max_length=128, return_tensors=None,
             )
         return tokenized
-
-    # def generate_and_tokenize_prompt(data_point):
-    #     full_prompt = generate_prompt(data_point)
-    #     tokenized_full_prompt = tokenize(full_prompt)
-    #     if not train_on_inputs:
-    #         user_prompt = generate_prompt({**data_point, "output": ""})
-    #         tokenized_user_prompt = tokenize(user_prompt, add_eos_token=False)
-    #         user_prompt_len = len(tokenized_user_prompt["input_ids"])
-
-    #         tokenized_full_prompt["labels"] = [
-    #                                               -100
-    #                                           ] * user_prompt_len + tokenized_full_prompt["labels"][
-    #                                                                 user_prompt_len:
-    #                                                                 ]  # could be sped up, probably
-    #     return tokenized_full_prompt
 
     # model = prepare_model_for_int8_training(model, use_gradient_checkpointing=use_gradient_checkpointing)
 
@@ -1309,19 +1229,16 @@ def train(
         model.to("cuda") 
     
     print(model)
-    if data_path.endswith(".json"):  # todo: support jsonl
-        if mrpc_fixture is not None:
-            raise MRPCReproducibilityError(
-                "MRPC reproducibility fixture cannot load a JSON dataset"
-            )
-        data = load_dataset("json", data_files=data_path)
-    else:
-        # glue tasks: "stsb", "mnli", "sst2", "cola", "qnli", "rte", "wnli", "mrpc"
-        data = load_glue_dataset_equivalent(
-            data_path,
-            route_log_dir=os.path.join(output_dir, "logs"),
-            mrpc_reproducibility_fixture=mrpc_fixture,
-        )
+    data = load_glue_dataset_equivalent(
+        data_path,
+        route_log_dir=os.path.join(output_dir, "logs"),
+        mrpc_reproducibility_fixture=mrpc_fixture,
+    )
+    glue_views = resolve_glue_protocol_views(
+        data,
+        dataset=data_path,
+        fixture=glue_fixture,
+    )
     if mrpc_fixture is not None:
         mrpc_views = resolve_mrpc_reproducibility_views(
             data,
@@ -1349,110 +1266,45 @@ def train(
         else:
             print(f"Checkpoint {checkpoint_name} not found")
 
-    # model.print_trainable_parameters()  # Be more transparent about the % of trainable params.
-
-    # if val_set_size > 0:
-    #     train_val = data["train"].train_test_split(
-    #         test_size=val_set_size, shuffle=True, seed=42
-    #     )
-    #     train_data = (
-    #         train_val["train"].shuffle().map(generate_and_tokenize_prompt)
-    #     )
-    #     val_data = (
-    #         train_val["test"].shuffle().map(generate_and_tokenize_prompt)
-    #     )
-    # else:
-    #     train_data = data["train"].shuffle().map(generate_and_tokenize_prompt)
-    #     val_data = None
-    
-    # MNLI needs special handling: matched and mismatched validation splits.
-    val_data_mm = None  # MNLI mismatched validation split.
-    
-    if val_set_size > 0:
-        is_mnli = data_path.lower() == 'mnli'
-        
-        if is_mnli:
-            print(f"Loading MNLI dataset (matched + mismatched validation sets)")
-            train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-            val_data = data["validation_matched"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-            val_data_mm = data["validation_mismatched"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-            
-            print(f"After tokenize matched: {val_data[0]}")
-            train_data = train_data.rename_column("label", "labels")
-            val_data = val_data.rename_column("label", "labels")
-            val_data_mm = val_data_mm.rename_column("label", "labels")
-            
-            columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
-            train_data.set_format(type="torch", columns=columns)
-            val_data.set_format(type="torch", columns=columns)
-            val_data_mm.set_format(type="torch", columns=columns)
-            
-            print(f"Train data size: {len(train_data)}")
-            print(f"Validation matched size: {len(val_data)}")
-            print(f"Validation mismatched size: {len(val_data_mm)}")
-        else:
-            print(f"Loading dataset: {data['validation']}")
-            train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-            if mrpc_views is None:
-                validation_source = data["validation"].shuffle(
-                    seed=final_eval_random_seed
-                )
-                mrpc_probe_source = None
-            else:
-                validation_source = mrpc_views.full_validation
-                mrpc_probe_source = mrpc_views.stability_probe
-            val_data = validation_source.map(tokenize_fn)
-            if mrpc_probe_source is not None:
-                mrpc_probe_data = mrpc_probe_source.map(tokenize_fn)
-            # The current RL flow does not use the official test split.
-            # test_data = data["test"].shuffle().map(tokenize_fn)
-
-            print(f"After tokenize: {val_data[0]}")
-            # add label
-            train_data = train_data.rename_column("label", "labels")
-            val_data = val_data.rename_column("label", "labels")
-            if mrpc_probe_data is not None:
-                mrpc_probe_data = mrpc_probe_data.rename_column(
-                    "label", "labels"
-                )
-            if mrpc_views is not None and mrpc_probe_data is None:
-                raise MRPCReproducibilityError(
-                    "MRPC tokenization produced no frozen stability probe"
-                )
-
-            print(f"After add label: {val_data[0]}")
-
-            # Set PyTorch tensor format.
-            columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
-            train_data.set_format(type="torch", columns=columns)
-            val_data.set_format(type="torch", columns=columns)
-            if mrpc_probe_data is not None:
-                mrpc_probe_data.set_format(type="torch", columns=columns)
-
-            print(f"After format: {val_data}")
-            
-            print(f"Train data size: {len(train_data)}")
-            print(f"Validation data size: {len(val_data)}") 
-            # print(f"Test data size: {len(test_data)}")
-            
+    train_data = glue_views.train_full.shuffle(
+        seed=final_eval_random_seed
+    ).map(tokenize_fn)
+    train_probe_data = glue_views.train_probe.map(tokenize_fn)
+    if mrpc_views is not None:
+        validation_source = mrpc_views.full_validation
     else:
-        train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-        val_data = None
+        validation_source = glue_views.validation_full.shuffle(
+            seed=final_eval_random_seed
+        )
+    val_data = validation_source.map(tokenize_fn)
 
-    # data_collator = transformers.DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True)
+    columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+    prepared_datasets = []
+    for tokenized_data in (train_data, train_probe_data, val_data):
+        tokenized_data = tokenized_data.rename_column("label", "labels")
+        tokenized_data.set_format(type="torch", columns=columns)
+        prepared_datasets.append(tokenized_data)
+    train_data, train_probe_data, val_data = prepared_datasets
 
-    # for Binary classification task
+    glue_protocol_context = GlueDataProtocolContext(
+        model_family=model_family,
+        dataset=data_path,
+        train_probe=train_probe_data,
+        validation_full=val_data,
+        identity=glue_views.identity,
+    )
+
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
-        padding= "max_length",
-        max_length=128,     # Effective when padding="max_length"
-        return_tensors="pt", # Return PyTorch tensors
-        pad_to_multiple_of=8   # Return attention masks
+        padding="max_length",
+        max_length=128,
+        return_tensors="pt",
+        pad_to_multiple_of=8,
     )
     if mrpc_views is not None:
         mrpc_reproducibility = MRPCReproducibilityContext(
             fixture=mrpc_fixture,
-            stability_probe=mrpc_probe_data,
+            stability_probe=train_probe_data,
         )
 
     # if not ddp and torch.cuda.device_count() > 1:
@@ -1523,7 +1375,7 @@ def train(
             decoupled_layout=decoupled_layout,
             stage1_run_id=stage1_run_id,
             data_path=data_path,
-            test_data_mm=val_data_mm,
+            glue_data_protocol=glue_protocol_context,
             mrpc_reproducibility=mrpc_reproducibility,
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
             stage2_limit_tolerance=stage2_limit_tolerance,

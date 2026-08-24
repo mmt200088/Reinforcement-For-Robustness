@@ -20,6 +20,8 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequenc
 
 import numpy as np
 
+from glue_data_protocol import TRAIN_PROBE_SPLIT
+
 
 Stage1Action = tuple[int, ...]
 EvaluationFn = Callable[[Stage1Action], "SearchEvaluation"]
@@ -538,7 +540,7 @@ class SearchConfig:
 
 
 STAGE1_COMPARATOR_NUM_LAYERS = 12
-STAGE1_COMPARATOR_SPLIT = "validation_full"
+STAGE1_COMPARATOR_SPLIT = TRAIN_PROBE_SPLIT
 STAGE1_COMPARATOR_USE_TRAIN = False
 STAGE1_COMPARATOR_LOSS_RELATIVE_TOLERANCE = 0.001
 STAGE1_COMPARATOR_METRIC_RELATIVE_TOLERANCE = 0.001
@@ -640,7 +642,7 @@ def validate_stage1_comparator_setup(
         raise _stage1_comparator_error("the action space must have 12 layers")
     if split != STAGE1_COMPARATOR_SPLIT or use_train is not False:
         raise _stage1_comparator_error(
-            "evaluation must use validation_full with use_train=False"
+            "evaluation must use train_probe with use_train=False"
         )
     validate_stage1_comparator_constraints(constraints)
 

@@ -1468,6 +1468,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 class _FakeRealEvaluator:
     def __init__(self):
         self.calls = []
+        self.dataset_protocol_hash = "b" * 64
 
     def stage1_evaluate(self, gelu, softmax, *, use_train, split):
         self.calls.append((tuple(gelu), tuple(softmax), use_train, split))
@@ -1628,6 +1629,12 @@ class AdapterAndPersistenceTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["termination_reason"], result.termination_reason,
+            )
+            self.assertEqual(
+                manifest["dataset_protocol_hash"], "b" * 64,
+            )
+            self.assertEqual(
+                checkpoint["contract"]["dataset_protocol_hash"], "b" * 64,
             )
             for removed in (
                     "sealed_artifacts",
@@ -1829,7 +1836,7 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                 {name: (output / name).read_bytes() for name in before},
             )
 
-    def test_real_adapter_always_uses_validation_full_and_exact_limits(self):
+    def test_real_adapter_always_uses_train_probe_and_exact_limits(self):
         constraints = Stage1Constraints(
             baseline_loss=0.5,
             baseline_metrics=(0.8,),
@@ -1846,10 +1853,13 @@ class AdapterAndPersistenceTests(unittest.TestCase):
 
         evaluation = adapter((0, 2))
 
-        self.assertEqual(real.calls, [((4, 1), (6, 6), False, "validation_full")])
+        self.assertEqual(real.calls, [((4, 1), (6, 6), False, "train_probe")])
         self.assertEqual(evaluation.constraints, constraints)
         self.assertEqual(evaluation.metrics, (0.8,))
-        self.assertEqual(evaluation.metadata["split"], "validation_full")
+        self.assertEqual(evaluation.metadata["split"], "train_probe")
+        self.assertEqual(
+            evaluation.metadata["dataset_protocol_hash"], "b" * 64,
+        )
         self.assertEqual(evaluation.metadata["loss_limit"], 0.505)
 
     def test_duplicate_direct_preload_fails_before_forward_for_every_backend(self):
@@ -2447,6 +2457,17 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                 config=_comparator_config("greedy"),
                 num_layers=12,
                 constraints=relaxed,
+            )
+
+    def test_comparator_setup_rejects_validation_split(self):
+        with self.assertRaisesRegex(RuntimeError, "train_probe"):
+            _search_baselines.validate_stage1_comparator_setup(
+                backend="greedy",
+                config=_comparator_config("greedy"),
+                num_layers=12,
+                constraints=_comparator_constraints(),
+                split="validation_full",
+                use_train=False,
             )
 
     def test_completed_resume_rejects_mismatched_backend_metadata(self):

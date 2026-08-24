@@ -27,7 +27,7 @@ def test_probe_metrics_weight_tail_batches_by_sample_count():
     loss, metric1, metric2 = metrics
     assert math.isclose(loss, 2.0)
     assert math.isclose(metric1, 0.8)
-    assert math.isclose(metric2, 0.8)
+    assert math.isclose(metric2, 0.8888888888888888)
 
 
 def test_mrpc_metric2_is_weighted_f1_not_accuracy():

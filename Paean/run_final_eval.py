@@ -7,6 +7,7 @@ import sys
 import time
 from typing import Callable, Dict, List
 
+from glue_data_protocol import validate_supported_profile
 from .config import (
     PRESET_DIR,
     REPO_ROOT,
@@ -19,39 +20,25 @@ from .config import (
 
 _ACTION_BATCH_SCHEMA = "paean_action_batch_v1"
 
+BASE_MODEL_BY_TYPE = {
+    "bert-base": {
+        "mrpc": "textattack/bert-base-uncased-MRPC",
+        "rte": "textattack/bert-base-uncased-RTE",
+        "sst2": "textattack/bert-base-uncased-SST-2",
+    },
+    "bert-large": {
+        "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+        "rte": "yoshitomo-matsubara/bert-large-uncased-rte",
+        "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
+    },
+}
+
 
 def _base_model(model_type: str, dataset: str) -> str:
-    if model_type == "bert-base":
-        return {
-            "wnli": "textattack/bert-base-uncased-WNLI",
-            "rte": "textattack/bert-base-uncased-RTE",
-            "cola": "textattack/bert-base-uncased-CoLA",
-            "qnli": "textattack/bert-base-uncased-QNLI",
-            "mrpc": "textattack/bert-base-uncased-MRPC",
-            "sst2": "textattack/bert-base-uncased-SST-2",
-            "stsb": "textattack/bert-base-uncased-STS-B",
-        }[dataset]
-    if model_type == "bert-large":
-        models = {
-            "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
-            "cola": "yoshitomo-matsubara/bert-large-uncased-cola",
-            "stsb": "yoshitomo-matsubara/bert-large-uncased-stsb",
-            "rte": "yoshitomo-matsubara/bert-large-uncased-rte",
-            "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
-            "qnli": "yoshitomo-matsubara/bert-large-uncased-qnli",
-        }
-        if dataset not in models:
-            raise ValueError("bert-large currently supports mrpc, cola, stsb, rte, sst2, qnli")
-        return models[dataset]
-    return {
-        "cola": "PavanNeerudu/gpt2-finetuned-cola",
-        "sst2": "PavanNeerudu/gpt2-finetuned-sst2",
-        "mrpc": "PavanNeerudu/gpt2-finetuned-mrpc",
-        "stsb": "PavanNeerudu/gpt2-finetuned-stsb",
-        "qnli": "PavanNeerudu/gpt2-finetuned-qnli",
-        "rte": "PavanNeerudu/gpt2-finetuned-rte",
-        "wnli": "PavanNeerudu/gpt2-finetuned-wnli",
-    }[dataset]
+    model_family = str(model_type).strip().lower()
+    task = str(dataset).strip().lower()
+    validate_supported_profile(model_family, task)
+    return BASE_MODEL_BY_TYPE[model_family][task]
 
 
 def build_command(settings: FinalEvalSettings) -> List[str]:

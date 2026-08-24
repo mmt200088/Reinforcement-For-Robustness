@@ -12,9 +12,9 @@ rl_tune_general.py — 通用 RL 策略的命令行入口脚本
 
 用法:
   # 训练（输出到持久化目录，可续训练）
-  python rl_tune_general.py train --model_type bert-base --data_path mrpc,cola,rte,stsb ...
+  python rl_tune_general.py train --model_type bert-base --data_path mrpc,rte,sst2
   # 搜索（手动指定持久化目录或策略文件路径）
-  python rl_tune_general.py search --data_path mrpc --general_policy_dir "Parting Chapter/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default"
+  python rl_tune_general.py search --data_path mrpc --general_policy_dir PATH
   python rl_tune_general.py search --data_path mrpc --general_stage1_policy path/to/policy.pt
 """
 
@@ -29,11 +29,8 @@ import torch
 import transformers
 from datasets import load_dataset
 from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    LlamaTokenizer,
     DataCollatorWithPadding,
 )
 from runtime_error_reporter import run_fire_entrypoint
@@ -43,6 +40,14 @@ from cli_parse_utils import (
     parse_float_list_text,
     parse_positive_int,
 )
+from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
+    GlueDataProtocolContext,
+    load_train_probe_fixture,
+    resolve_glue_protocol_views,
+    resolve_model_family,
+    validate_supported_profile,
+)
 
 sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-paper/peft/src/"))
 
@@ -50,51 +55,35 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 # ---------------------------------------------------------------------------
 # Dataset → BASE_MODEL mapping (mirrors llama_7B_LayerImportance.sh)
 # ---------------------------------------------------------------------------
-_BERT_BASE_MAP = {
-    "wnli": "textattack/bert-base-uncased-WNLI",
-    "rte":  "textattack/bert-base-uncased-RTE",
-    "cola": "textattack/bert-base-uncased-CoLA",
-    "qnli": "textattack/bert-base-uncased-QNLI",
-    "mrpc": "textattack/bert-base-uncased-MRPC",
-    "sst2": "textattack/bert-base-uncased-SST-2",
-    "stsb": "textattack/bert-base-uncased-STS-B",
+BASE_MODEL_BY_TYPE = {
+    "bert-base": {
+        "mrpc": "textattack/bert-base-uncased-MRPC",
+        "rte": "textattack/bert-base-uncased-RTE",
+        "sst2": "textattack/bert-base-uncased-SST-2",
+    },
+    "bert-large": {
+        "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+        "rte": "yoshitomo-matsubara/bert-large-uncased-rte",
+        "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
+    },
 }
-_BERT_LARGE_MAP = {
-    "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
-    "cola": "yoshitomo-matsubara/bert-large-uncased-cola",
-    "stsb": "yoshitomo-matsubara/bert-large-uncased-stsb",
-    "rte":  "yoshitomo-matsubara/bert-large-uncased-rte",
-    "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
-    "qnli": "yoshitomo-matsubara/bert-large-uncased-qnli",
-}
-_GPT2_MAP = {
-    "cola": "PavanNeerudu/gpt2-finetuned-cola",
-    "sst2": "PavanNeerudu/gpt2-finetuned-sst2",
-    "mrpc": "PavanNeerudu/gpt2-finetuned-mrpc",
-    "stsb": "PavanNeerudu/gpt2-finetuned-stsb",
-    "qnli": "PavanNeerudu/gpt2-finetuned-qnli",
-    "rte":  "PavanNeerudu/gpt2-finetuned-rte",
-    "wnli": "PavanNeerudu/gpt2-finetuned-wnli",
-}
-
 
 def resolve_base_model(model_type: str, dataset: str) -> str:
     """Resolve (model_type, dataset) → HuggingFace checkpoint name."""
-    mt = model_type.lower().replace("_", "-")
-    ds = dataset.lower()
-    if mt in ("bert-base", "bertbase"):
-        m = _BERT_BASE_MAP.get(ds)
-    elif mt in ("bert-large", "bertlarge"):
-        m = _BERT_LARGE_MAP.get(ds)
-    elif mt in ("gpt-2", "gpt2"):
-        m = _GPT2_MAP.get(ds)
-    else:
-        raise ValueError(f"Unsupported model-type: {model_type}")
-    if m is None:
-        raise ValueError(
-            f"model-type={model_type} 不支持数据集 {dataset}."
-        )
-    return m
+    model_family = str(model_type).strip().lower().replace("_", "-")
+    task = str(dataset).strip().lower()
+    validate_supported_profile(model_family, task)
+    return BASE_MODEL_BY_TYPE[model_family][task]
+
+
+def validate_general_tasks(model_type: str, task_names) -> tuple[str, ...]:
+    model_family = str(model_type).strip().lower().replace("_", "-")
+    normalized = tuple(str(task).strip().lower() for task in task_names)
+    if not normalized or any(not task for task in normalized):
+        raise ValueError("general RL requires at least one dataset")
+    for task in normalized:
+        validate_supported_profile(model_family, task)
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -117,26 +106,17 @@ def _build_evaluator(
     load_8bit: bool = False,
 ):
     """创建并返回 (model, evaluator, data_collator)。"""
-    if 'llama' in base_model and 'llama3' not in base_model:
-        tokenizer = LlamaTokenizer.from_pretrained(base_model)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+    data_path = str(data_path).strip().lower()
+    model_family = resolve_model_family(base_model)
+    validate_supported_profile(model_family, data_path)
+    tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
 
     tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
-
-    config = AutoConfig.from_pretrained(base_model)
-    _dp = data_path.lower()
-    if _dp == "stsb":
-        _num_labels = 1
-    elif _dp == "mnli":
-        _num_labels = 3
-    else:
-        _num_labels = 2
 
     device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
     model = AutoModelForSequenceClassification.from_pretrained(
         base_model,
-        num_labels=_num_labels,
+        num_labels=2,
         device_map=device_map,
         trust_remote_code=True,
         pad_token_id=tokenizer.pad_token_id,
@@ -149,51 +129,48 @@ def _build_evaluator(
 
     # Tokenize
     def tokenize_fn(examples):
-        dp_lower = data_path.lower()
-        if dp_lower in ("sst2", "cola"):
+        if data_path == "sst2":
             return tokenizer(
                 examples["sentence"],
                 truncation=True, padding=False, max_length=128, return_tensors=None,
             )
-        elif dp_lower == "qnli":
-            return tokenizer(
-                examples["question"], examples["sentence"],
-                truncation=True, padding=False, max_length=128, return_tensors=None,
-            )
-        elif dp_lower == "mnli":
-            return tokenizer(
-                examples["premise"], examples["hypothesis"],
-                truncation=True, padding=False, max_length=128, return_tensors=None,
-            )
-        else:
-            return tokenizer(
-                examples["sentence1"], examples["sentence2"],
-                truncation=True, padding=False, max_length=128, return_tensors=None,
-            )
+        return tokenizer(
+            examples["sentence1"], examples["sentence2"],
+            truncation=True, padding=False, max_length=128, return_tensors=None,
+        )
 
-    data = load_dataset("nyu-mll/glue", data_path)
-
-    val_data_mm = None
-    is_mnli = data_path.lower() == "mnli"
-    if is_mnli:
-        train_data = data["train"].shuffle().map(tokenize_fn)
-        val_data = data["validation_matched"].shuffle().map(tokenize_fn)
-        val_data_mm = data["validation_mismatched"].shuffle().map(tokenize_fn)
-        train_data = train_data.rename_column("label", "labels")
-        val_data = val_data.rename_column("label", "labels")
-        val_data_mm = val_data_mm.rename_column("label", "labels")
-        columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
-        train_data.set_format(type="torch", columns=columns)
-        val_data.set_format(type="torch", columns=columns)
-        val_data_mm.set_format(type="torch", columns=columns)
-    else:
-        train_data = data["train"].shuffle().map(tokenize_fn)
-        val_data = data["validation"].shuffle().map(tokenize_fn)
-        train_data = train_data.rename_column("label", "labels")
-        val_data = val_data.rename_column("label", "labels")
-        columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
-        train_data.set_format(type="torch", columns=columns)
-        val_data.set_format(type="torch", columns=columns)
+    data = load_dataset(
+        "nyu-mll/glue",
+        data_path,
+        revision=GLUE_DATASET_REVISION,
+    )
+    fixture = load_train_probe_fixture(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "fixtures",
+            "reproducibility",
+            "glue_train_probe_v1.json",
+        )
+    )
+    views = resolve_glue_protocol_views(
+        data,
+        dataset=data_path,
+        fixture=fixture,
+    )
+    train_data = views.train_probe.map(tokenize_fn)
+    val_data = views.validation_full.map(tokenize_fn)
+    columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+    train_data = train_data.rename_column("label", "labels")
+    val_data = val_data.rename_column("label", "labels")
+    train_data.set_format(type="torch", columns=columns)
+    val_data.set_format(type="torch", columns=columns)
+    glue_protocol_context = GlueDataProtocolContext(
+        model_family=model_family,
+        dataset=data_path,
+        train_probe=train_data,
+        validation_full=val_data,
+        identity=views.identity,
+    )
 
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
@@ -222,9 +199,10 @@ def _build_evaluator(
         skip_stage1_rl=False,
         skip_final_eval=True,
         data_path=data_path,
-        test_data_mm=val_data_mm,
+        glue_data_protocol=glue_protocol_context,
         search_algorithm="general-rl",
     )
+    evaluator.model_type = model_family
     model.config.use_cache = False
     model.config.is_decoder = False
 
@@ -238,7 +216,7 @@ def _build_evaluator(
 def train(
     # 基础参数
     base_model: str = "",
-    data_path: str = "mrpc,cola,rte,stsb",
+    data_path: str = "mrpc,rte,sst2",
     model_type: str = "bert-base",
     output_dir: str = "./general_rl_output",
     batch_size: int = 16,
@@ -267,7 +245,7 @@ def train(
 ):
     """多任务 round-robin 训练通用策略 + Critic。
 
-    必须提供多个数据集用逗号分隔: --data_path mrpc,cola,rte,stsb
+    数据集用逗号分隔，例如: --data_path mrpc,rte,sst2
 
     准确度容忍泛化有两种模式:
       --accuracy_tolerances 0.005,0.01,0.02  离散采样
@@ -368,9 +346,14 @@ def train(
                 general_s2_resume_path = _s2_ckpt
                 print(f"[续训练] 检测到 Stage-2 checkpoint: {_s2_ckpt}")
 
-    task_names = [t.strip().lower() for t in data_path.split(",") if t.strip()]
-    if len(task_names) < 1:
-        raise ValueError("--data_path 至少需要提供一个数据集名称。")
+    task_names = list(validate_general_tasks(
+        model_type,
+        [t for t in data_path.split(",") if t.strip()],
+    ))
+    if base_model and resolve_model_family(base_model) != str(
+        model_type
+    ).strip().lower().replace("_", "-"):
+        raise ValueError("base_model does not match the general RL model family")
 
     # ---- Stage-1 训练 ----
     s1_output = stage1_output or os.path.join(output_dir, "general_stage1_policy.pt")
@@ -581,6 +564,11 @@ def search(
     task_name = data_path.strip().lower()
     if "," in task_name:
         raise ValueError("--data_path 搜索模式只支持单个数据集名称。")
+    validate_general_tasks(model_type, [task_name])
+    if base_model and resolve_model_family(base_model) != str(
+        model_type
+    ).strip().lower().replace("_", "-"):
+        raise ValueError("base_model does not match the general RL model family")
 
     bm = base_model if base_model else resolve_base_model(model_type, task_name)
     print(f"[通用RL搜索] 任务: {task_name}, base_model={bm}")

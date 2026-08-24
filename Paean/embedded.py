@@ -4,7 +4,11 @@ import dataclasses
 from pathlib import Path
 from typing import Optional, Type
 
-from final_evaluation_module import UnifiedFinalEvaluationModule
+from final_evaluation_module import (
+    UnifiedFinalEvaluationModule,
+    require_final_evaluation_protocol,
+)
+from glue_data_protocol import FINAL_EVAL_SPLIT
 
 from .config import (
     DEFAULT_PRESET,
@@ -60,6 +64,11 @@ def run_embedded_final_eval(
     repeat counts, random comparison counts, seed, output root, and fallback
     JSON path.
     """
+    require_final_evaluation_protocol(
+        evaluator,
+        search_results=(search_best_stage1, search_best_stage2),
+        requested_split=FINAL_EVAL_SPLIT,
+    )
 
     settings = load_embedded_settings(
         preset_name=preset_name,
