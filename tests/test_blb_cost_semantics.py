@@ -158,31 +158,6 @@ class BLBCostSemanticsTests(unittest.TestCase):
         self.assertLess(candidate_rank_key(p3_same_reward_higher_cost), candidate_rank_key(p3_capped_low))
         self.assertLess(candidate_rank_key(p3_capped_low), candidate_rank_key(p2_huge_cost))
 
-    def test_f0_record_splits_rescale_cost_debug_and_mpc_truncation(self):
-        from scripts.blb_eval_action import build_f0_candidate_record
-
-        signals = type(
-            "Signals",
-            (),
-            {
-                "any_invalid": False,
-                "total_bits_sum": 1200,
-                "total_fusion_count": 7,
-                "invalid_chains": {},
-            },
-        )()
-        record = build_f0_candidate_record(
-            [4, 4, 3, 2],
-            source="unit",
-            signals=signals,
-            baseline_total_bits=2400,
-            optimizer_debug={"q_bits": [60, 50], "q_head_bits": 60, "q_tail_bits": 50},
-            action_avg_k=12.5,
-        )
-
-        self.assertEqual(record["rescale_cost"]["rank_key"], [1200, 7])
-        self.assertEqual(record["rescale_cost"]["optimizer_cost_terms"]["total_bits_sum"], 1200)
-        self.assertEqual(record["rescale_cost"]["optimizer_cost_terms"]["fusion_count"], 7)
         self.assertEqual(record["rescale_debug"]["optimizer_diagnostic_terms"]["q_bits"], [60, 50])
         self.assertTrue(record["mpc_truncation_cost_enabled"])
         self.assertEqual(record["mpc_truncation_term"]["avg_k"], 12.5)

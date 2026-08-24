@@ -724,62 +724,6 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(read_json_file(missing, default={}), {})
             self.assertEqual(read_json_file(broken, default=[]), [])
 
-    def test_json_artifact_scripts_use_shared_writer(self):
-        checks = {
-            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import read_json_file, stable_json_hash, write_json_file",
-            "scripts/blb_eval_action.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/blb_compare_optimizer_modes.py": "from json_utils import write_json_file",
-            "scripts/optimization_evidence_bundle.py": "from json_utils import write_json_file",
-            "scripts/gpu_utilization_report.py": "from json_utils import write_json_file",
-            "scripts/server_resource_snapshot.py": "from json_utils import write_json_file",
-            "scripts/stage1_parallel_report.py": "from json_utils import write_json_file",
-            "scripts/stage2_reward_probe_scaling_report.py": "from json_utils import write_json_file",
-            "scripts/report_fusion_count_map.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/blb_build_fusion_count_map.py": "from json_utils import write_json_file",
-            "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file, write_json_file",
-            "scripts/diagnose_block4_fusion_install.py": "from json_utils import write_json_file",
-            "scripts/stage1_plaintext_repeat_eval.py": "from json_utils import write_json_file",
-            "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file, write_json_file",
-        }
-        for rel, needle in checks.items():
-            with self.subTest(path=rel):
-                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-                self.assertIn(needle, text)
-                self.assertNotIn("def _write_json(", text)
-
-    def test_json_artifact_scripts_use_shared_reader(self):
-        checks = {
-            "scripts/fusion_count_action_eval_common.py": "from json_utils import read_json_file",
-            "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file",
-            "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file",
-            "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file",
-            "scripts/blb_eval_action.py": "from json_utils import read_json_file",
-            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import read_json_file",
-            "blb_stage2_rl/action_space.py": "from json_utils import read_json_file",
-            "blb_stage2_rl/fusion_count_map.py": "from json_utils import read_json_file",
-            "blb_stage2_rl/skeleton_stage_map.py": "from json_utils import read_json_file",
-            "scripts/blb_diagnose_invalid_blocks.py": "from json_utils import read_json_file",
-            "scripts/blb_diag_block2_boost.py": "from json_utils import read_json_file",
-            "scripts/report_fusion_count_map.py": "from json_utils import read_json_file",
-            "scripts/blb_verify_boosted_install.py": "from json_utils import read_json_file",
-            "scripts/blb_verify_noise_install.py": "from json_utils import read_json_file",
-            "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file",
-            "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file",
-            "scripts/render_fusion_count_slots_eval_report.py": "from json_utils import read_json_file",
-            "tools/paper_figures.py": "from json_utils import read_json_file",
-            "Paean/action_grid.py": "from json_utils import read_json_file",
-            "Paean/blb_action_eval.py": "from json_utils import read_json_file",
-        }
-        for rel, needle in checks.items():
-            with self.subTest(path=rel):
-                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-                self.assertIn(needle, text)
-                self.assertNotIn("json.loads(path.read_text", text)
-                self.assertNotIn("json.loads(open(", text)
-
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins
 

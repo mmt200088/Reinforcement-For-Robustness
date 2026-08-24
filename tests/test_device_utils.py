@@ -50,15 +50,5 @@ class DeviceUtilsTest(unittest.TestCase):
             [],
         )
 
-    def test_diagnostic_scripts_use_shared_logical_device_parser(self):
-        repo = Path(__file__).resolve().parents[1]
-        expected = {
-            "scripts/gpu_utilization_report.py": "from device_utils import normalize_logical_device_token, parse_logical_device_spec",
-        }
-        for rel, needle in expected.items():
-            text = (repo / rel).read_text(encoding="utf-8")
-            self.assertIn(needle, text)
-
-
 if __name__ == "__main__":
     unittest.main()

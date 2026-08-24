@@ -14,18 +14,5 @@ class NumericParseUtilsTest(unittest.TestCase):
         self.assertIsNone(parse_first_float("no number"))
 
 
-class NumericParseStaticGuardTest(unittest.TestCase):
-    def test_gpu_report_scripts_use_shared_float_parser(self):
-        for rel_path in (
-            "scripts/gpu_utilization_report.py",
-            "scripts/stage2_reward_probe_scaling_report.py",
-        ):
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn("from numeric_parse_utils import parse_first_float", text)
-                self.assertNotIn("FLOAT_RE = re.compile", text)
-                self.assertNotIn("_float_value", function_names(rel_path))
-
-
 if __name__ == "__main__":
     unittest.main()

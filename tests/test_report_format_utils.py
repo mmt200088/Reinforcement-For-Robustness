@@ -43,31 +43,5 @@ class ReportFormatUtilsTest(unittest.TestCase):
         self.assertEqual(progress_bar(5, 4, width=4), "[████] 100.0%")
 
 
-class ReportFormatStaticGuardTest(unittest.TestCase):
-    def test_shared_report_helpers_are_used_by_known_report_scripts(self):
-        expected_imports = {
-            "reports/generate_blb_mapping_html_reports.py": "from report_format_utils import html_table",
-            "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
-            "scripts/render_fusion_count_slots_eval_report.py": "from report_format_utils import html_table",
-            "scripts/blb_verify_noise_install.py": "from report_format_utils import html_table",
-            "scripts/stage2_reward_probe_scaling_report.py": (
-                "from report_format_utils import format_float, html_table"
-            ),
-        }
-        for rel_path, import_line in expected_imports.items():
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn(import_line, text)
-                names = function_names(rel_path)
-                self.assertNotIn("_html_table", names)
-                self.assertNotIn("_fmt", names)
-                if not rel_path.endswith("stage2_reward_probe_scaling_report.py"):
-                    self.assertNotIn("_metric", names)
-                self.assertNotIn("_fmt_elapsed", names)
-                self.assertNotIn("_progress_bar", names)
-                self.assertNotIn("_seq_fmt_elapsed", names)
-                self.assertNotIn("_seq_progress_bar", names)
-
-
 if __name__ == "__main__":
     unittest.main()

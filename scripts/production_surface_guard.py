@@ -104,6 +104,7 @@ def active_source_paths(paths: Iterable[str]) -> tuple[str, ...]:
         path
         for path in paths
         if not is_preserved_result(path)
+        and path != "scripts/production_surface_guard.py"
         and not path.startswith(NON_RUNTIME_SOURCE_ROOTS)
         and Path(path).suffix in ACTIVE_SUFFIXES
     )

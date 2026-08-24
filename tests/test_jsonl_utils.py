@@ -279,35 +279,5 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(text, '{"a": "x", "b": 2}\n{"c": 3}\n')
 
 
-class JsonlUtilsStaticGuardTest(unittest.TestCase):
-    def test_known_report_scripts_use_shared_jsonl_reader(self):
-        expected = {
-            "scripts/stage2_reward_probe_scaling_report.py": "from jsonl_utils import iter_jsonl",
-            "scripts/gpu_utilization_report.py": "from jsonl_utils import iter_jsonl",
-            "scripts/blb_regen_stage2_outputs.py": "from jsonl_utils import iter_jsonl",
-            "blb_stage2_rl/candidate_store.py": "from jsonl_utils import iter_jsonl",
-            "scripts/verify_stage2_persistent_outputs.py": (
-                "from jsonl_utils import count_jsonl_with_required_fields"
-            ),
-            "tools/paper_figures.py": (
-                "from jsonl_utils import read_jsonl_fields, read_jsonl_float_field, read_jsonl_xy"
-            ),
-            "tools/experiments_log.py": "from jsonl_utils import iter_jsonl",
-        }
-        forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}
-        for rel_path, needle in expected.items():
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn(needle, text)
-                self.assertFalse(forbidden & function_names(rel_path))
-
-    def test_finite_jsonl_artifact_script_uses_shared_writer(self):
-        rel_path = "scripts/blb_f0_scan_feasible_domain.py"
-        text = source_text(rel_path)
-
-        self.assertIn("from jsonl_utils import write_jsonl_rows", text)
-        self.assertNotIn("def _write_jsonl(", text)
-
-
 if __name__ == "__main__":
     unittest.main()

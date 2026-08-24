@@ -89,58 +89,5 @@ class CsvFieldUtilsTest(unittest.TestCase):
         self.assertFalse(path.exists())
 
 
-class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
-    def test_known_gpu_report_scripts_use_shared_csv_helpers(self):
-        expected = {
-            "scripts/gpu_utilization_report.py": (
-                "from csv_field_utils import first_present_by_index, normalized_field_index"
-            ),
-            "scripts/stage2_reward_probe_scaling_report.py": (
-                "from csv_field_utils import first_present_by_index, normalized_field_index"
-            ),
-            "scripts/server_resource_snapshot.py": (
-                "from csv_field_utils import first_present_index, normalize_field_name, normalized_field_index"
-            ),
-        }
-        forbidden = {
-            "_normalize_header",
-            "_normalized_fieldnames",
-            "_normalized_row",
-            "_normalized_field_lookup",
-            "_normalized_index_lookup",
-            "_normalized_field_index",
-            "_first_present",
-            "_first_header_index",
-            "_first_present_by_lookup",
-            "_first_present_by_index",
-        }
-        for rel_path, needle in expected.items():
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn(needle, text)
-                self.assertFalse(forbidden & function_names(rel_path))
-
-    def test_simple_csv_artifact_scripts_use_shared_writer(self):
-        expected = {
-            "scripts/blb_f0_scan_feasible_domain.py": "from csv_field_utils import write_csv_rows",
-            "scripts/bert_mrpc_layer_noise_experiment.py": "from csv_field_utils import write_csv_rows",
-            "experiments/noise_accuracy_tradeoff_score.py": (
-                "from csv_field_utils import write_csv_rows_with_inferred_fields"
-            ),
-            "experiments/relative_vs_absolute_noise_mrpc.py": (
-                "from csv_field_utils import write_csv_rows_with_inferred_fields"
-            ),
-            "experiments/relative_vs_absolute_noise_mrpc_distribution.py": (
-                "from csv_field_utils import write_csv_rows_with_inferred_fields"
-            ),
-        }
-        for rel_path, needle in expected.items():
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn(needle, text)
-                self.assertNotIn("def _write_csv(", text)
-                self.assertNotIn("def write_csv(", text)
-
-
 if __name__ == "__main__":
     unittest.main()

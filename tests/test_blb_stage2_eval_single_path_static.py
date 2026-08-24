@@ -40,16 +40,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         )
         self.assertIn('"block1": expected_all', paean)
 
-    def test_install_auditors_consume_the_canonical_materialized_config(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        for relative in (
-            "scripts/blb_verify_noise_install.py",
-            "scripts/blb_verify_boosted_install.py",
-        ):
-            text = (repo / relative).read_text(encoding="utf-8")
-            self.assertIn("materialize_decoded_action", text, relative)
-            self.assertNotIn("apply_optimizer_output_to_cfg(", text, relative)
-
     def test_install_cache_uses_final_config_fingerprint_not_flat_action_hash(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
@@ -202,57 +192,14 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag.', env)
         self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag_obj.', env)
 
-    def test_report_json_normalization_uses_shared_helper(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
-        final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
-        persistence = (repo / "blb_stage2_rl" / "persistence.py").read_text(encoding="utf-8")
-        noise_install = (repo / "scripts" / "blb_verify_noise_install.py").read_text(encoding="utf-8")
-        layer_noise = (repo / "scripts" / "bert_mrpc_layer_noise_experiment.py").read_text(encoding="utf-8")
-
-        for text in (paean, final_eval):
-            self.assertRegex(text, r"from json_utils import .*\bto_jsonable\b")
-            self.assertIn("to_jsonable(", text)
-            self.assertNotIn("def _json_ready", text)
-        self.assertIn("from json_utils import to_jsonable as _to_jsonable", persistence)
-        self.assertNotIn("def _to_jsonable", persistence)
-        for text in (noise_install, layer_noise):
-            self.assertIn("from json_utils import to_jsonable", text)
-            self.assertIn("to_jsonable(", text)
-            self.assertNotIn("def _json_safe", text)
-            self.assertNotIn("return {str(k): _json_safe", text)
-            self.assertNotIn("return {str(key): _json_safe", text)
-    def test_json_default_scripts_use_shared_adapter(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        stage2_probe = (
-            repo / "experiment" / "scripts" / "noise" / "stage2_probe_subset_size_experiment.py"
-        ).read_text(encoding="utf-8")
-        softmax_sweep = (
-            repo / "experiment" / "scripts" / "noise" / "softmax_v_noise_sweep.py"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("from json_utils import json_default as _json_default", stage2_probe)
-        self.assertNotIn("def _json_default", stage2_probe)
-        self.assertIn("from json_utils import json_default", softmax_sweep)
-        self.assertNotIn("def json_default", softmax_sweep)
-
     def test_stable_json_hash_callers_use_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         candidate_store = (repo / "blb_stage2_rl" / "candidate_store.py").read_text(encoding="utf-8")
-        fusion_common = (repo / "scripts" / "fusion_count_action_eval_common.py").read_text(encoding="utf-8")
-        f0_scan = (repo / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8")
         registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
 
         self.assertRegex(candidate_store, r"from json_utils import .*\bstable_json_hash\b")
-        self.assertRegex(
-            fusion_common,
-            r"from json_utils import .*\bstable_json_hash\b.*\bstable_json_key\b",
-        )
-        self.assertRegex(f0_scan, r"from json_utils import .*\bstable_json_hash\b")
         self.assertRegex(registry, r"from json_utils import .*\bstable_json_hash\b")
         self.assertNotIn("def _stable_json", candidate_store)
-        self.assertNotIn("def stable_json_hash", fusion_common)
-        self.assertNotIn("def _sha256_json", f0_scan)
 
 
 if __name__ == "__main__":

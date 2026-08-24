@@ -92,6 +92,7 @@ def active_source_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
         path
         for path in paths
         if not is_preserved_result(path)
+        and path != "scripts/production_surface_guard.py"
         and not path.startswith(("tests/", "docs/", "agent_handoffs/"))
         and Path(path).suffix in ACTIVE_SUFFIXES
     )

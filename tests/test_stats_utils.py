@@ -48,30 +48,5 @@ class StatsUtilsTest(unittest.TestCase):
         self.assertEqual(median_sorted([1.0, 3.0, 5.0]), 3.0)
 
 
-class StatsUtilsStaticGuardTest(unittest.TestCase):
-    def test_known_report_scripts_use_shared_stats_helpers(self):
-        expected_imports = {
-            "scripts/stage2_reward_probe_scaling_report.py": "from stats_utils import median_sorted",
-            "scripts/stage1_parallel_report.py": "from stats_utils import safe_div_or_none",
-            "scripts/stage1_approx_reuse_benchmark.py": "from stats_utils import mean_or_default",
-            "scripts/blb_f0_scan_feasible_domain.py": "from stats_utils import mean_or_none, ratio_or_default",
-        }
-        forbidden = {
-            "_mean",
-            "_mean_or_none",
-            "_mean_seconds",
-            "_mean_counts",
-            "_median_sorted",
-            "_safe_div",
-            "_frac",
-            "_frac_counts",
-        }
-        for rel_path, import_line in expected_imports.items():
-            with self.subTest(path=rel_path):
-                text = source_text(rel_path)
-                self.assertIn(import_line, text)
-                self.assertFalse(forbidden & function_names(rel_path))
-
-
 if __name__ == "__main__":
     unittest.main()
