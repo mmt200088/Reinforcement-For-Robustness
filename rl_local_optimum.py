@@ -1,16 +1,4 @@
-"""RL 局部最优 / 健康检测（Stage-1 与 Stage-2 共用，torch-free）。
-
-历史上 ``detect_rl_local_optimum`` 定义在 ``layer_importance_evaluator.py`` 里，
-而那个文件 import 了 torch / transformers，重得很。为了让 **Stage-2** 的收尾
-（``blb_stage2_rl.sequential_runner``）、离线再生器（``scripts/blb_regen_stage2_outputs.py``）
-和单元测试都能在**没有 torch 的机器上**复用同一套判据，把这个纯 numpy 的函数挪到这里。
-
-``layer_importance_evaluator`` 仍以 ``from rl_local_optimum import detect_rl_local_optimum``
-重新导出它，所以 Stage-1 行为与历史完全一致（``noise_rl_module_v2`` 里
-``from layer_importance_evaluator import detect_rl_local_optimum`` 也照常工作）。
-
-本模块只依赖 numpy。
-"""
+"""Torch-free convergence diagnostics shared by Stage 1 and Stage 2."""
 from __future__ import annotations
 
 import os

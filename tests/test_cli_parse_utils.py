@@ -102,8 +102,6 @@ class CliParseUtilsTest(unittest.TestCase):
             "scripts/blb_diagnose_invalid_blocks.py": "from cli_parse_utils import parse_int_list_text",
             "scripts/blb_diag_block2_boost.py": "from cli_parse_utils import parse_int_list_text",
             "rl_tune.py": "from cli_parse_utils import",
-            "rl_tune_general.py": "from cli_parse_utils import",
-            "rl_tune_genetic.py": "from cli_parse_utils import",
         }
         for rel, needle in checks.items():
             text = (repo / rel).read_text(encoding="utf-8")
@@ -122,7 +120,6 @@ class CliParseUtilsTest(unittest.TestCase):
         self.assertNotIn("text.replace(\";\", \",\").split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
         self.assertNotIn("str(args.beam_depths).split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
         self.assertNotIn("raw.split(\",\")", (repo / "scripts/bert_mrpc_layer_noise_experiment.py").read_text(encoding="utf-8"))
-        self.assertNotIn("_raw.split(\",\")", (repo / "rl_tune_general.py").read_text(encoding="utf-8"))
         self.assertNotIn("raw.replace(\";\", \",\").split(\",\")", (repo / "blb_stage2_rl/action_space.py").read_text(encoding="utf-8"))
         self.assertNotIn("str(v).split(\",\")", (repo / "blb_stage2_rl/runner.py").read_text(encoding="utf-8"))
         self.assertNotIn("args.gelu_degree.split(\",\")", (repo / "scripts/blb_diagnose_invalid_blocks.py").read_text(encoding="utf-8"))
@@ -142,7 +139,7 @@ class CliParseUtilsTest(unittest.TestCase):
             (repo / "scripts/report_fusion_count_map.py").read_text(encoding="utf-8"),
         )
 
-        for rel in ("rl_tune.py", "rl_tune_general.py", "rl_tune_genetic.py"):
+        for rel in ("rl_tune.py",):
             text = (repo / rel).read_text(encoding="utf-8")
             self.assertNotIn("def parse_degree_config(", text)
             self.assertNotIn("def parse_noise_config(", text)

@@ -664,7 +664,6 @@ def train(
         stage2_probe_size: int = None,
         stage2_inference_batch_size: int = None,
         # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
-        stage2_rl_variant: str = "blb_v3",
         blb_v3_rollout_size: int = None,
         blb_v3_eval_interval: int = None,
         blb_v3_save_interval: int = None,
@@ -780,12 +779,6 @@ def train(
         blb_v3_osr_scan_only: bool = False,
         blb_v3_osr_num_combo_samples: int = 300,
         blb_v3_osr_allow_fingerprint_mismatch: bool = False,
-        # PPO is the only supported RL algorithm. The GRPO experiment path is
-        # permanently disabled for this project after the MRPC validation/test
-        # mismatch study; keep the argument only so old invocations fail with a
-        # clear error instead of silently changing behavior.
-        rl_algo: str = "ppo",
-        grpo_kl_beta: float = 0.0,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -812,12 +805,6 @@ def train(
     final_eval_require_rescale_optimizer = parse_bool_flag(
         final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
     )
-    rl_algo = str(rl_algo or "ppo").strip().lower()
-    if rl_algo != "ppo":
-        raise ValueError(
-            "GRPO has been disabled for this project after the PPO-vs-GRPO "
-            "MRPC generalization study. Use rl_algo='ppo'."
-        )
     final_eval_glue_submission_enabled = parse_bool_flag(
         final_eval_glue_submission_enabled, "final_eval_glue_submission_enabled"
     )
@@ -1066,7 +1053,6 @@ def train(
         f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
         f"resume_run_dir: {resume_run_dir}\n"
-        f"stage2_rl_variant: {stage2_rl_variant}\n"
         f"blb_v3_rescale_invoker_kind: {blb_v3_rescale_invoker_kind}\n"
         f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
         f"blb_v3_warmstart_anchor_episodes: {blb_v3_warmstart_anchor_episodes}\n"
@@ -1146,17 +1132,7 @@ def train(
         **model_load_kwargs,
     )
 
-    # ---------------------------------------------------------------
-    # Freeze the backbone. The downstream pipeline (layer_importance_
-    # evaluator.py + noise_rl_module_v2.py) only uses this HF model for
-    # **inference** to compute rewards — the PPO policy/value networks
-    # are the only thing being trained. Explicitly disabling grads on
-    # every parameter and pinning the model to eval() makes that
-    # contract bulletproof: no amount of noise-wrapping, function-
-    # replacement or stray autograd call can push an update into the
-    # pretrained weights, and dropout/train-mode side-effects cannot
-    # add variance to the reward signal mid-episode.
-    # ---------------------------------------------------------------
+    # The backbone is inference-only; PPO updates only its policy/value network.
     for _param in model.parameters():
         _param.requires_grad_(False)
     model.eval()
@@ -1382,7 +1358,6 @@ def train(
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
             stage2_inference_batch_size=stage2_inference_batch_size,
-            stage2_rl_variant=stage2_rl_variant,
             blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
             blb_v3_inproc_rescale_optimizer_root=(
                 blb_v3_inproc_rescale_optimizer_root
@@ -1493,8 +1468,6 @@ def train(
             blb_v3_osr_scan_only=blb_v3_osr_scan_only,
             blb_v3_osr_num_combo_samples=blb_v3_osr_num_combo_samples,
             blb_v3_osr_allow_fingerprint_mismatch=blb_v3_osr_allow_fingerprint_mismatch,
-            rl_algo=rl_algo,
-            grpo_kl_beta=grpo_kl_beta,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

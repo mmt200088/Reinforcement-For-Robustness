@@ -58,9 +58,6 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
             "scripts/stage2_reward_probe_scaling_report.py": (
                 "from report_format_utils import format_float, html_table"
             ),
-            "genetic_search_module.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
-            "general_policy_module.py": "from report_format_utils import progress_bar as _progress_bar",
-            "noise_rl_module_v2.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
             "blb_stage2_rl/sequential_runner.py": (
                 "from report_format_utils import progress_bar as _seq_progress_bar"
             ),

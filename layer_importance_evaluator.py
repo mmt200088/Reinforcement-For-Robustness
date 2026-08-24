@@ -841,10 +841,7 @@ def _rl_opt_entropy_recovery_mul():
 #   if diag["likely_local_optimum"]:
 #       evaluator.log("[LocalOpt] " + diag["summary"])
 # ==================================================================
-# 实现已挪到 torch-free 的 ``rl_local_optimum.py``（Stage-1 / Stage-2 / 离线工具共用，
-# 不再拖 torch/transformers）。这里重新导出，保持
-# ``layer_importance_evaluator.detect_rl_local_optimum`` 以及 ``noise_rl_module_v2``
-# 的历史 import 不变；Stage-1 行为逐字一致。
+# The detector stays torch-free so training and offline diagnostics share it.
 from rl_local_optimum import detect_rl_local_optimum  # noqa: E402,F401
 
 def orthogonal_init(layer, gain=1.0):
@@ -2507,7 +2504,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_k_trials=None,
                  stage2_probe_size=None,
                  stage2_inference_batch_size=None,
-                 stage2_rl_variant='blb_v3',
                  blb_v3_rollout_size=None,
                   blb_v3_eval_interval=None,
                   blb_v3_save_interval=None,
@@ -2594,8 +2590,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_osr_scan_only=False,
                   blb_v3_osr_num_combo_samples=300,
                   blb_v3_osr_allow_fingerprint_mismatch=False,
-                  rl_algo="ppo",
-                  grpo_kl_beta=0.0,
                   glue_data_protocol=None,
                   mrpc_reproducibility=None,
                   final_eval_require_rescale_optimizer=False):
@@ -3050,16 +3044,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_glue_submission_seed = int(final_eval_glue_submission_seed)
         self.final_eval_require_rescale_optimizer = self._coerce_bool_flag(
             final_eval_require_rescale_optimizer, 'final_eval_require_rescale_optimizer')
-        # PPO is now the only supported RL algorithm. GRPO is deliberately
-        # rejected at the evaluator boundary so Stage-1 and Stage-2 cannot enter
-        # the experimental group-relative path from CLI, presets, or resumes.
-        self.rl_algo = str(rl_algo or "ppo").strip().lower()
-        if self.rl_algo != "ppo":
-            raise ValueError(
-                "GRPO has been disabled for this project after the PPO-vs-GRPO "
-                f"MRPC generalization study. Use rl_algo='ppo', got {rl_algo!r}."
-            )
-        self.grpo_kl_beta = 0.0
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
@@ -3201,7 +3185,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
 
         # ---------- Stage-2 RL variant 路由（新版 BLB v3 / 旧版 v2 二选一） ----------
-        self.stage2_rl_variant = self._coerce_stage2_rl_variant(stage2_rl_variant)
         # BLB v3 training always uses the real in-process Rescale_optimizer path.
         self.blb_v3_rescale_invoker_kind = str(
             blb_v3_rescale_invoker_kind or "in_process"
@@ -3541,10 +3524,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "for two-stage comparators; PPO checkpoint identity remains unchanged"
             )
         if self.blb_v3_search_backend != "ppo":
-            if self.stage2_rl_variant != "blb_v3":
-                raise ValueError(
-                    "two-stage comparators require stage2_rl_variant='blb_v3'"
-                )
             if self.mrpc_reproducibility is None:
                 raise ValueError(
                     "two-stage comparators require the MRPC reproducibility fixture"
@@ -3776,7 +3755,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 reward_design=self.blb_v3_reward_design,
                 sequential_rl=self.blb_v3_sequential_rl,
                 substage_mode=self.blb_v3_substage_mode,
-                stage2_rl_variant=self.stage2_rl_variant,
+                stage2_rl_variant="blb_v3",
             )
         self.blb_v3_fusion_neighbor_curriculum = self._coerce_bool_flag(
             blb_v3_fusion_neighbor_curriculum, 'blb_v3_fusion_neighbor_curriculum',
@@ -3893,26 +3872,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"Invalid nonnegative integer for {flag_name}: {raw_value!r}."
             )
         return value
-
-    @staticmethod
-    def _coerce_stage2_rl_variant(raw_value):
-        """规范化 ``stage2_rl_variant`` 参数。
-
-        接受的值（不区分大小写）：
-          * ``'blb_v3'`` / ``'blb'`` / ``'v3'`` → 加强版 BLB Stage 2 RL（默认推荐）
-          * ``'legacy_v2'`` / ``'legacy'`` / ``'v2'`` → 旧版 stage2 RL
-        """
-        if raw_value is None:
-            return 'blb_v3'
-        text = str(raw_value).strip().lower()
-        if text in ('blb_v3', 'blb', 'v3', 'blb_stage2_rl', '', 'default'):
-            return 'blb_v3'
-        if text in ('legacy_v2', 'legacy', 'v2', 'noise_rl_module_v2', 'old'):
-            return 'legacy_v2'
-        raise ValueError(
-            f"Invalid stage2_rl_variant: {raw_value!r}. "
-            f"Supported: 'blb_v3' (默认/新版) or 'legacy_v2' (旧版)."
-        )
 
     def _build_final_eval_runner(self):
         return UnifiedFinalEvaluationModule(
@@ -5703,34 +5662,27 @@ class LayerImportanceEvaluator(TrainerCallback):
         return path if os.path.isfile(path) else None
 
     def _get_stage2_resume_checkpoint_path(self):
-        """如果设置了 resume_run_dir，返回 Stage-2 checkpoint 路径；否则返回 None。"""
-        from noise_rl_module_v2 import NOISE_STAGE_CHECKPOINT_FILENAME
         if not self.resume_run_dir:
             return None
-        variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
-        if variant in ("blb_v3", "blb", "v3", "blb_stage2_rl"):
-            try:
-                from blb_stage2_rl.runner import (
-                    BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
-                    BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
-                )
-                for filename in (
-                        BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
-                        BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
-                ):
-                    for progress_dir_name in ("stage2_noise", "blb_stage2"):
-                        path = os.path.join(
-                            self.resume_run_dir, progress_dir_name, "progress", filename,
-                        )
-                        if os.path.isfile(path):
-                            return path
-            except Exception:
-                pass
-        path = os.path.join(
-            self.resume_run_dir, "stage2_noise", "progress",
-            NOISE_STAGE_CHECKPOINT_FILENAME,
+        from blb_stage2_rl.runner import (
+            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+            BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
         )
-        return path if os.path.isfile(path) else None
+
+        for filename in (
+            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+            BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+        ):
+            for progress_dir_name in ("stage2_noise", "blb_stage2"):
+                path = os.path.join(
+                    self.resume_run_dir,
+                    progress_dir_name,
+                    "progress",
+                    filename,
+                )
+                if os.path.isfile(path):
+                    return path
+        return None
 
     def _stage2_final_eval_ineligible_reason(
             self,
@@ -5925,10 +5877,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         而 final_eval_only 已强制跳过这两个阶段）。
         返回 ``(stage1_best_dict_or_None, stage2_best_dict_or_None)``。
         """
-        from noise_rl_module_v2 import (
-            STAGE1_CHECKPOINT_FILENAME,
-            NOISE_STAGE_CHECKPOINT_FILENAME,
-        )
+        from stage1_rl.checkpoint import STAGE1_CHECKPOINT_FILENAME
 
         candidate_dirs = []
         if self.resume_run_dir:
@@ -5937,9 +5886,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             candidate_dirs.append(self.run_output_dir)
 
         stage1_best = None
-        stage2_variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
-        prefer_blb_stage2 = stage2_variant in ("blb_v3", "blb", "v3", "blb_stage2_rl")
-
         for _dir in candidate_dirs:
             if stage1_best is not None:
                 break
@@ -6157,88 +6103,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                 _raise_stage2_failures("BLB Stage-2", failures)
             return None
 
-        def _load_legacy_stage2_best():
-            failures = []
-            for _dir in candidate_dirs:
-                path = os.path.join(
-                    _dir, "stage2_noise", "progress", NOISE_STAGE_CHECKPOINT_FILENAME,
-                )
-                if not os.path.isfile(path):
-                    continue
-                try:
-                    checkpoint = torch.load(
-                        path, map_location="cpu", weights_only=False,
-                    )
-                    if not isinstance(checkpoint, Mapping):
-                        raise TypeError(
-                            "legacy Stage-2 checkpoint must contain a mapping, "
-                            f"got {type(checkpoint).__name__}"
-                        )
-                    cfg = (
-                        checkpoint.get("best_noise_config")
-                        or checkpoint.get("incumbent_best_noise_config")
-                    )
-                    if not isinstance(cfg, Mapping):
-                        raise ValueError("legacy Stage-2 checkpoint missing best noise config")
-                    extracted = {
-                        key: np.asarray(value, dtype=int).copy()
-                        for key, value in cfg.items()
-                        if isinstance(key, str) and key.endswith("scaling_factors")
-                    }
-                    if not extracted:
-                        raise ValueError(
-                            "legacy Stage-2 best noise config has no scaling_factors"
-                        )
-                except Exception as exc:
-                    failures.append((path, exc))
-                    self.log(
-                        f"[final_eval_only][警告] legacy Stage-2 checkpoint "
-                        f"不可用，继续查找: {path}: {exc}"
-                    )
-                    continue
-                self.log(f"[final_eval_only] 加载 Stage-2 RL 最优配置: {path}")
-                return extracted
-            if failures:
-                _raise_stage2_failures("legacy Stage-2", failures)
-            return None
-
-        if prefer_blb_stage2:
-            stage2_best = _load_blb_stage2_best()
-            if stage2_best is None:
-                stage2_best = _load_legacy_stage2_best()
-        else:
-            stage2_best = _load_legacy_stage2_best()
-            if stage2_best is None:
-                stage2_best = _load_blb_stage2_best()
+        stage2_best = _load_blb_stage2_best()
 
         return stage1_best, stage2_best
 
-    def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source,
-                           resume_checkpoint_path=None):
-        """Stage-2 噪声 RL 入口；按 ``self.stage2_rl_variant`` 路由到不同实现。
+    def run_noise_rl_stage(
+        self,
+        fixed_gelu,
+        fixed_softmax,
+        fixed_label,
+        fixed_source,
+        resume_checkpoint_path=None,
+    ):
+        from blb_stage2_rl import BLBStage2RLRunner
 
-        变体支持：
-          * ``"blb_v3"``（默认 / 推荐）：加强版 BLB Stage 2 RL，覆盖 Block 1-5 +
-            first-input fresh 全部噪声候选点，按精度/稳定性硬约束 + cost
-            三层优先级训练。详见 ``docs/BLB_stage2_rl_spec.md``。
-          * ``"legacy_v2"``：旧版 stage2 RL（``noise_rl_module_v2.NoiseRLModuleV2``），
-            用 INPUT_NOISE_VARIANCE_TABLE 单 N 表的 ``*_scaling_factors``。
-            提供给希望复现旧实验的用户。
-        """
-        variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
-        if variant in ("blb_v3", "blb", "v3", "blb_stage2_rl"):
-            from blb_stage2_rl import BLBStage2RLRunner
-            runner = BLBStage2RLRunner(self)
-            return runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
-                              resume_checkpoint_path=resume_checkpoint_path)
-        if variant in ("legacy_v2", "legacy", "v2", "noise_rl_module_v2"):
-            from noise_rl_module_v2 import NoiseRLModuleV2
-            module = NoiseRLModuleV2(self)
-            return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
-                              resume_checkpoint_path=resume_checkpoint_path)
-        raise ValueError(
-            f"Unknown stage2_rl_variant {variant!r}. "
-            f"Supported variants: 'blb_v3' (默认), 'legacy_v2'."
+        runner = BLBStage2RLRunner(self)
+        return runner.run(
+            fixed_gelu,
+            fixed_softmax,
+            fixed_label,
+            fixed_source,
+            resume_checkpoint_path=resume_checkpoint_path,
         )
 
     def save_best_policies_snapshot(self):
@@ -6590,7 +6475,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # so reseed deterministically by (base_seed, update_step) — both invariant
         # to GPU count — before any policy forward below. No-op if evaluate_actions
         # is dropout-free; if it isn't, this keeps the update identical across GPU
-        # counts. (GRPO update path would need the same reseed if --rl-algo grpo.)
+        # counts.
         _u_seed = (
             int(getattr(self, "final_eval_random_seed", 42))
             ^ (int(ppo_update_step) * 2654435761)
@@ -6715,135 +6600,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         last_entropy = float(last_entropy_t.item()) if last_entropy_t is not None else 0.0
         return last_policy_loss, last_value_loss, last_entropy
-
-    def grpo_update_gtrxl(self, gtrxl_net, reference_gtrxl, optimizer, buffer, device,
-                          mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
-                          ppo_update_step=0, kl_beta=0.04):
-        """GTrXL GRPO 更新（最小化替换 ppo_update_gtrxl 的优势估计）。
-
-        与 ppo_update_gtrxl 的差异（2026-05-31 PPO->GRPO 设计）：
-        * **优势** = group-relative 的整段 episode 回报（PPO 更新窗口即为 group——
-          每个 Stage-1 episode 都从同一模型 + 同一约束出发），广播到全部 12 个
-          layer-step。不再用 GAE、不再用 critic。
-        * **无 value loss**（critic 头不再训练）。
-        * **+ kl_beta * KL(policy || reference)**，k3 无偏估计，reference 为冻结快照。
-        Warmup LR、clip、最小熵约束、梯度裁剪、KL early-stop 与 PPO 完全一致。
-        返回 (policy_loss, value_loss=0.0, entropy)，与 ppo_update_gtrxl 同形以便调度。
-        """
-        raise RuntimeError(
-            "GRPO has been disabled for this project after the PPO-vs-GRPO "
-            "MRPC generalization study. Use ppo_update_gtrxl instead."
-        )
-        from grpo_common import grpo_group_normalize
-        if entropy_coef is None:
-            entropy_coef = self.get_current_entropy_coef()
-
-        # 学习率 Warmup（与 PPO 一致）
-        if ppo_update_step < GTRXL_WARMUP_STEPS:
-            warmup_factor = (ppo_update_step + 1) / GTRXL_WARMUP_STEPS
-            current_lr = self.ppo_lr_initial * warmup_factor
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = current_lr
-
-        (cont_features, layer_indices, prev_g_actions,
-         actions_g, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
-
-        n_eps = cont_features.size(0)
-
-        # GRPO group-relative advantage: 每段 episode 的总回报，跨窗口（group）归一化，
-        # 再广播到该 episode 的每一步。替换 GAE。
-        ep_returns = rewards.sum(dim=1).detach().cpu().numpy()  # (n_eps,)
-        ep_adv = grpo_group_normalize(ep_returns)               # (n_eps,) float32
-        advantages = torch.tensor(
-            np.ascontiguousarray(ep_adv, dtype=np.float32), device=device
-        ).unsqueeze(1).expand(-1, rewards.shape[1])             # (n_eps, n_layers)
-
-        use_ref = reference_gtrxl is not None and float(kl_beta) > 0.0
-
-        last_policy_loss = 0.0
-        last_entropy = 0.0
-        kl_early_stop = False
-        for epoch in range(PPO_K_EPOCHS):
-            if kl_early_stop:
-                break
-            ep_indices = torch.randperm(n_eps)
-            epoch_kl_acc = 0.0
-            epoch_kl_count = 0
-
-            for start in range(0, n_eps, mini_batch_episodes):
-                end = min(start + mini_batch_episodes, n_eps)
-                mb_idx = ep_indices[start:end]
-
-                mb_cont = cont_features[mb_idx]
-                mb_layer = layer_indices[mb_idx]
-                mb_prev_g = prev_g_actions[mb_idx]
-                mb_act_g = actions_g[mb_idx]
-                mb_old_lp = old_logprobs[mb_idx]
-                mb_adv = advantages[mb_idx]
-                mb_gelu_mask = gelu_masks[mb_idx] if gelu_masks is not None else None
-
-                new_logprobs, entropy, _new_values = gtrxl_net.evaluate_actions(
-                    mb_cont, mb_layer, mb_prev_g, mb_act_g,
-                    gelu_mask=mb_gelu_mask
-                )
-
-                new_logprobs_flat = new_logprobs.reshape(-1)
-                entropy_flat = entropy.reshape(-1)
-                mb_old_lp_flat = mb_old_lp.reshape(-1)
-                mb_adv_flat = mb_adv.reshape(-1)
-
-                ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
-                surr1 = ratios * mb_adv_flat
-                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
-                policy_loss = -torch.min(surr1, surr2).mean()
-
-                # 冻结 reference 的 k3 KL 估计
-                if use_ref:
-                    with torch.no_grad():
-                        ref_logprobs, _ref_ent, _ref_val = reference_gtrxl.evaluate_actions(
-                            mb_cont, mb_layer, mb_prev_g, mb_act_g,
-                            gelu_mask=mb_gelu_mask
-                        )
-                    ref_lp_flat = ref_logprobs.reshape(-1)
-                    delta = ref_lp_flat - new_logprobs_flat
-                    kl_ref = (torch.exp(delta) - delta - 1.0).mean()
-                else:
-                    kl_ref = torch.zeros((), device=device)
-
-                # 最小熵约束（与 PPO 一致）
-                mean_entropy = entropy_flat.mean()
-                effective_entropy_coef = entropy_coef
-                _entropy_lb = _rl_opt_entropy_lower_bound()
-                if mean_entropy.item() < _entropy_lb:
-                    entropy_deficit = _entropy_lb - mean_entropy.item()
-                    effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit
-                entropy_loss = -mean_entropy
-
-                # GRPO loss：clipped surrogate + 熵 + reference-KL（无 value loss）
-                loss = policy_loss + effective_entropy_coef * entropy_loss + float(kl_beta) * kl_ref
-
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(gtrxl_net.parameters(), 0.5)
-                optimizer.step()
-
-                if RL_OPT_FLAGS.get("use_kl_early_stop", False):
-                    with torch.no_grad():
-                        approx_kl = (mb_old_lp_flat - new_logprobs_flat).mean().item()
-                    epoch_kl_acc += approx_kl
-                    epoch_kl_count += 1
-
-                last_policy_loss = policy_loss.item()
-                last_entropy = mean_entropy.item()
-
-            if (RL_OPT_FLAGS.get("use_kl_early_stop", False)
-                    and epoch_kl_count > 0):
-                avg_kl = epoch_kl_acc / epoch_kl_count
-                if avg_kl > 1.5 * float(RL_OPT_FLAGS.get("kl_target", 0.02)):
-                    kl_early_stop = True
-
-        # value_loss 报告为 0（critic 不再训练），保持 3-tuple 调用契约。
-        return last_policy_loss, 0.0, last_entropy
 
     # ------------------------------------------------------------------
     # Stage-1 multi-GPU rollout (parallel data collection)
@@ -7629,7 +7385,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "total_layers": int(self.total_layers),
                 "search_algorithm": self.search_algorithm,
                 "dataset_protocol_hash": self.dataset_protocol_hash,
-                "rl_algo": self.rl_algo,
+                "rl_algo": "ppo",
                 "stage1_episodes_requested": (
                     None
                     if self.stage1_rl_unbounded_until_entropy
@@ -7866,10 +7622,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"  ⚠ checkpoint 已完成 {stage1_resume_start_episode} 回合，"
                         f"目标回合数 {self.stage1_rl_episode_limit} 无需追加训练。"
                     )
-
-            # GRPO is disabled for this project. Keep no Stage-1 reference policy;
-            # updates below always use PPO.
-            stage1_reference_net = None
 
             _stage1_rl_t0 = time.time()
             stage1_completed_episodes = int(stage1_resume_start_episode)

@@ -142,31 +142,23 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
         str(settings.stage2_probe_size),
     ]
 
-    if settings.algorithm == "rl":
-        return [
-            sys.executable,
-            str(REPO_ROOT / "rl_tune.py"),
-            *common,
-            "--stage1_rl_episodes",
-            "51000",
-            "--stage2_rl_episodes",
-            "0",
-            "--stage1_rl_episodes_specified",
-            "false",
-            "--stage2_rl_episodes_specified",
-            "false",
-            "--ppo_update_interval",
-            "120",
-            "--stage2_rl_variant",
-            settings.stage2_rl_variant,
-        ]
-
+    backend = "ppo" if settings.algorithm == "rl" else settings.algorithm
     return [
         sys.executable,
-        str(REPO_ROOT / "rl_tune_genetic.py"),
+        str(REPO_ROOT / "rl_tune.py"),
         *common,
-        "--search_backend",
-        settings.algorithm,
+        "--stage1_rl_episodes",
+        "51000",
+        "--stage2_rl_episodes",
+        "0",
+        "--stage1_rl_episodes_specified",
+        "false",
+        "--stage2_rl_episodes_specified",
+        "false",
+        "--ppo_update_interval",
+        "120",
+        "--blb_v3_search_backend",
+        backend,
     ]
 
 

@@ -59,7 +59,6 @@ class FinalEvalSettings:
     stage2_stability_tolerance: float = 0.05
     stage2_k_trials: int = 5
     stage2_probe_size: int = 256
-    stage2_rl_variant: str = "blb_v3"
     manual_stage1_gelu: str = ""
     manual_stage1_softmax: str = ""
     manual_stage2_noise: str = ""
@@ -165,7 +164,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stage2-stability-tolerance", type=float, default=0.05)
     parser.add_argument("--stage2-k-trials", type=int, default=5)
     parser.add_argument("--stage2-probe-size", type=int, default=256)
-    parser.add_argument("--stage2-rl-variant", default="blb_v3")
     parser.add_argument("--manual-stage1-gelu", default="")
     parser.add_argument("--manual-stage1-softmax", default="")
     parser.add_argument("--manual-stage2-noise", default="")
@@ -225,15 +223,17 @@ def normalize_algorithm(value: str) -> str:
     raw = str(value or "rl").strip().lower().replace("_", "-")
     if raw in ("rl", "ppo"):
         return "rl"
-    if raw in ("ga", "genetic"):
-        return "ga"
+    if raw in ("bo", "bo-rf", "bayesian"):
+        return "bo_rf"
+    if raw in ("coinn", "coinn-ga", "ga", "genetic"):
+        return "coinn_ga"
     if raw in ("greedy", "greedy-search"):
         return "greedy"
     raise ValueError(f"Unsupported final_eval algorithm: {value!r}")
 
 
 def default_config_for_algorithm(algorithm: str) -> str:
-    if algorithm == "ga":
+    if algorithm == "coinn_ga":
         return "glue_final_configs_best_genetic.json"
     if algorithm == "greedy":
         return "glue_final_configs_best_greedy.json"
@@ -325,7 +325,6 @@ def parse_final_eval_settings(
         stage2_stability_tolerance=float(ns.stage2_stability_tolerance),
         stage2_k_trials=int(ns.stage2_k_trials),
         stage2_probe_size=int(ns.stage2_probe_size),
-        stage2_rl_variant=str(ns.stage2_rl_variant or "blb_v3").lower(),
         manual_stage1_gelu=ns.manual_stage1_gelu,
         manual_stage1_softmax=ns.manual_stage1_softmax,
         manual_stage2_noise=ns.manual_stage2_noise,
@@ -398,8 +397,6 @@ def validate_settings(
     if settings.resume_from and not Path(settings.resume_from).is_dir():
         raise FileNotFoundError(f"--resume-from directory does not exist: {settings.resume_from}")
     validate_supported_profile(settings.model_type, settings.dataset)
-    if settings.stage2_rl_variant not in ("blb_v3", "legacy_v2"):
-        raise ValueError("--stage2-rl-variant must be blb_v3 or legacy_v2")
     if settings.action_config and not Path(settings.action_config).is_file():
         raise FileNotFoundError(f"--action-config file does not exist: {settings.action_config}")
     if settings.random_enabled and settings.action_ranges:

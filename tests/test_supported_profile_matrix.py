@@ -13,8 +13,6 @@ from glue_data_protocol import supported_profiles
 from Paean import config as paean_config
 from Paean import run_final_eval
 from config import run_layout
-import generate_glue_submission as submission
-import rl_tune_general
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,17 +23,12 @@ SUPPORTED_MODELS = ("bert-base", "bert-large")
 def test_public_python_registries_match_shared_six_profile_matrix():
     assert paean_config.DATASET_CHOICES == SUPPORTED_DATASETS
     assert paean_config.MODEL_TYPE_CHOICES == SUPPORTED_MODELS
-    assert tuple(submission.TASK_CONFIGS) == SUPPORTED_DATASETS
-    assert tuple(submission.BERT_BASE_MODEL_NAMES) == SUPPORTED_DATASETS
-    assert tuple(submission.BERT_LARGE_MODEL_NAMES) == SUPPORTED_DATASETS
-    assert tuple(rl_tune_general.BASE_MODEL_BY_TYPE) == SUPPORTED_MODELS
+    assert tuple(run_final_eval.BASE_MODEL_BY_TYPE) == SUPPORTED_MODELS
 
 
 @pytest.mark.parametrize("model_type,dataset", supported_profiles())
 def test_all_six_profiles_resolve_consistently(model_type, dataset):
-    expected = rl_tune_general.resolve_base_model(model_type, dataset)
-
-    assert run_final_eval._base_model(model_type, dataset) == expected
+    assert run_final_eval._base_model(model_type, dataset)
     assert run_layout.combo_name(model_type, dataset)
 
 
@@ -51,21 +44,9 @@ def test_public_python_entrypoints_reject_unsupported_profiles(
     model_type, dataset
 ):
     with pytest.raises(ValueError):
-        rl_tune_general.resolve_base_model(model_type, dataset)
-    with pytest.raises(ValueError):
         run_final_eval._base_model(model_type, dataset)
     with pytest.raises(ValueError):
         run_layout.combo_name(model_type, dataset)
-
-
-def test_general_rl_accepts_only_supported_tasks_with_one_model_family():
-    assert rl_tune_general.validate_general_tasks(
-        "bert-base", ["mrpc", "rte", "sst2"]
-    ) == ("mrpc", "rte", "sst2")
-    with pytest.raises(ValueError, match="unsupported profile"):
-        rl_tune_general.validate_general_tasks(
-            "bert-base", ["mrpc", "stsb"]
-        )
 
 
 @pytest.mark.parametrize(
@@ -118,9 +99,8 @@ def test_active_entrypoint_sources_have_no_unsupported_dispatch_literals():
         "llama_7B_LayerImportance.sh",
         "Paean/config.py",
         "Paean/run_final_eval.py",
-        "general_policy_module.py",
-        "rl_tune_general.py",
-        "generate_glue_submission.py",
+        "glue_data_protocol.py",
+        "rl_tune.py",
     )
     forbidden = (
         "gpt-2",
@@ -139,13 +119,12 @@ def test_active_entrypoint_sources_have_no_unsupported_dispatch_literals():
             assert value not in source, f"{relative_path}: {value}"
 
 
-def test_general_and_submission_modules_remain_syntax_valid():
+def test_production_entrypoints_remain_syntax_valid():
     for relative_path in (
         "Paean/config.py",
         "Paean/run_final_eval.py",
-        "general_policy_module.py",
-        "rl_tune_general.py",
-        "generate_glue_submission.py",
+        "glue_data_protocol.py",
+        "rl_tune.py",
     ):
         ast.parse(
             (ROOT / relative_path).read_text(encoding="utf-8").lstrip("\ufeff")

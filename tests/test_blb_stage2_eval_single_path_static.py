@@ -227,7 +227,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         persistence = (repo / "blb_stage2_rl" / "persistence.py").read_text(encoding="utf-8")
         noise_install = (repo / "scripts" / "blb_verify_noise_install.py").read_text(encoding="utf-8")
         layer_noise = (repo / "scripts" / "bert_mrpc_layer_noise_experiment.py").read_text(encoding="utf-8")
-        rl_ga = (repo / "rl_ga_compare_runner.py").read_text(encoding="utf-8")
 
         for text in (paean, final_eval):
             self.assertRegex(text, r"from json_utils import .*\bto_jsonable\b")
@@ -241,16 +240,10 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             self.assertNotIn("def _json_safe", text)
             self.assertNotIn("return {str(k): _json_safe", text)
             self.assertNotIn("return {str(key): _json_safe", text)
-        self.assertIn("from json_utils import to_jsonable", rl_ga)
-        self.assertNotIn("def to_jsonable(value)", rl_ga)
         rlpath = (repo / "scripts" / "run_fusion_count_action_eval_rlpath.py").read_text(encoding="utf-8")
         self.assertRegex(rlpath, r"from json_utils import .*\bto_jsonable\b")
         self.assertNotIn("def _jsonable", rlpath)
         self.assertIn("stage2_rl_episodes=0", rlpath)
-
-        genetic = (repo / "rl_tune_genetic.py").read_text(encoding="utf-8")
-        skip_branch = genetic.split("if skip_noise_rl:", 1)[1].split("return {", 1)[0]
-        self.assertIn("stage2_rl_episodes = 0", skip_branch)
 
     def test_json_default_scripts_use_shared_adapter(self):
         repo = pathlib.Path(__file__).resolve().parents[1]

@@ -161,9 +161,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             load=lambda path, **_kwargs: checkpoints[pathlib.Path(path).name],
         )
         loader.__globals__["torch"] = fake_torch
-        noise_module = types.ModuleType("noise_rl_module_v2")
-        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
-        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
         runner_module = types.ModuleType("blb_stage2_rl.runner")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
@@ -176,7 +173,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             evaluator = types.SimpleNamespace(
                 resume_run_dir=tmp_dir,
                 run_output_dir=None,
-                stage2_rl_variant="blb_v3",
                 dataset_key="mrpc",
                 log=lambda _message: None,
                 _get_max_noise_configuration=lambda: {
@@ -184,7 +180,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "noise_rl_module_v2": noise_module,
                 "blb_stage2_rl.runner": runner_module,
             }):
                 _stage1, stage2 = loader(evaluator)
@@ -218,9 +213,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        noise_module = types.ModuleType("noise_rl_module_v2")
-        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
-        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
         runner_module = types.ModuleType("blb_stage2_rl.runner")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
@@ -232,7 +224,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             evaluator = types.SimpleNamespace(
                 resume_run_dir=tmp_dir,
                 run_output_dir=None,
-                stage2_rl_variant="blb_v3",
                 blb_v3_search_backend="bo_rf",
                 dataset_key="mrpc",
                 log=lambda _message: None,
@@ -241,7 +232,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "noise_rl_module_v2": noise_module,
                 "blb_stage2_rl.runner": runner_module,
             }):
                 with self.assertRaisesRegex(
@@ -278,9 +268,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        noise_module = types.ModuleType("noise_rl_module_v2")
-        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
-        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
         runner_module = types.ModuleType("blb_stage2_rl.runner")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
@@ -292,7 +279,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             evaluator = types.SimpleNamespace(
                 resume_run_dir=tmp_dir,
                 run_output_dir=None,
-                stage2_rl_variant="blb_v3",
                 blb_v3_search_backend="bo_rf",
                 dataset_key="mrpc",
                 log=lambda _message: None,
@@ -301,7 +287,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "noise_rl_module_v2": noise_module,
                 "blb_stage2_rl.runner": runner_module,
             }):
                 _stage1, stage2 = loader(evaluator)
@@ -330,9 +315,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             raise RuntimeError("corrupt checkpoint bytes")
 
         loader.__globals__["torch"] = types.SimpleNamespace(load=fail_load)
-        noise_module = types.ModuleType("noise_rl_module_v2")
-        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
-        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
         runner_module = types.ModuleType("blb_stage2_rl.runner")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
@@ -344,7 +326,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             evaluator = types.SimpleNamespace(
                 resume_run_dir=tmp_dir,
                 run_output_dir=None,
-                stage2_rl_variant="blb_v3",
                 dataset_key="mrpc",
                 log=lambda _message: None,
                 _get_max_noise_configuration=lambda: {
@@ -352,7 +333,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "noise_rl_module_v2": noise_module,
                 "blb_stage2_rl.runner": runner_module,
             }):
                 with self.assertRaisesRegex(RuntimeError, "corrupt checkpoint bytes"):
@@ -378,9 +358,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        noise_module = types.ModuleType("noise_rl_module_v2")
-        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
-        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
         runner_module = types.ModuleType("blb_stage2_rl.runner")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
@@ -392,7 +369,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             evaluator = types.SimpleNamespace(
                 resume_run_dir=tmp_dir,
                 run_output_dir=None,
-                stage2_rl_variant="blb_v3",
                 dataset_key="mrpc",
                 log=lambda _message: None,
                 _get_max_noise_configuration=lambda: {
@@ -400,7 +376,6 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "noise_rl_module_v2": noise_module,
                 "blb_stage2_rl.runner": runner_module,
             }):
                 with self.assertRaisesRegex(RuntimeError, "reloadable group"):

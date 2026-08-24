@@ -118,10 +118,8 @@ allowed-confusables = ["’", "‘"]
 [tool.ruff.lint.per-file-ignores]
 # Tests can use assert / undocumented globals freely
 "tests/*" = ["F401", "F841", "E402"]
-# layer_importance_evaluator.py and noise_rl_module_v2.py are legacy giants;
-# until we refactor (see ADR-007 if/when filed), accept their style.
+# The evaluator retains a broad integration surface while runtime paths are consolidated.
 "layer_importance_evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
-"noise_rl_module_v2.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
 # rl_tune.py is a giant CLI surface area; tolerate unused vars
 "rl_tune.py" = ["F841", "E402"]
 # Bash-wrapped Python in CI uses heredoc; ignore stray usages.
