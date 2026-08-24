@@ -19,7 +19,8 @@ class ComboAndPathTest(unittest.TestCase):
         self.assertEqual(rl.combo_name("bert-base", "mrpc"), "bert base mrpc")
         self.assertEqual(rl.combo_name("bert-large", "sst2"), "bert large sst2")
         self.assertEqual(rl.combo_name("bert-base", "rte"), "bert base rte")
-        self.assertEqual(rl.combo_name("gpt-2", "mrpc"), "gpt 2 mrpc")
+        with self.assertRaises(ValueError):
+            rl.combo_name("gpt-2", "mrpc")
 
     def test_combo_name_rejects_empty(self):
         with self.assertRaises(ValueError):
