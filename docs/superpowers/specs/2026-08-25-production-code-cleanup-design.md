@@ -21,9 +21,17 @@ not remove content under the following result-oriented trees:
 
 - `server_backups/`
 - `rl_training_data_points/`
-- `Parting Chapter/` and `Previous Chapter/`
+- `Parting Chapter/`, `Prelude Chapter/`, `Previous Chapter/`, and
+  `Previous Chapter Server Reserve/`
+- `Paean/outputs/`
 - `experiment/outputs/`
-- historical `experiments/server_command_runs/`
+- every result subdirectory under `experiments/`
+- `gelu_analysis/`
+- `glue_submission/`
+- `reports/`
+- `Model_analysis/model_statistics/weight_hist_out/`
+- `Rescale_optimizer/diagnose_certacc_output/`
+- root-level `glue_final_configs_best_*.json` result files
 
 Generated report PDFs inside those preserved result trees are not treated as
 AI design guidance and remain unchanged.
@@ -256,4 +264,3 @@ Each coherent change is committed and pushed. Server source is obtained only
 through Git. After a completed task handoff, the authorized aggregator reviews
 all remote heads, creates one clean aggregate, runs final server validation,
 fast-forwards `jk_standard_rl`, and verifies local/Git/server parity.
-
