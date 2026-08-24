@@ -1,0 +1,8 @@
+hostname=f1ac06029e4a
+python=Python 3.10.12
+numpy=1.26.4
+torch=Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'torch'
+gpu=Failed to initialize NVML: Driver/library version mismatch
+NVML library version: 580.159
