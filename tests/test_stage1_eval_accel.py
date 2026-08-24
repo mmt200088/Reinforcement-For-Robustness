@@ -788,7 +788,14 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertEqual(model.eval_calls, 3)
 
 
-class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
+@unittest.skipUnless(_HAS_TORCH, "torch unavailable")
+class HornerPolyEquivalenceTest(unittest.TestCase):
+    def _x(self):
+        torch.manual_seed(7)
+        x = torch.empty(4, 3, 257).uniform_(-4.0, 4.0)
+        x.view(-1)[:5] = torch.tensor([-2.7, 0.0, 2.7, -0.0, 1.0])
+        return x
+
     def test_poly_matches_stacked_reference_all_degrees_and_signs(self):
         from function_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()
