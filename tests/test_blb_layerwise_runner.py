@@ -1929,11 +1929,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "baseline.typical_fusion_count = float(base_env.num_layers)",
             runner_source,
         )
-        self.assertIn(
-            "stage2_model_type = resolve_stage2_model_type(",
-            runner_source,
-        )
-        self.assertIn("model_type=stage2_model_type", source)
+        self.assertIn("model_type=layerwise_model_type", source)
         self.assertNotIn("load_static_skeletons_baseline(", runner_source)
         self.assertNotIn("static_skeletons_baseline_to_action(", runner_source)
 

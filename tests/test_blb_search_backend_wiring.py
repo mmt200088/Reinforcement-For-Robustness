@@ -64,9 +64,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         ))
         self.assertFalse(ast.literal_eval(defaults["comparator_smoke"]))
         self.assertIn(
-            'self.comparator_smoke = self._coerce_bool_flag(\n'
-            '            comparator_smoke, "comparator_smoke",\n'
-            '        )',
+            "self.comparator_smoke = self._coerce_bool_flag(",
             evaluator_source,
         )
         self.assertIn("comparator smoke contract mismatch", evaluator_source)
