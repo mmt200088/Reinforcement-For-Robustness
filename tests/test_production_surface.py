@@ -96,6 +96,16 @@ def active_source_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     )
 
 
+def tracked_text(relative: str) -> str:
+    completed = subprocess.run(
+        ["git", "show", f"HEAD:{relative}"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return completed.stdout.decode("utf-8", errors="replace")
+
+
 class ProductionSurfaceTests(unittest.TestCase):
     def test_obsolete_runtime_paths_are_absent(self):
         paths = set(tracked_paths())
@@ -114,9 +124,7 @@ class ProductionSurfaceTests(unittest.TestCase):
         offenders: list[tuple[str, str]] = []
         paths = tracked_paths()
         for relative in active_source_paths(paths):
-            text = (REPO_ROOT / relative).read_text(
-                encoding="utf-8", errors="replace"
-            )
+            text = tracked_text(relative)
             for token in FORBIDDEN_RUNTIME_REFERENCES:
                 if token in text:
                     offenders.append((relative, token))
