@@ -30,18 +30,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 try:
-    from .network_variants import (
-        DEFAULT_POLICY_NETWORK_VARIANT,
-        normalize_policy_network_variant,
-        policy_network_architecture,
-        policy_network_variant_spec,
+    from .policy_network import (
+        POLICY_ARCHITECTURE,
+        POLICY_NETWORK_ID,
     )
 except ImportError:  # Standalone SourceFileLoader compatibility.
-    from blb_stage2_rl.network_variants import (
-        DEFAULT_POLICY_NETWORK_VARIANT,
-        normalize_policy_network_variant,
-        policy_network_architecture,
-        policy_network_variant_spec,
+    from blb_stage2_rl.policy_network import (
+        POLICY_ARCHITECTURE,
+        POLICY_NETWORK_ID,
     )
 
 # ---------------------------------------------------------------------------
@@ -77,10 +73,10 @@ class SequentialPolicyConfig:
     horizon: int = 59
     block_count: int = 5         # block one-hot dim (1..5)
     num_layers: int = 12         # for layer one-hot if needed by the trunk
-    d_model: int = 256
-    n_heads: int = 8
-    n_layers: int = 4
-    d_ff: int = 512
+    d_model: int = 128
+    n_heads: int = 4
+    n_layers: int = 2
+    d_ff: int = 256
     dropout: float = 0.1
     step_embed_dim: int = 16
     layer_embed_dim: int = 16
@@ -89,8 +85,6 @@ class SequentialPolicyConfig:
     cont_proj_dim: int = 64
     actor_dim: int = 64
     critic_dim: int = 64
-    network_variant: str = DEFAULT_POLICY_NETWORK_VARIANT
-    allow_custom_architecture: bool = False
     default_prior_scale: float = 0.0
     metadata_width: int = 6
     signal_width: int = 3
@@ -108,13 +102,8 @@ class SequentialPolicyConfig:
             raise ValueError("signal_width must be positive")
         self.metadata_width = int(self.metadata_width)
         self.signal_width = int(self.signal_width)
-        self.network_variant = normalize_policy_network_variant(
-            self.network_variant
-        )
-        if not bool(self.allow_custom_architecture):
-            for key, value in policy_network_architecture(
-                    self.network_variant).items():
-                setattr(self, key, int(value))
+        for key, value in POLICY_ARCHITECTURE.items():
+            setattr(self, key, int(value))
         if self.step_layer_indices is None:
             return
         layer_indices = tuple(int(value) for value in self.step_layer_indices)
@@ -274,9 +263,6 @@ class BLBStage2SequentialPolicy(nn.Module):
     def __init__(self, cfg: SequentialPolicyConfig):
         super().__init__()
         self.cfg = cfg
-        self.network_variant_spec = policy_network_variant_spec(
-            cfg.network_variant
-        )
         self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
         self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
         self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
@@ -391,7 +377,6 @@ class BLBStage2SequentialPolicy(nn.Module):
         self._slot_exploration_enabled = False
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
-        self._init_independent_critic()
 
     @property
     def slot_heads(self) -> Tuple[_SlotHeadView, ...]:
@@ -430,111 +415,6 @@ class BLBStage2SequentialPolicy(nn.Module):
             nn.init.orthogonal_(self.slot_head_weight[slot_idx], gain=0.01)
         nn.init.constant_(self.slot_head_bias, 0.0)
 
-    def _init_independent_critic(self) -> None:
-        critic_kind = str(self.network_variant_spec.critic_kind)
-        if critic_kind == "shared_gtrxl":
-            return
-
-        # Keep actor initialization and the subsequent rollout RNG stream
-        # exactly matched across ablation arms. The critic receives a stable,
-        # variant-specific initialization in a forked RNG scope.
-        seed_offset = sum(
-            (idx + 1) * ord(char)
-            for idx, char in enumerate(self.network_variant_spec.name)
-        )
-        critic_seed = (int(torch.initial_seed()) + seed_offset) % (2**63 - 1)
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(critic_seed)
-            if critic_kind == "gtrxl":
-                self._build_independent_gtrxl_critic()
-                self._initialize_independent_gtrxl_critic()
-            elif critic_kind == "mlp":
-                self.critic_state_encoder = nn.Sequential(
-                    nn.Linear(self.cfg.state_dim, 512),
-                    nn.Tanh(),
-                    nn.Linear(512, 512),
-                    nn.Tanh(),
-                    nn.Linear(512, self.cfg.d_model),
-                    nn.Tanh(),
-                )
-                for layer in self.critic_state_encoder:
-                    if isinstance(layer, nn.Linear):
-                        nn.init.xavier_uniform_(
-                            layer.weight, gain=float(np.sqrt(2))
-                        )
-                        nn.init.constant_(layer.bias, 0.0)
-            else:  # pragma: no cover - registry validation prevents this
-                raise RuntimeError(f"unsupported critic kind {critic_kind!r}")
-
-    def _build_independent_gtrxl_critic(self) -> None:
-        cfg = self.cfg
-        self.critic_embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
-        self.critic_embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
-        self.critic_embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
-        self.critic_prev_action_embedding = nn.Embedding(
-            cfg.max_step_dim * cfg.max_num_levels,
-            cfg.prev_action_embed_dim,
-        )
-        self.critic_fc_continuous = nn.Sequential(
-            nn.Linear(4 + cfg.signal_width + 1, cfg.cont_proj_dim),
-            nn.LayerNorm(cfg.cont_proj_dim),
-            nn.SiLU(),
-        )
-        token_input_dim = (
-            cfg.step_embed_dim
-            + cfg.layer_embed_dim
-            + cfg.block_embed_dim
-            + cfg.max_step_dim * cfg.prev_action_embed_dim
-            + cfg.cont_proj_dim
-        )
-        self.critic_input_proj = (
-            nn.Identity()
-            if token_input_dim == cfg.d_model
-            else nn.Linear(token_input_dim, cfg.d_model)
-        )
-        self.critic_gtrxl_blocks = nn.ModuleList([
-            SequentialGTrXLBlock(
-                cfg.d_model,
-                cfg.n_heads,
-                cfg.d_ff,
-                cfg.dropout,
-            )
-            for _ in range(cfg.n_layers)
-        ])
-        self.critic_ln_final = nn.LayerNorm(cfg.d_model)
-
-    def _initialize_independent_gtrxl_critic(self) -> None:
-        def init_linear(layer: nn.Linear, gain: float) -> None:
-            nn.init.xavier_uniform_(layer.weight, gain=float(gain))
-            if layer.bias is not None:
-                nn.init.constant_(layer.bias, 0.0)
-
-        for layer in self.critic_fc_continuous:
-            if isinstance(layer, nn.Linear):
-                init_linear(layer, float(np.sqrt(2)))
-        if isinstance(self.critic_input_proj, nn.Linear):
-            init_linear(self.critic_input_proj, 1.0)
-        for block in self.critic_gtrxl_blocks:
-            nn.init.xavier_uniform_(block.attn.in_proj_weight, gain=1.0)
-            if block.attn.in_proj_bias is not None:
-                nn.init.constant_(block.attn.in_proj_bias, 0.0)
-            init_linear(block.attn.out_proj, 1.0)
-            for layer in list(block.ff) + [
-                    block.gate1.linear_r,
-                    block.gate1.linear_z,
-                    block.gate1.linear_h,
-                    block.gate2.linear_r,
-                    block.gate2.linear_z,
-                    block.gate2.linear_h,
-            ]:
-                if isinstance(layer, nn.Linear):
-                    init_linear(layer, float(np.sqrt(2)))
-        nn.init.normal_(
-            self.critic_prev_action_embedding.weight,
-            mean=0.0,
-            std=0.02,
-        )
-
     @staticmethod
     def _module_parameters(*modules: nn.Module) -> Tuple[nn.Parameter, ...]:
         params: List[nn.Parameter] = []
@@ -559,26 +439,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         )
 
     def shared_actor_critic_parameters(self) -> Tuple[nn.Parameter, ...]:
-        if not bool(self.network_variant_spec.shares_actor_trunk):
-            return ()
         return self._actor_trunk_parameters()
-
-    def _critic_trunk_parameters(self) -> Tuple[nn.Parameter, ...]:
-        critic_kind = str(self.network_variant_spec.critic_kind)
-        if critic_kind == "shared_gtrxl":
-            return self._actor_trunk_parameters()
-        if critic_kind == "gtrxl":
-            return self._module_parameters(
-                self.critic_embed_step,
-                self.critic_embed_layer,
-                self.critic_embed_block,
-                self.critic_prev_action_embedding,
-                self.critic_fc_continuous,
-                self.critic_input_proj,
-                self.critic_gtrxl_blocks,
-                self.critic_ln_final,
-            )
-        return self._module_parameters(self.critic_state_encoder)
 
     def network_parameter_summary(self) -> Dict[str, Any]:
         actor_head = self._module_parameters(self.actor_head)
@@ -591,26 +452,16 @@ class BLBStage2SequentialPolicy(nn.Module):
         actor_trunk_count = sum(
             parameter.numel() for parameter in self._actor_trunk_parameters()
         )
-        critic_trunk_count = sum(
-            parameter.numel() for parameter in self._critic_trunk_parameters()
-        )
-        if bool(self.network_variant_spec.shares_actor_trunk):
-            shared = actor_trunk_count
-            actor_only = actor_head_count
-            critic_only = value_head_count
-        else:
-            shared = 0
-            actor_only = actor_trunk_count + actor_head_count
-            critic_only = critic_trunk_count + value_head_count
+        shared = actor_trunk_count
+        actor_only = actor_head_count
+        critic_only = value_head_count
         total = sum(parameter.numel() for parameter in self.parameters())
         if total != shared + actor_only + critic_only:
             raise RuntimeError("policy network parameter partition is incomplete")
         return {
-            "variant": self.network_variant_spec.name,
-            "critic_kind": self.network_variant_spec.critic_kind,
-            "shares_actor_trunk": bool(
-                self.network_variant_spec.shares_actor_trunk
-            ),
+            "variant": POLICY_NETWORK_ID,
+            "critic_kind": "shared_gtrxl",
+            "shares_actor_trunk": True,
             "total": int(total),
             "shared": int(shared),
             "actor_only": int(actor_only),
@@ -744,84 +595,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
         return self.input_proj(token_input), current_step
 
-    def _build_independent_critic_tokens(
-            self,
-            state: torch.Tensor,
-            *,
-            truncate_to_current: bool = False,
-            truncate_seq_len: Optional[int] = None,
-            ) -> Tuple[torch.Tensor, torch.Tensor]:
-        static, current_step, prev_actions, prev_signals = self._parse_state(
-            state,
-            truncate_to_current=bool(truncate_to_current),
-            truncate_seq_len=truncate_seq_len,
-        )
-        batch_size = int(state.shape[0])
-        device = state.device
-        seq_len = int(prev_actions.shape[1])
-        steps, layers, blocks = self._step_layer_block_indices()
-        steps = steps[:seq_len]
-        layers = layers[:seq_len]
-        blocks = blocks[:seq_len]
-        step_emb = self.critic_embed_step(steps).unsqueeze(0).expand(
-            batch_size, -1, -1
-        )
-        layer_emb = self.critic_embed_layer(layers).unsqueeze(0).expand(
-            batch_size, -1, -1
-        )
-        block_emb = self.critic_embed_block(blocks).unsqueeze(0).expand(
-            batch_size, -1, -1
-        )
-        slot_offsets = self._prev_action_slot_offsets[: self.cfg.max_step_dim]
-        prev_action_indices = prev_actions + slot_offsets.view(1, 1, -1)
-        prev_emb = self.critic_prev_action_embedding(prev_action_indices).reshape(
-            batch_size,
-            seq_len,
-            self.cfg.max_step_dim * self.cfg.prev_action_embed_dim,
-        )
-        static_rep = static.unsqueeze(1).expand(-1, seq_len, -1)
-        is_current = F.one_hot(
-            current_step.clamp(0, seq_len - 1), num_classes=seq_len
-        ).to(dtype=state.dtype, device=device).unsqueeze(-1)
-        cont = torch.cat([static_rep, prev_signals, is_current], dim=-1)
-        cont_proj = self.critic_fc_continuous(cont)
-        token_input = torch.cat(
-            [step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1
-        )
-        return self.critic_input_proj(token_input), current_step
-
-    def _critic_value(
-            self,
-            state: torch.Tensor,
-            shared_hidden: torch.Tensor,
-            *,
-            truncate_to_current: bool,
-            truncate_seq_len: Optional[int],
-            ) -> torch.Tensor:
-        critic_kind = str(self.network_variant_spec.critic_kind)
-        if critic_kind == "shared_gtrxl":
-            hidden = shared_hidden
-        elif critic_kind == "gtrxl":
-            tokens, current_step = self._build_independent_critic_tokens(
-                state,
-                truncate_to_current=bool(truncate_to_current),
-                truncate_seq_len=truncate_seq_len,
-            )
-            causal_mask = self._get_causal_mask(tokens.size(1), tokens.device)
-            hidden_sequence = tokens
-            for block in self.critic_gtrxl_blocks:
-                hidden_sequence = block(hidden_sequence, attn_mask=causal_mask)
-            hidden_sequence = self.critic_ln_final(hidden_sequence)
-            batch_idx = torch.arange(
-                hidden_sequence.shape[0], device=hidden_sequence.device
-            )
-            hidden = hidden_sequence[
-                batch_idx,
-                current_step.clamp(0, hidden_sequence.size(1) - 1),
-            ]
-        else:
-            hidden = self.critic_state_encoder(state)
-        return self.value_head(hidden).squeeze(-1)
+    def _critic_value(self, shared_hidden: torch.Tensor) -> torch.Tensor:
+        return self.value_head(shared_hidden).squeeze(-1)
 
     def _coerce_prior_scale(
             self,
@@ -911,12 +686,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             dtype=logits.dtype,
             baseline_prior_scale=baseline_prior_scale,
         )
-        value = self._critic_value(
-            state,
-            h,
-            truncate_to_current=bool(truncate_to_current),
-            truncate_seq_len=truncate_seq_len,
-        )
+        value = self._critic_value(h)
         return logits, value
 
     # ------------------------------------------------------------------

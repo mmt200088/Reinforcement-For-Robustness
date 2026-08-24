@@ -51,7 +51,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         train_args = {arg.arg: ast.unparse(arg.annotation) for arg in train_fn.args.args}
         self.assertEqual(train_args["blb_v3_decision_granularity"], "str")
         self.assertEqual(train_args["blb_v3_reward_design"], "str")
-        self.assertEqual(train_args["blb_v3_policy_network_variant"], "str")
+        self.assertNotIn("blb_v3_policy_network_variant", train_args)
         evaluator_call = next(
             node for node in ast.walk(train_fn)
             if isinstance(node, ast.Call)
@@ -61,7 +61,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         forwarded = {keyword.arg for keyword in evaluator_call.keywords}
         self.assertIn("blb_v3_decision_granularity", forwarded)
         self.assertIn("blb_v3_reward_design", forwarded)
-        self.assertIn("blb_v3_policy_network_variant", forwarded)
+        self.assertNotIn("blb_v3_policy_network_variant", forwarded)
 
         evaluator_tree = ast.parse(
             (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
@@ -77,7 +77,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         init_args = {arg.arg for arg in init_fn.args.args}
         self.assertIn("blb_v3_decision_granularity", init_args)
         self.assertIn("blb_v3_reward_design", init_args)
-        self.assertIn("blb_v3_policy_network_variant", init_args)
+        self.assertNotIn("blb_v3_policy_network_variant", init_args)
         assigned_attrs = {
             target.attr
             for node in ast.walk(init_fn)
@@ -91,7 +91,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         }
         self.assertIn("blb_v3_decision_granularity", assigned_attrs)
         self.assertIn("blb_v3_reward_design", assigned_attrs)
-        self.assertIn("blb_v3_policy_network_variant", assigned_attrs)
+        self.assertNotIn("blb_v3_policy_network_variant", assigned_attrs)
 
     def test_python_robust_constraint_fields_reach_evaluator_constructor(self):
         expected = {
@@ -650,20 +650,13 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             default_argv[default_argv.index("--blb_v3_reward_design") + 1],
             "robust_constrained",
         )
-        self.assertEqual(
-            default_argv[
-                default_argv.index("--blb_v3_policy_network_variant") + 1
-            ],
-            "shared_gtrxl_small_v1",
-        )
+        self.assertNotIn("--blb_v3_policy_network_variant", default_argv)
 
         explicit_argv = self._capture_stage2_launcher_argv([
             "--blb-v3-decision-granularity",
             "layer",
             "--blb-v3-reward-design",
             "robust_constrained",
-            "--blb-v3-policy-network-variant",
-            "separate_critic_gtrxl_v1",
         ])
         self.assertEqual(
             explicit_argv[explicit_argv.index("--blb_v3_decision_granularity") + 1],
@@ -673,12 +666,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             explicit_argv[explicit_argv.index("--blb_v3_reward_design") + 1],
             "robust_constrained",
         )
-        self.assertEqual(
-            explicit_argv[
-                explicit_argv.index("--blb_v3_policy_network_variant") + 1
-            ],
-            "separate_critic_gtrxl_v1",
-        )
+        self.assertNotIn("--blb_v3_policy_network_variant", explicit_argv)
 
     def test_active_layerwise_robust_defaults_reach_python(self):
         argv = self._capture_stage2_launcher_argv([])
@@ -830,7 +818,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertIn("CONSTRAINT_MISMATCH", result.stdout + result.stderr)
         self.assertIn("stage2_stability_multiplier", result.stdout + result.stderr)
 
-    def test_layerwise_resume_rejects_different_policy_network_arm(self):
+    def test_layerwise_resume_rejects_nonproduction_policy_network(self):
         with tempfile.TemporaryDirectory(prefix="stage2_network_mismatch_") as td:
             tmp = Path(td)
             root = tmp / "persistent"
@@ -867,8 +855,6 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     str(root),
                     "--stage2-search-episodes",
                     "170",
-                    "--blb-v3-policy-network-variant",
-                    "separate_critic_gtrxl_v1",
                 ],
                 cwd=REPO_ROOT,
                 env=env,
@@ -886,7 +872,6 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         for option, value in (
             ("--blb-v3-decision-granularity", "token"),
             ("--blb-v3-reward-design", "legacy_unknown"),
-            ("--blb-v3-policy-network-variant", "larger_maybe"),
         ):
             with self.subTest(option=option):
                 result = subprocess.run(
@@ -906,6 +891,25 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     check=False,
                 )
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_removed_policy_network_selector_is_rejected(self):
+        result = subprocess.run(
+            [
+                "bash",
+                "llama_7B_LayerImportance.sh",
+                "run",
+                "rl",
+                "--preset",
+                "mrpc-blb-stage2-rl",
+                "--blb-v3-policy-network-variant",
+                "shared_gtrxl_small_v1",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
 
     def test_stage2_launcher_defaults_fixed_config_to_all4(self):
         with tempfile.TemporaryDirectory(prefix="stage2_all4_launcher_") as td:

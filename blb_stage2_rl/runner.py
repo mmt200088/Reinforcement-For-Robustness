@@ -588,7 +588,6 @@ class BLBStage2TrainConfig:
     stab_threshold: float = float("inf")
     # PPO
     ppo: PPOConfig = field(default_factory=PPOConfig)
-    policy_network_variant: str = "shared_gtrxl_small_v1"
     # PPO-only. Legacy fields remain so old checkpoints/presets deserialize,
     # but any non-PPO value is rejected at construction and runner handoff.
     rl_algo: str = "ppo"
@@ -641,7 +640,6 @@ class BLBStage2TrainConfig:
                 )
         self.validate_decision_granularity()
         self.validate_reward_design()
-        self.validate_policy_network_variant()
         self.validate_robust_constraint_config()
 
     def validate_decision_granularity(self) -> str:
@@ -656,13 +654,6 @@ class BLBStage2TrainConfig:
 
         value = normalize_reward_design(self.reward_design)
         self.reward_design = value
-        return value
-
-    def validate_policy_network_variant(self) -> str:
-        from .network_variants import normalize_policy_network_variant
-
-        value = normalize_policy_network_variant(self.policy_network_variant)
-        self.policy_network_variant = value
         return value
 
     def validate_robust_constraint_config(self) -> None:
@@ -2901,9 +2892,6 @@ class BLBStage2RLRunner:
         root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
         if root not in (None, ""):
             cfg.inproc_rescale_optimizer_root = str(root)
-        network_variant = getattr(ev, "blb_v3_policy_network_variant", None)
-        if network_variant not in (None, ""):
-            cfg.policy_network_variant = str(network_variant)
         from .search_baselines import normalize_search_backend
 
         cfg.search_backend = normalize_search_backend(
@@ -3287,7 +3275,6 @@ class BLBStage2RLRunner:
         )
         cfg.validate_decision_granularity()
         cfg.validate_reward_design()
-        cfg.validate_policy_network_variant()
         cfg.validate_robust_constraint_config()
         if cfg.search_backend == "ppo":
             from .layerwise_runner import validate_stage2_episode_limit_mode

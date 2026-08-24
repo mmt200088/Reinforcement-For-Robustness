@@ -747,7 +747,6 @@ def train(
         blb_v3_fusion_count_action: bool = True,
         blb_v3_decision_granularity: str = "layer",
         blb_v3_reward_design: str = "robust_constrained",
-        blb_v3_policy_network_variant: str = "shared_gtrxl_small_v1",
         blb_v3_search_backend: str = "ppo",
         blb_v3_search_evaluation_budget: int = 0,
         blb_v3_search_initial_design_size: int = 64,
@@ -860,10 +859,6 @@ def train(
             "blb_v3_reward_design must be robust_constrained, stage1_aligned, "
             f"continuous, or tiered; got {blb_v3_reward_design!r}"
         )
-    from blb_stage2_rl.network_variants import normalize_policy_network_variant
-    blb_v3_policy_network_variant = normalize_policy_network_variant(
-        blb_v3_policy_network_variant
-    )
     from blb_stage2_rl.search_baselines import normalize_search_backend
 
     blb_v3_search_backend = normalize_search_backend(
@@ -1454,7 +1449,6 @@ def train(
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
             blb_v3_decision_granularity=blb_v3_decision_granularity,
             blb_v3_reward_design=blb_v3_reward_design,
-            blb_v3_policy_network_variant=blb_v3_policy_network_variant,
             blb_v3_search_backend=blb_v3_search_backend,
             blb_v3_search_evaluation_budget=(
                 blb_v3_search_evaluation_budget

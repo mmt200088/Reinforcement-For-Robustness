@@ -2383,7 +2383,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             build_layerwise_run_context,
             validate_layerwise_checkpoint_metadata,
         )
-        from blb_stage2_rl.network_variants import LEGACY_SHARED_RL_VARIANT
+        from blb_stage2_rl.policy_network import POLICY_RL_VARIANT
 
         old_k_levels = (8, 9, 11, 13, 10, 12)
         current_k_levels = tuple(K_LEVELS)
@@ -2394,7 +2394,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         common_algorithm_contract = {
             "schema_version": "stage2_layerwise_algorithm_contract_v5",
             "algorithm_revision": algorithm_revision,
-            "rl_variant": LEGACY_SHARED_RL_VARIANT,
+            "rl_variant": POLICY_RL_VARIANT,
         }
         old_algorithm_hash = sha256_json({
             **common_algorithm_contract,
@@ -2462,14 +2462,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         old_checkpoint = {
             "dataset_protocol_schema": "glue_train_probe_protocol_v1",
             "dataset_protocol_hash": "probe-a",
-            "rl_variant": LEGACY_SHARED_RL_VARIANT,
+            "rl_variant": POLICY_RL_VARIANT,
             "algorithm_revision": algorithm_revision,
             "algorithm_contract_hash": old_algorithm_hash,
             "run_context_hash": old_run_context_hash,
         }
         validate_layerwise_checkpoint_metadata(
             old_checkpoint,
-            rl_variant=LEGACY_SHARED_RL_VARIANT,
+            rl_variant=POLICY_RL_VARIANT,
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=old_algorithm_hash,
             run_context_hash=old_run_context_hash,
@@ -2479,7 +2479,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "algorithm contract"):
             validate_layerwise_checkpoint_metadata(
                 old_checkpoint,
-                rl_variant=LEGACY_SHARED_RL_VARIANT,
+                rl_variant=POLICY_RL_VARIANT,
                 algorithm_revision=algorithm_revision,
                 algorithm_contract_hash=current_algorithm_hash,
                 run_context_hash=current_run_context_hash,

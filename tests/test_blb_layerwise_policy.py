@@ -24,14 +24,9 @@ class LayerwisePolicyTest(unittest.TestCase):
             "horizon": 12,
             "num_layers": 12,
             "block_count": 5,
-            "d_model": 32,
-            "n_heads": 4,
-            "n_layers": 1,
-            "d_ff": 64,
             "dropout": 0.0,
             "metadata_width": 0,
             "signal_width": 4,
-            "allow_custom_architecture": True,
         }
         values.update(overrides)
         return SequentialPolicyConfig(**values)
@@ -40,63 +35,6 @@ class LayerwisePolicyTest(unittest.TestCase):
         from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy
 
         return BLBStage2SequentialPolicy(self._config(**overrides))
-
-    def test_network_variants_keep_actor_initialization_matched_and_partition_parameters(self):
-        state = torch.zeros(3, self._config().state_dim)
-        state[:, 4] = 1.0
-        policies = {}
-        for variant in (
-            "shared_gtrxl_v1",
-            "separate_critic_gtrxl_v1",
-            "separate_critic_mlp_v1",
-        ):
-            torch.manual_seed(20260721)
-            policy = self._policy(network_variant=variant)
-            policy.eval()
-            policies[variant] = policy
-
-        baseline_logits = policies["shared_gtrxl_v1"](state)[0]
-        for name, policy in policies.items():
-            logits, value = policy(state)
-            torch.testing.assert_close(logits, baseline_logits, rtol=0.0, atol=0.0)
-            self.assertEqual(value.shape, (3,), msg=name)
-            summary = policy.network_parameter_summary()
-            self.assertEqual(
-                summary["total"], sum(p.numel() for p in policy.parameters())
-            )
-            self.assertEqual(
-                summary["total"],
-                summary["shared"] + summary["actor_only"] + summary["critic_only"],
-            )
-
-        self.assertGreater(
-            policies["shared_gtrxl_v1"].network_parameter_summary()["shared"], 0
-        )
-        for name in ("separate_critic_gtrxl_v1", "separate_critic_mlp_v1"):
-            self.assertEqual(
-                policies[name].network_parameter_summary()["shared"], 0
-            )
-            self.assertGreater(
-                policies[name].network_parameter_summary()["critic_only"],
-                policies["shared_gtrxl_v1"].network_parameter_summary()[
-                    "critic_only"
-                ],
-            )
-
-    def test_production_shared_network_keeps_pre_ablation_parameter_count(self):
-        from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy
-
-        policy = BLBStage2SequentialPolicy(self._config(
-            network_variant="shared_gtrxl_v1",
-            d_model=256,
-            n_heads=8,
-            n_layers=4,
-            d_ff=512,
-            dropout=0.1,
-        ))
-        summary = policy.network_parameter_summary()
-        self.assertEqual(summary["total"], 5_330_461)
-        self.assertEqual(summary["shared"], 5_295_160)
 
     def test_production_small_shared_network_has_agreed_architecture_and_size(self):
         from blb_stage2_rl.sequential_policy import (
@@ -113,7 +51,6 @@ class LayerwisePolicyTest(unittest.TestCase):
             block_count=5,
             metadata_width=0,
             signal_width=4,
-            network_variant="shared_gtrxl_small_v1",
         ))
         summary = policy.network_parameter_summary()
         self.assertEqual(policy.cfg.d_model, 128)
@@ -123,88 +60,74 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(summary["total"], 680_221)
         self.assertEqual(summary["shared"], 661_304)
 
-    def test_each_network_variant_completes_factorized_ppo_with_diagnostics(self):
+    def test_production_network_completes_factorized_ppo_with_diagnostics(self):
         from blb_stage2_rl.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
             sequential_ppo_update,
         )
 
-        for variant in (
-            "shared_gtrxl_small_v1",
-            "shared_gtrxl_v1",
-            "separate_critic_gtrxl_v1",
-            "separate_critic_mlp_v1",
-        ):
-            with self.subTest(variant=variant):
-                torch.manual_seed(20260721)
-                policy = self._policy(network_variant=variant, dropout=0.0)
-                policy.eval()
-                buffer = SequentialRolloutBuffer()
-                for step_idx in range(2):
-                    state = torch.zeros(policy.cfg.state_dim)
-                    state[4 + step_idx] = 1.0
-                    slot_mask = torch.ones(1, 6, dtype=torch.bool)
-                    levels = torch.tensor([[2, 6, 6, 6, 6, 6]])
-                    sample = policy.sample_action(
-                        state.unsqueeze(0),
-                        slot_mask,
-                        levels,
-                        generator=torch.Generator().manual_seed(100 + step_idx),
-                        return_per_slot_log_prob=True,
-                    )
-                    actions, log_prob, value, log_prob_per_slot = sample
-                    buffer.add(
-                        state=state.numpy(),
-                        action=actions[0].detach().numpy(),
-                        slot_mask=slot_mask[0].numpy(),
-                        per_slot_num_levels=levels[0].numpy(),
-                        log_prob=log_prob[0],
-                        log_prob_per_slot=log_prob_per_slot[0],
-                        value=value[0],
-                        reward=1.0 if step_idx == 1 else 0.0,
-                        done=step_idx == 1,
-                    )
-                    buffer.set_actor_shared_return_at(step_idx, 0.5 + step_idx)
-                    buffer.set_actor_cost_at(
-                        step_idx,
-                        np.linspace(0.01, 0.06, 6, dtype=np.float32),
-                    )
+        torch.manual_seed(20260721)
+        policy = self._policy(dropout=0.0)
+        policy.eval()
+        buffer = SequentialRolloutBuffer()
+        for step_idx in range(2):
+            state = torch.zeros(policy.cfg.state_dim)
+            state[4 + step_idx] = 1.0
+            slot_mask = torch.ones(1, 6, dtype=torch.bool)
+            levels = torch.tensor([[2, 6, 6, 6, 6, 6]])
+            sample = policy.sample_action(
+                state.unsqueeze(0),
+                slot_mask,
+                levels,
+                generator=torch.Generator().manual_seed(100 + step_idx),
+                return_per_slot_log_prob=True,
+            )
+            actions, log_prob, value, log_prob_per_slot = sample
+            buffer.add(
+                state=state.numpy(),
+                action=actions[0].detach().numpy(),
+                slot_mask=slot_mask[0].numpy(),
+                per_slot_num_levels=levels[0].numpy(),
+                log_prob=log_prob[0],
+                log_prob_per_slot=log_prob_per_slot[0],
+                value=value[0],
+                reward=1.0 if step_idx == 1 else 0.0,
+                done=step_idx == 1,
+            )
+            buffer.set_actor_shared_return_at(step_idx, 0.5 + step_idx)
+            buffer.set_actor_cost_at(
+                step_idx,
+                np.linspace(0.01, 0.06, 6, dtype=np.float32),
+            )
 
-                metrics = sequential_ppo_update(
-                    policy,
-                    torch.optim.Adam(policy.parameters(), lr=1.0e-4),
-                    buffer,
-                    SequentialPPOConfig(
-                        lr=1.0e-4,
-                        n_epochs=1,
-                        minibatch_size=2,
-                        ent_coef=0.0,
-                        normalize_returns=False,
-                        use_kl_early_stop=False,
-                        factorized_actor_clip=True,
-                        entropy_average_active_slots=True,
-                        entropy_normalize_active_slots=True,
-                    ),
-                    torch.device("cpu"),
-                )
+        metrics = sequential_ppo_update(
+            policy,
+            torch.optim.Adam(policy.parameters(), lr=1.0e-4),
+            buffer,
+            SequentialPPOConfig(
+                lr=1.0e-4,
+                n_epochs=1,
+                minibatch_size=2,
+                ent_coef=0.0,
+                normalize_returns=False,
+                use_kl_early_stop=False,
+                factorized_actor_clip=True,
+                entropy_average_active_slots=True,
+                entropy_normalize_active_slots=True,
+            ),
+            torch.device("cpu"),
+        )
 
-                self.assertEqual(metrics["n_samples"], 2)
-                self.assertEqual(len(metrics["entropy_per_slot"]), 6)
-                self.assertEqual(len(metrics["raw_advantage_snr_per_slot"]), 6)
-                self.assertIsNotNone(metrics["value_rmse_pre"])
-                self.assertIsNotNone(metrics["value_rmse_post"])
-                self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
-                if variant in (
-                    "shared_gtrxl_small_v1",
-                    "shared_gtrxl_v1",
-                ):
-                    self.assertGreater(metrics["shared_grad_parameter_count"], 0)
-                    self.assertIsNotNone(metrics["actor_shared_grad_norm"])
-                    self.assertIsNotNone(metrics["critic_shared_grad_norm"])
-                else:
-                    self.assertEqual(metrics["shared_grad_parameter_count"], 0)
-                    self.assertIsNone(metrics["actor_critic_shared_grad_cosine"])
+        self.assertEqual(metrics["n_samples"], 2)
+        self.assertEqual(len(metrics["entropy_per_slot"]), 6)
+        self.assertEqual(len(metrics["raw_advantage_snr_per_slot"]), 6)
+        self.assertIsNotNone(metrics["value_rmse_pre"])
+        self.assertIsNotNone(metrics["value_rmse_post"])
+        self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
+        self.assertGreater(metrics["shared_grad_parameter_count"], 0)
+        self.assertIsNotNone(metrics["actor_shared_grad_norm"])
+        self.assertIsNotNone(metrics["critic_shared_grad_norm"])
 
     def test_explicit_schedule_indices_are_used_verbatim(self):
         layer_indices = tuple(range(12))

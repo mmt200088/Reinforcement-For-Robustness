@@ -2564,7 +2564,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fusion_count_action=True,
                   blb_v3_decision_granularity="layer",
                   blb_v3_reward_design="robust_constrained",
-                  blb_v3_policy_network_variant="shared_gtrxl_small_v1",
                   blb_v3_search_backend="ppo",
                   blb_v3_search_evaluation_budget=0,
                   blb_v3_search_initial_design_size=64,
@@ -3473,10 +3472,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.blb_v3_reward_design = normalize_reward_design(
             blb_v3_reward_design
-        )
-        from blb_stage2_rl.network_variants import normalize_policy_network_variant
-        self.blb_v3_policy_network_variant = normalize_policy_network_variant(
-            blb_v3_policy_network_variant
         )
         from blb_stage2_rl.search_baselines import (
             normalize_search_backend,

@@ -4074,12 +4074,12 @@ def _run_layerwise_training_branch(
         validate_layerwise_checkpoint_metadata,
         validate_layerwise_episode_limit_extension,
     )
-    from .network_variants import (
-        LEGACY_SHARED_RL_VARIANT,
+    from .policy_network import (
+        POLICY_NETWORK_ID,
+        POLICY_RL_VARIANT,
         bind_policy_network_contract,
-        normalize_policy_network_variant,
         policy_network_architecture,
-        validate_checkpoint_policy_network_variant,
+        validate_checkpoint_policy_network,
     )
     from .persistence import write_training_curves
     from .precision_presets import (
@@ -4118,11 +4118,9 @@ def _run_layerwise_training_branch(
         if protected_k1_enabled else
         "network_weighted_hml_three_bank_convergence_v12"
     )
-    policy_network_variant = normalize_policy_network_variant(
-        getattr(train_cfg, "policy_network_variant", None)
-    )
-    policy_architecture = policy_network_architecture(policy_network_variant)
-    rl_variant = LEGACY_SHARED_RL_VARIANT
+    policy_network_id = POLICY_NETWORK_ID
+    policy_architecture = policy_network_architecture()
+    rl_variant = POLICY_RL_VARIANT
     layerwise_entropy_regularization = {
         "kind": "disabled",
         "coefficient": 0.0,
@@ -4766,7 +4764,6 @@ def _run_layerwise_training_branch(
         signal_width=4,
         step_layer_indices=tuple(range(layerwise_horizon)),
         step_block_indices=(3,) * layerwise_horizon,
-        network_variant=policy_network_variant,
         **policy_architecture,
     )
     ppo = SequentialPPOConfig(
@@ -4907,7 +4904,6 @@ def _run_layerwise_training_branch(
         }
     algorithm_contract = bind_policy_network_contract(
         algorithm_contract,
-        policy_network_variant,
         policy_shape={
             "state_dim": int(policy_cfg.state_dim),
             "horizon": int(policy_cfg.horizon),
@@ -5011,7 +5007,7 @@ def _run_layerwise_training_branch(
         "search_split": SEARCH_EVIDENCE_SPLIT,
         "status": "running",
         "rl_variant": rl_variant,
-        "policy_network_variant": policy_network_variant,
+        "policy_network_variant": policy_network_id,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract": algorithm_contract,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -5043,7 +5039,7 @@ def _run_layerwise_training_branch(
     policy_network_summary = policy.network_parameter_summary()
     run_manifest["policy_network"] = policy_network_summary
     log(
-        f"  {bullet} Stage-2 policy network: {policy_network_variant} "
+        f"  {bullet} Stage-2 policy network: {policy_network_id} "
         f"(total={policy_network_summary['total']:,}, "
         f"shared={policy_network_summary['shared']:,}, "
         f"actor_only={policy_network_summary['actor_only']:,}, "
@@ -5077,9 +5073,7 @@ def _run_layerwise_training_branch(
             )
         except TypeError:
             checkpoint = torch.load(effective_resume_path, map_location=device)
-        validate_checkpoint_policy_network_variant(
-            checkpoint, policy_network_variant,
-        )
+        validate_checkpoint_policy_network(checkpoint)
         validate_layerwise_checkpoint_metadata(
             checkpoint,
             rl_variant=rl_variant,
@@ -5372,7 +5366,7 @@ def _run_layerwise_training_branch(
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
         "rl_variant": rl_variant,
-        "policy_network_variant": policy_network_variant,
+        "policy_network_variant": policy_network_id,
         "policy_network": policy_network_summary,
         "decision_granularity": "layer",
         "reward_design": "robust_constrained",
@@ -5603,7 +5597,7 @@ def _run_layerwise_training_branch(
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "rl_variant": rl_variant,
-            "policy_network_variant": policy_network_variant,
+            "policy_network_variant": policy_network_id,
             "policy_network": policy_network_summary,
             "algorithm_revision": algorithm_revision,
             "algorithm_contract": algorithm_contract,
@@ -6309,7 +6303,7 @@ def _run_layerwise_training_branch(
         "schema_version": "stage2_layerwise_robust_summary_v6",
         "status": completion_status,
         "rl_variant": rl_variant,
-        "policy_network_variant": policy_network_variant,
+        "policy_network_variant": policy_network_id,
         "policy_network": policy_network_summary,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -6545,7 +6539,7 @@ def _run_layerwise_training_branch(
         "blb_v3_fusion_count_action": True,
         "blb_v3_total_episodes": int(summary.get("completed_episodes", 0)),
         "rl_variant": rl_variant,
-        "policy_network_variant": policy_network_variant,
+        "policy_network_variant": policy_network_id,
         "policy_network": policy_network_summary,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -9020,7 +9014,6 @@ def _run_sequential_via_runner_locked(
         max_num_levels=schedule_max_num_levels(seq_env.schedule),
         horizon=int(seq_env.horizon),
         num_layers=int(ev.total_layers),
-        network_variant=getattr(train_cfg, "policy_network_variant", None),
     )
     policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
