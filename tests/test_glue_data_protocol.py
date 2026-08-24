@@ -17,6 +17,7 @@ from glue_data_protocol import (
     load_train_probe_fixture,
     resolve_glue_protocol_views,
     supported_profiles,
+    resolve_model_family,
     validate_supported_profile,
     write_train_probe_fixture,
 )
@@ -78,6 +79,22 @@ def test_supported_matrix_contains_only_six_bert_profiles():
 def test_unsupported_profile_fails_closed(model_family, dataset):
     with pytest.raises(ValueError, match="unsupported profile"):
         validate_supported_profile(model_family, dataset)
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected"),
+    (
+        ("textattack/bert-base-uncased-MRPC", "bert-base"),
+        ("yoshitomo-matsubara/bert-large-uncased-rte", "bert-large"),
+    ),
+)
+def test_model_id_resolves_to_supported_family(model_id, expected):
+    assert resolve_model_family(model_id) == expected
+
+
+def test_non_bert_model_id_is_rejected():
+    with pytest.raises(ValueError, match="unsupported model"):
+        resolve_model_family("gpt2")
 
 
 def test_train_probe_is_deterministic_stratified_and_ordered():
