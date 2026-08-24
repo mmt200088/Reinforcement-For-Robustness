@@ -84,8 +84,8 @@ def test_shared_profile_loader_uses_pinned_fixture_before_tokenization():
     assert "context.as_payload()" in method
     assert "data['validation']" not in method
     assert "range(max_samples)" not in method
-    assert str(TRAIN_PROBE_SIZE) in method
-    assert method.index("resolve_glue_protocol_views(") < method.index("tokenize")
+    assert "TRAIN_PROBE_SIZE" in method
+    assert method.index("resolve_glue_protocol_views(") < method.index("def _tok(")
 
 
 def test_all_profile_programs_persist_the_shared_protocol_payload():

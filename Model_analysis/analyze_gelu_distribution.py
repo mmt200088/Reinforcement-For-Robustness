@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 """
-Analyze GELU(x) input distribution across 12 BERT layers on GLUE training sets.
+Analyze GELU(x) input distributions for the six supported BERT/GLUE profiles.
 
 For each dataset and each of the 12 layers, this script:
-  1. Collects the input x values to GELU(x) via forward hooks on the training set
+  1. Collects GELU inputs on the shared 256-example training probe
   2. Plots fine-grained histograms with boundary lines at -2.7, 0, 2.7
   3. Computes and plots statistics for 4 intervals:
      x < -2.7 | -2.7 <= x < 0 | 0 <= x <= 2.7 | x > 2.7
 
 Usage:
     python analyze_gelu_distribution.py --output_dir gelu_analysis
-    python analyze_gelu_distribution.py --tasks sst2 mrpc --max_samples 5000
+    python analyze_gelu_distribution.py --tasks sst2 mrpc
 """
 
 # 运行全部数据集 bash run_gelu_analysis.sh
@@ -18,73 +18,31 @@ Usage:
 import os
 import argparse
 import queue
+import sys
 import threading
 import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from torch.utils.data import DataLoader
-from datasets import load_dataset
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    DataCollatorWithPadding,
 )
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# ==================== GLUE Task Registry ====================
-TASK_REGISTRY = {
-    'cola': {
-        'model_name': 'textattack/bert-base-uncased-CoLA',
-        'glue_name': 'cola',
-        'num_labels': 2,
-        'input_cols': ('sentence',),
-    },
-    'sst2': {
-        'model_name': 'textattack/bert-base-uncased-SST-2',
-        'glue_name': 'sst2',
-        'num_labels': 2,
-        'input_cols': ('sentence',),
-    },
-    'mrpc': {
-        'model_name': 'textattack/bert-base-uncased-MRPC',
-        'glue_name': 'mrpc',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-    },
-    'stsb': {
-        'model_name': 'textattack/bert-base-uncased-STS-B',
-        'glue_name': 'stsb',
-        'num_labels': 1,
-        'input_cols': ('sentence1', 'sentence2'),
-    },
-    'mnli': {
-        'model_name': 'textattack/bert-base-uncased-MNLI',
-        'glue_name': 'mnli',
-        'num_labels': 3,
-        'input_cols': ('premise', 'hypothesis'),
-    },
-    'qnli': {
-        'model_name': 'textattack/bert-base-uncased-QNLI',
-        'glue_name': 'qnli',
-        'num_labels': 2,
-        'input_cols': ('question', 'sentence'),
-    },
-    'rte': {
-        'model_name': 'textattack/bert-base-uncased-RTE',
-        'glue_name': 'rte',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-    },
-    'wnli': {
-        'model_name': 'textattack/bert-base-uncased-WNLI',
-        'glue_name': 'wnli',
-        'num_labels': 2,
-        'input_cols': ('sentence1', 'sentence2'),
-    },
-}
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PARENT_DIR = os.path.dirname(_THIS_DIR)
+for _path in (_PARENT_DIR, _THIS_DIR):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
+from analyze_all_distribution_new import (  # noqa: E402
+    TASK_REGISTRY,
+    _prepare_bert_data,
+    write_profile_protocol,
+)
 
 NUM_LAYERS = 12
 BOUNDARIES = [-2.7, 0.0, 2.7]
@@ -294,29 +252,13 @@ def restore_gelu(model, original_fns):
         layer.intermediate.intermediate_act_fn = original_fns[i]
 
 
-# ==================== Data Preparation ====================
-
-def tokenize_and_prepare(dataset_split, tokenizer, input_cols, max_length=128):
-    def _tok(examples):
-        if len(input_cols) == 1:
-            return tokenizer(examples[input_cols[0]],
-                             truncation=True, padding=False, max_length=max_length)
-        return tokenizer(examples[input_cols[0]], examples[input_cols[1]],
-                         truncation=True, padding=False, max_length=max_length)
-
-    tokenized = dataset_split.map(_tok, batched=True)
-    columns = ["input_ids", "attention_mask"]
-    if "token_type_ids" in tokenized.column_names:
-        columns.append("token_type_ids")
-    tokenized.set_format(type="torch", columns=columns)
-    return tokenized
-
-
 # ==================== Plotting ====================
 
 def plot_fine_grained_histograms(collector, task_name, output_dir):
-    """4x3 grid of per-layer histograms, colored by interval, with boundary lines."""
-    fig, axes = plt.subplots(4, 3, figsize=(20, 22))
+    """Grid of per-layer histograms, colored by interval boundaries."""
+    ncols = 3
+    nrows = (NUM_LAYERS + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(20, nrows * 5.5))
     fig.suptitle(f'GELU Input Distribution — {task_name.upper()} (Training Set)',
                  fontsize=18, fontweight='bold', y=0.98)
 
@@ -368,6 +310,10 @@ def plot_fine_grained_histograms(collector, task_name, output_dir):
             ax.text(0.98, 0.95, text_lines, transform=ax.transAxes, fontsize=7,
                     verticalalignment='top', horizontalalignment='right',
                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.85))
+
+    for layer_idx in range(NUM_LAYERS, nrows * ncols):
+        row, col = divmod(layer_idx, ncols)
+        axes[row][col].set_visible(False)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     filepath = os.path.join(output_dir, f'{task_name}_gelu_distribution.png')
@@ -531,6 +477,8 @@ def save_per_position_stats(collector, task_name, output_dir):
 
 def process_task(task_name, task_config, output_dir, device,
                  max_length=128, batch_size=32, max_samples=0):
+    global NUM_LAYERS
+    NUM_LAYERS = int(task_config['num_layers'])
     print(f'\n{"=" * 70}')
     print(f'  Task: {task_name.upper()}')
     print(f'{"=" * 70}')
@@ -551,25 +499,14 @@ def process_task(task_name, task_config, output_dir, device,
     model.to(device)
     model.eval()
 
-    print(f'  Loading GLUE training set: {task_config["glue_name"]}')
-    data = load_dataset("nyu-mll/glue", task_config['glue_name'])
-    train_split = data['train']
-
-    if 0 < max_samples < len(train_split):
-        train_split = train_split.select(range(max_samples))
-        print(f'  Samples: {max_samples} / {len(data["train"])}')
-    else:
-        print(f'  Samples: {len(train_split)} (all)')
-
-    train_data = tokenize_and_prepare(train_split, tokenizer,
-                                      task_config['input_cols'], max_length)
-
-    data_collator = DataCollatorWithPadding(
-        tokenizer=tokenizer, padding="max_length", max_length=max_length,
-        return_tensors="pt", pad_to_multiple_of=8,
+    dataloader, protocol_payload = _prepare_bert_data(
+        task_config,
+        tokenizer,
+        max_length,
+        batch_size,
+        max_samples,
     )
-    dataloader = DataLoader(train_data, batch_size=batch_size,
-                            shuffle=False, collate_fn=data_collator)
+    write_profile_protocol(output_dir, task_name, protocol_payload)
 
     collector = GELUInputCollector(NUM_LAYERS, HIST_MIN, HIST_MAX, HIST_BINS)
     stats_queue = queue.Queue(maxsize=128)
@@ -644,7 +581,7 @@ def main():
     parser.add_argument('--output_dir', type=str, default='gelu_analysis',
                         help='Output directory (default: gelu_analysis)')
     parser.add_argument('--tasks', type=str, nargs='+', default=None,
-                        help='Tasks to analyze (default: all 8 GLUE tasks)')
+                        help='Tasks to analyze (default: all supported profiles)')
     parser.add_argument('--device', type=str, default='cuda',
                         help='Device (default: cuda)')
     parser.add_argument('--max_length', type=int, default=128,
@@ -652,7 +589,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32,
                         help='Batch size (default: 32)')
     parser.add_argument('--max_samples', type=int, default=0,
-                        help='Max training samples per task, 0 = all (default: 0)')
+                        help='Formal probe size; accepted values are 0 and 256')
     args = parser.parse_args()
 
     device = args.device

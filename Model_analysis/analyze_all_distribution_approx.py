@@ -51,21 +51,13 @@ Usage
 
     cd /var/tmp/root-home/Reinforcement-For-Robustness/Model_analysis
 
-    rm -rf all_analysis_approx
-
-    mkdir -p all_analysis_approx/wnli
-    
-    nohup python analyze_all_distribution_approx.py \
-        --tasks wnli \
+    python analyze_all_distribution_approx.py \
+        --tasks mrpc \
         --approx_config configs/approx_per_dataset.json \
         --stage stage1 \
         --max_length 128 \
         --batch_size 32 \
-        --output_dir all_analysis_approx/wnli \
-    > all_analysis_approx/wnli/wnli_run.log 2>&1 &
-
-
-    tail -f all_analysis_approx/wnli/wnli_run.log
+        --output_dir all_analysis_approx/mrpc
 """
 
 import argparse
@@ -114,7 +106,6 @@ from analyze_all_distribution_new import (
     _mag_bin_labels,
     _ORIG_MATMUL,
     _prepare_bert_data,
-    _prepare_gpt2_data,
     _stats_worker,
     plot_heatmap,
     plot_magnitude_heatmap,
@@ -124,9 +115,9 @@ from analyze_all_distribution_new import (
     plot_probe_histograms,
     plot_probe_magnitude_bar,
     remove_hooks,
+    write_profile_protocol,
 )
 from transformers import (
-    AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
@@ -324,7 +315,7 @@ def load_approx_config(path, task_name=None, stage="stage1"):
     1. Dataset-keyed (preferred; written as arrays)::
 
         {
-          "wnli": {
+          "mrpc": {
             "stage1": {
               "gelu":    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
               "softmax": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
@@ -690,7 +681,7 @@ def _make_attn_wrapper_with_softmax(fwd, li, q, softmax_fn):
 
 
 # ============================================================================
-# BERT / GPT-2 hook installers with approximation
+# BERT hook installer with approximation
 # ============================================================================
 
 
@@ -787,136 +778,11 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
     return handles, restore
 
 
-def _install_gpt2_hooks_approx(model, q, approx_cfg):
-    handles = []
-    restore = []
-    n_embd = model.config.n_embd
-
-    def _ids_hook(_mod, inp):
-        if inp[0] is not None:
-            _enqueue("input_ids", 0, inp[0].detach().float(), q)
-
-    handles.append(model.transformer.wte.register_forward_pre_hook(_ids_hook))
-    handles.append(
-        model.transformer.drop.register_forward_hook(
-            lambda _m, _i, o: _enqueue("after_embed", 0, o.detach(), q)
-        )
-    )
-
-    num_layers = model.config.n_layer
-    for i in range(num_layers):
-        block = model.transformer.h[i]
-        attn = block.attn
-
-        # Q / K / V — split from combined c_attn + accum_max
-        def _make_qkv_hook(li, ne):
-            def hook(mod, inp, out):
-                qp, kp, vp = out.split(ne, dim=-1)
-                x = inp[0].detach()
-                w_abs = mod.weight.detach().abs()
-                acc = _ORIG_MATMUL(x.abs(), w_abs)
-                if mod.bias is not None:
-                    acc = acc + mod.bias.detach().abs()
-                qa, ka, va = acc.split(ne, dim=-1)
-                _enqueue("query_proj", li, qp.detach(), q, accum_ma=qa.max().item())
-                _enqueue("key_proj", li, kp.detach(), q, accum_ma=ka.max().item())
-                _enqueue("value_proj", li, vp.detach(), q, accum_ma=va.max().item())
-
-            return hook
-
-        handles.append(attn.c_attn.register_forward_hook(_make_qkv_hook(i, n_embd)))
-        handles.append(attn.c_attn.register_forward_hook(
-            _make_qkv_pre_bias_hook(i, n_embd, q)))
-
-        # Attention internals (with optional approx softmax)
-        sm_degree = resolve_softmax_degree(approx_cfg, i)
-        if sm_degree is None:
-            sm_fn = None
-        else:
-            sm_fn = _make_approx_softmax_with_stats(
-                degree=sm_degree,
-                lower_bound=Exp_bound[sm_degree],
-                layer_idx=i,
-                q=q,
-            )
-        orig_fwd = attn.forward
-        attn.forward = _make_attn_wrapper_with_softmax(orig_fwd, i, q, sm_fn)
-        restore.append(("fwd", attn, orig_fwd))
-
-        handles.append(attn.c_proj.register_forward_hook(
-            _make_linear_hook("attn_output", i, q)))
-        handles.append(attn.c_proj.register_forward_hook(
-            _make_pre_bias_hook("attn_output_nobias", i, q)))
-
-        # LayerNorm probes
-        handles.append(block.ln_1.register_forward_pre_hook(
-            _make_pre_hook("ln1_input", i, q)))
-        handles.append(block.ln_1.register_forward_hook(
-            _make_hook("ln1_output", i, q)))
-        handles.append(block.ln_1.register_forward_hook(
-            _make_pre_bias_hook("ln1_output_nobias", i, q)))
-        handles.append(block.ln_1.register_forward_pre_hook(
-            _make_ln_internals_pre_hook("ln1", i, q)))
-
-        def _make_ln2_pre_hook(li):
-            def hook(_mod, inp):
-                t = inp[0].detach()
-                _enqueue("ln2_input", li, t, q)
-                _enqueue("post_attn_ln", li, t, q)
-            return hook
-
-        handles.append(block.ln_2.register_forward_pre_hook(_make_ln2_pre_hook(i)))
-        handles.append(block.ln_2.register_forward_hook(
-            _make_hook("ln2_output", i, q)))
-        handles.append(block.ln_2.register_forward_hook(
-            _make_pre_bias_hook("ln2_output_nobias", i, q)))
-        handles.append(block.ln_2.register_forward_pre_hook(
-            _make_ln_internals_pre_hook("ln2", i, q)))
-
-        # FFN1 (post-bias + pre-bias)
-        handles.append(block.mlp.c_fc.register_forward_hook(
-            _make_linear_hook("gelu_input", i, q)))
-        handles.append(block.mlp.c_fc.register_forward_hook(
-            _make_pre_bias_hook("gelu_input_nobias", i, q)))
-
-        # --- GELU: optionally replace ---
-        gelu_degree = resolve_gelu_degree(approx_cfg, i)
-        orig_act = block.mlp.act
-        if gelu_degree is None:
-            new_act = orig_act
-        else:
-            new_act = StatsPolynomialGELU(
-                degree=gelu_degree, layer_idx=i, q=q
-            ).to(
-                device=block.mlp.c_fc.weight.device,
-                dtype=block.mlp.c_fc.weight.dtype,
-            )
-        # Always wrap so that gelu_output is captured consistently.
-        block.mlp.act = _ActWrapper(new_act, i, q)
-        restore.append(("gpt2_act", block.mlp, orig_act))
-
-        # FFN2 (post-bias + pre-bias)
-        handles.append(block.mlp.c_proj.register_forward_hook(
-            _make_linear_hook("ffn2_output", i, q)))
-        handles.append(block.mlp.c_proj.register_forward_hook(
-            _make_pre_bias_hook("ffn2_output_nobias", i, q)))
-
-        def _make_block_hook(li):
-            def hook(_mod, _inp, out):
-                _enqueue("post_ffn_ln", li, out[0].detach(), q)
-            return hook
-
-        handles.append(block.register_forward_hook(_make_block_hook(i)))
-
-    return handles, restore
-
 
 def install_hooks_approx(model, arch, q, approx_cfg):
-    if arch == "bert":
-        return _install_bert_hooks_approx(model, q, approx_cfg)
-    if arch == "gpt2":
-        return _install_gpt2_hooks_approx(model, q, approx_cfg)
-    raise ValueError(f"Unknown arch: {arch}")
+    if arch != "bert":
+        raise ValueError(f"Unsupported architecture: {arch}")
+    return _install_bert_hooks_approx(model, q, approx_cfg)
 
 
 # ============================================================================
@@ -958,27 +824,19 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token or "[PAD]"
 
-    if arch == "bert":
-        model = AutoModelForSequenceClassification.from_pretrained(
-            cfg["model_name"],
-            num_labels=cfg["num_labels"],
-            pad_token_id=tokenizer.pad_token_id,
-            trust_remote_code=True,
-        )
-    elif arch == "gpt2":
-        model = AutoModelForCausalLM.from_pretrained(
-            cfg["model_name"],
-            pad_token_id=tokenizer.pad_token_id,
-        )
-    else:
-        raise ValueError(f"Unknown arch: {arch}")
+    model = AutoModelForSequenceClassification.from_pretrained(
+        cfg["model_name"],
+        num_labels=cfg["num_labels"],
+        pad_token_id=tokenizer.pad_token_id,
+        trust_remote_code=True,
+    )
     model.to(device).eval()
     print(f'  Model : {cfg["model_name"]}')
 
-    if arch == "bert":
-        dl = _prepare_bert_data(cfg, tokenizer, max_length, batch_size, max_samples)
-    else:
-        dl = _prepare_gpt2_data(cfg, tokenizer, max_length, batch_size, max_samples)
+    dl, protocol_payload = _prepare_bert_data(
+        cfg, tokenizer, max_length, batch_size, max_samples
+    )
+    write_profile_protocol(output_dir, task_name, protocol_payload)
 
     collector = LayerWiseCollector(num_layers=num_layers)
     stats_queue = queue.Queue(maxsize=4096)
@@ -1194,7 +1052,6 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
 
 def main():
     bert_tasks = [k for k, v in TASK_REGISTRY.items() if v["arch"] == "bert"]
-    gpt2_tasks = [k for k, v in TASK_REGISTRY.items() if v["arch"] == "gpt2"]
 
     parser = argparse.ArgumentParser(
         description="Per-computation distribution analysis with function substitution"
@@ -1202,14 +1059,13 @@ def main():
     parser.add_argument("--output_dir", type=str, default="all_analysis_approx")
     parser.add_argument(
         "--tasks", type=str, nargs="+", default=None,
-        help=(f"Tasks to run.  BERT: {bert_tasks}  GPT-2: {gpt2_tasks}  "
-              f"Default: all BERT tasks"),
+        help=f"Tasks to run: {bert_tasks}. Default: all supported tasks",
     )
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--max_samples", type=int, default=0,
-                        help="Max samples per task, 0 = all")
+                        help="Formal probe size; accepted values are 0 and 256")
     parser.add_argument("--approx_config", type=str, default=None,
                         help="Path to approximation config JSON. "
                              "Supports dataset-keyed (recommended) or legacy "
