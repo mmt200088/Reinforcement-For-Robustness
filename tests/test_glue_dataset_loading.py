@@ -249,6 +249,29 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             source.index("load_glue_dataset_equivalent("),
         )
 
+    def test_train_wires_shared_probe_before_tokenization(self):
+        rl_tune = _import_rl_tune()
+        source = inspect.getsource(rl_tune.train)
+
+        self.assertIn(
+            'glue_train_probe_fixture_path: str = '
+            '"fixtures/reproducibility/glue_train_probe_v1.json"',
+            source,
+        )
+        self.assertIn("load_train_probe_fixture(", source)
+        self.assertIn("resolve_glue_protocol_views(", source)
+        self.assertIn("train_probe_data =", source)
+        self.assertIn("GlueDataProtocolContext(", source)
+        self.assertIn("glue_data_protocol=glue_protocol_context", source)
+        self.assertLess(
+            source.index("load_train_probe_fixture("),
+            source.index("AutoTokenizer.from_pretrained("),
+        )
+        self.assertLess(
+            source.index("resolve_glue_protocol_views("),
+            source.index("train_probe_data ="),
+        )
+
     def test_train_rejects_missing_fixture_before_runtime_access(self):
         rl_tune = _import_rl_tune()
 
