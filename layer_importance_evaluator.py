@@ -2486,8 +2486,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  final_eval_action_fixed='',
                  final_eval_cost_match_count=50,
                  final_eval_cost_match_max_attempts=5000,
-                 final_eval_glue_submission_enabled=True,
-                 final_eval_glue_submission_seed=42,
                  skip_noise_rl=False,
                  skip_stage1_rl=False,
                  skip_final_eval=False,
@@ -2538,8 +2536,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   comparator_smoke=False,
                   comparator_stage1_only=False,
                   glue_data_protocol=None,
-                  mrpc_reproducibility=None,
-                  final_eval_require_rescale_optimizer=False):
+                  mrpc_reproducibility=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2980,11 +2977,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_action_fixed = final_eval_action_fixed
         self.final_eval_cost_match_count = max(0, int(final_eval_cost_match_count))
         self.final_eval_cost_match_max_attempts = max(0, int(final_eval_cost_match_max_attempts))
-        self.final_eval_glue_submission_enabled = self._coerce_bool_flag(
-            final_eval_glue_submission_enabled, 'final_eval_glue_submission_enabled')
-        self.final_eval_glue_submission_seed = int(final_eval_glue_submission_seed)
-        self.final_eval_require_rescale_optimizer = self._coerce_bool_flag(
-            final_eval_require_rescale_optimizer, 'final_eval_require_rescale_optimizer')
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
@@ -5767,8 +5759,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 action_fixed=self.final_eval_action_fixed,
                 cost_match_count=int(getattr(self, "final_eval_cost_match_count", 50)),
                 cost_match_max_attempts=int(getattr(self, "final_eval_cost_match_max_attempts", 5000)),
-                glue_submission_enabled=bool(getattr(self, "final_eval_glue_submission_enabled", True)),
-                glue_submission_seed=int(getattr(self, "final_eval_glue_submission_seed", 42)),
             )
             return runner.run(
                 search_best_stage1=stage1_search_best,

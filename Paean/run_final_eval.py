@@ -110,16 +110,8 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
         str(settings.cost_match_count),
         "--final_eval_cost_match_max_attempts",
         str(settings.cost_match_max_attempts),
-        "--final_eval_glue_submission_enabled",
-        "true" if settings.glue_submission_enabled else "false",
-        "--final_eval_glue_submission_seed",
-        str(settings.glue_submission_seed),
-        "--blb_v3_rescale_invoker_kind",
-        settings.blb_rescale_invoker_kind,
         "--blb_v3_inproc_rescale_optimizer_root",
         settings.blb_rescale_optimizer_root,
-        "--final_eval_require_rescale_optimizer",
-        "true" if settings.require_rescale_optimizer else "false",
         "--skip_noise_rl",
         "true",
         "--skip_stage1_rl",
@@ -272,14 +264,8 @@ def configuration_lines(
         lines.append(f"  action_ranges: {list(settings.action_ranges)}")
     if settings.action_fixed:
         lines.append(f"  action_fixed: {list(settings.action_fixed)}")
-    lines.extend(
-        [
-            f"  blb_rescale_invoker_kind: {settings.blb_rescale_invoker_kind}",
-        ]
-    )
     if settings.blb_rescale_optimizer_root:
         lines.append(f"  blb_rescale_optimizer_root: {settings.blb_rescale_optimizer_root}")
-    lines.append(f"  require_rescale_optimizer: {settings.require_rescale_optimizer}")
     if settings.resume_from:
         lines.append(f"  resume_from: {settings.resume_from}")
     lines.append(f"  output_dir: {output_dir}")

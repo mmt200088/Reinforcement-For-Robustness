@@ -51,9 +51,7 @@ class FinalEvalSettings:
     action_config: str = ""
     action_ranges: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
     action_fixed: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
-    blb_rescale_invoker_kind: str = "heuristic"
-    blb_rescale_optimizer_root: str = ""
-    require_rescale_optimizer: bool = False
+    blb_rescale_optimizer_root: str = "Rescale_optimizer"
     stage1_accuracy_tolerance: float = 0.005
     stage2_limit_tolerance: float = 0.05
     stage2_stability_tolerance: float = 0.05
@@ -64,8 +62,6 @@ class FinalEvalSettings:
     manual_stage2_noise: str = ""
     cost_match_count: int = 50
     cost_match_max_attempts: int = 5000
-    glue_submission_enabled: bool = True
-    glue_submission_seed: int = 42
     dry_run: bool = False
     foreground: bool = False
 
@@ -170,9 +166,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-config", default="")
     parser.add_argument("--action-range", "--range", dest="action_ranges", action="append", default=[])
     parser.add_argument("--action-fixed", "--fixed-action", dest="action_fixed", action="append", default=[])
-    parser.add_argument("--rescale-invoker-kind", "--blb-rescale-invoker-kind", dest="blb_rescale_invoker_kind", default="heuristic")
-    parser.add_argument("--rescale-optimizer-root", "--blb-rescale-optimizer-root", dest="blb_rescale_optimizer_root", default="")
-    parser.add_argument("--require-rescale-optimizer", dest="require_rescale_optimizer", action="store_true")
+    parser.add_argument(
+        "--rescale-optimizer-root",
+        "--blb-rescale-optimizer-root",
+        dest="blb_rescale_optimizer_root",
+        default="Rescale_optimizer",
+    )
     parser.add_argument(
         "--cost-match-count",
         dest="cost_match_count",
@@ -193,26 +192,6 @@ def build_parser() -> argparse.ArgumentParser:
             "Maximum number of random draws (incl. invalid + cost-mismatch) before "
             "the sampler stops trying to reach --cost-match-count. Default 5000."
         ),
-    )
-    parser.add_argument(
-        "--glue-submission",
-        dest="glue_submission_enabled",
-        action="store_true",
-        default=True,
-        help="Generate a GLUE submission zip for the selected BLB action after final eval (default on).",
-    )
-    parser.add_argument(
-        "--no-glue-submission",
-        dest="glue_submission_enabled",
-        action="store_false",
-        help="Disable the post-final-eval GLUE submission generation.",
-    )
-    parser.add_argument(
-        "--glue-submission-seed",
-        dest="glue_submission_seed",
-        type=int,
-        default=42,
-        help="RNG seed used for reproducible BLB-noise sampling during GLUE inference (default 42).",
     )
     parser.add_argument("--foreground", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -317,9 +296,7 @@ def parse_final_eval_settings(
         action_config=resolve_repo_path(ns.action_config),
         action_ranges=tuple(str(v) for v in (ns.action_ranges or []) if str(v).strip()),
         action_fixed=tuple(str(v) for v in (ns.action_fixed or []) if str(v).strip()),
-        blb_rescale_invoker_kind=str(ns.blb_rescale_invoker_kind or "heuristic").lower().replace("-", "_"),
         blb_rescale_optimizer_root=resolve_repo_path(ns.blb_rescale_optimizer_root),
-        require_rescale_optimizer=bool(ns.require_rescale_optimizer),
         stage1_accuracy_tolerance=float(ns.stage1_accuracy_tolerance),
         stage2_limit_tolerance=float(ns.stage2_limit_tolerance),
         stage2_stability_tolerance=float(ns.stage2_stability_tolerance),
@@ -330,8 +307,6 @@ def parse_final_eval_settings(
         manual_stage2_noise=ns.manual_stage2_noise,
         cost_match_count=int(ns.cost_match_count),
         cost_match_max_attempts=int(ns.cost_match_max_attempts),
-        glue_submission_enabled=bool(ns.glue_submission_enabled),
-        glue_submission_seed=int(ns.glue_submission_seed),
         dry_run=bool(ns.dry_run),
         foreground=bool(ns.foreground),
     )
@@ -401,9 +376,7 @@ def validate_settings(
         raise FileNotFoundError(f"--action-config file does not exist: {settings.action_config}")
     if settings.random_enabled and settings.action_ranges:
         raise ValueError("--random/--enable-random cannot be combined with --action-range/--range")
-    if settings.blb_rescale_invoker_kind not in ("heuristic", "in_process", "subprocess", "stub"):
-        raise ValueError("--rescale-invoker-kind must be heuristic, in_process, subprocess, or stub")
-    if settings.blb_rescale_optimizer_root and not Path(settings.blb_rescale_optimizer_root).is_dir():
+    if not Path(settings.blb_rescale_optimizer_root).is_dir():
         raise FileNotFoundError(f"--rescale-optimizer-root does not exist: {settings.blb_rescale_optimizer_root}")
 
 

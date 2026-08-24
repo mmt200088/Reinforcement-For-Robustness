@@ -46,7 +46,6 @@ class ReportFormatUtilsTest(unittest.TestCase):
 class ReportFormatStaticGuardTest(unittest.TestCase):
     def test_shared_report_helpers_are_used_by_known_report_scripts(self):
         expected_imports = {
-            "scripts/run_fusion_count_action_eval.py": "from report_format_utils import html_table, metric_float",
             "reports/generate_blb_mapping_html_reports.py": "from report_format_utils import html_table",
             "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
             "scripts/render_fusion_count_slots_eval_report.py": "from report_format_utils import html_table",

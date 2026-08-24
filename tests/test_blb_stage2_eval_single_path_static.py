@@ -13,7 +13,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             encoding="utf-8"
         )
         paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
-        glue = (repo / "generate_glue_submission.py").read_text(encoding="utf-8")
 
         self.assertIn("materialize_action_for_model", env)
         self.assertNotIn("evaluate_action_for_cost(", env)
@@ -22,8 +21,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertNotIn("apply_optimizer_outputs_to_cfgs(", sequential)
         self.assertIn("materialize_decoded_action", paean)
         self.assertNotIn("apply_optimizer_outputs_to_cfgs(", paean)
-        self.assertIn("materialize_decoded_action", glue)
-        self.assertNotIn("_apply_optimizer_outputs_to_decoded(", glue)
 
     def test_layer0_block1_k_is_materialized_installed_and_verified(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
@@ -131,11 +128,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertIn("truncation_backend=train_cfg.truncation_backend", sequential)
         self.assertIn("truncation_ring_bits=train_cfg.truncation_ring_bits", sequential)
         self.assertIn("truncation_source_fractional_bits=(\n", sequential)
-
-        glue = (repo / "generate_glue_submission.py").read_text(encoding="utf-8")
-        self.assertIn('--blb_truncation_backend', glue)
-        self.assertIn('truncation_backend: str = "binary"', glue)
-        self.assertIn("truncation_backend=truncation_backend", glue)
 
     def test_executable_eval_paths_use_shared_optimizer_writeback_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]

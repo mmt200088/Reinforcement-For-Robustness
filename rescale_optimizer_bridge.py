@@ -1,4 +1,4 @@
-"""Rescale_optimizer 桥接层（加强版 stage2 RL 奖励侧）。
+"""In-process Rescale optimizer bridge for Stage-2 search and evaluation.
 
 把 BLB 噪声选择（Block 1-5 的 ``Block*NoiseConfig``）转成 ``Rescale_optimizer``
 的 ``replan`` 输入（``t_new`` + ``delta_overrides``），调用优化器，再从返回
@@ -8,16 +8,8 @@ JSON 抽出三个 RL 奖励信号：
     2) ``total_bits``          ── 模数链 total_bits（越小越好）
     3) ``invalid_chain``       ── 链合法性（None=合法；非 None=不合法 + 原因）
 
-可用的 invoker 实现（4 种）：
-
-  * ``InProcessInvoker`` ── **推荐**。直接 ``import rescale_optimizer`` 调
-    ``replan_with_user_actions``；预加载图与 baseline，单步开销 ms 级。
-  * ``SubprocessInvoker`` ── fork ``python scripts/replan_what_if.py``，开销大但
-    完全隔离；适合 debug 时用。
-  * ``CallableInvoker`` ── 包装任意 ``(config_name, payload) -> dict`` callable。
-  * ``StubInvoker`` ── 单元测试用 canned 响应。注意：BLB Stage-2 RL 训练 / 最终
-    评估路径只接受 ``InProcessInvoker`` / ``SubprocessInvoker`` 这两种"真正过
-    Rescale_optimizer 计算"的 invoker；之前的 ``HeuristicStubInvoker`` 已删除。
+The production path preloads every graph and baseline into
+``InProcessInvoker``. Missing profiles or invalid optimizer state fail closed.
 
 invoker 调用签名：``invoker(config_name, payload)``，``payload`` 支持两种形态：
 
@@ -53,9 +45,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-import subprocess
 import sys
-import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
@@ -145,7 +135,7 @@ def _parse_optimizer_raw(raw: dict, *, config_name: str) -> RescaleOptimizerOutp
 
 
 # ---------------------------------------------------------------------------
-# Invoker 协议 + 三种现成实现
+# Invoker protocol
 # ---------------------------------------------------------------------------
 
 @runtime_checkable
@@ -158,65 +148,6 @@ class RescaleOptimizerInvoker(Protocol):
         / ``result.invalid_chain``
     """
     def __call__(self, config_name: str, delta_overrides: dict) -> dict: ...
-
-
-class StubInvoker:
-    """测试 / mock invoker：按 ``config_name`` 返回预设 JSON。
-
-    可以直接用于 sanity test、CI（不依赖实际 Rescale_optimizer 二进制）。
-    """
-    def __init__(self, canned: Dict[str, dict]):
-        self._canned = {str(k): dict(v) for k, v in canned.items()}
-
-    def __call__(self, config_name: str, delta_overrides: dict) -> dict:
-        if config_name not in self._canned:
-            raise KeyError(
-                f"StubInvoker: 未注册 config_name={config_name!r}。"
-                f"可用 keys = {sorted(self._canned.keys())}"
-            )
-        out = dict(self._canned[config_name])
-        # 把 RL 这次的 delta_overrides 回写到 raw 里，方便上层 introspect
-        out.setdefault("delta_overrides", dict(delta_overrides))
-        return out
-
-
-class CallableInvoker:
-    """直接包一个 Python callable：当 Rescale_optimizer 是可 import 的本地模块时用。
-
-    ``fn`` 必须满足：``fn(config_name: str, delta_overrides: dict) -> dict``。
-    """
-    def __init__(self, fn: Callable[[str, dict], dict]):
-        self._fn = fn
-
-    def __call__(self, config_name: str, delta_overrides: dict) -> dict:
-        out = self._fn(config_name, delta_overrides)
-        if not isinstance(out, Mapping):
-            raise TypeError(
-                f"CallableInvoker: 期望 dict 返回值，实际 {type(out).__name__}"
-            )
-        return dict(out)
-
-
-def _split_payload(payload: Any) -> Tuple[Optional[List[int]], Dict[str, Union[int, str]]]:
-    """从 invoker 调用方接到的 ``payload`` 中拆出 (t_new, delta_overrides)。
-
-    向后兼容：
-      * 如果 payload 是 bare dict（不含 ``"t_new"`` 也不含 ``"delta_overrides"``），
-        把它整体当作 ``delta_overrides``，``t_new=None``（调用侧使用 baseline）。
-      * 如果 payload 是 rich dict（含 ``"t_new"`` 和/或 ``"delta_overrides"``），
-        分别取出。
-    """
-    if not isinstance(payload, Mapping):
-        return None, {}
-    keys = set(payload.keys())
-    if keys & {"t_new", "delta_overrides"}:
-        t_new_raw = payload.get("t_new")
-        t_new = [int(x) for x in t_new_raw] if t_new_raw is not None else None
-        deltas_raw = payload.get("delta_overrides") or {}
-        deltas = {str(k): v for k, v in deltas_raw.items()}
-        return t_new, deltas
-    # bare dict
-    return None, {str(k): v for k, v in payload.items()}
 
 
 _BASELINE_ARCHIVE_CACHE: Dict[
@@ -384,8 +315,7 @@ class InProcessInvoker:
     def archive_entries(self) -> Dict[str, dict]:
         """``{graph_key: archive_entry}`` — the raw static_skeletons entry per
         graph (carries ``cut_point_sf`` with names + sf_post). Lets the bridge
-        derive t_new from the ACTUAL skeleton via skeleton_stage_map instead of a
-        hard-coded table. Absent on StubInvoker → bridge keeps the static table."""
+        derive t_new from the actual skeleton via ``skeleton_stage_map``."""
         return {
             k: dict(rec.archive_entry)
             for k, rec in self._session.baselines.items()
@@ -417,115 +347,21 @@ class InProcessInvoker:
         )
 
 
-class SubprocessInvoker:
-    """fork ``python scripts/replan_what_if.py`` 调用 Rescale_optimizer。
-
-    单步开销大（每次 ~几百 ms），主要给 debug / 隔离场景用。RL 训练推荐
-    ``InProcessInvoker``。
-
-    工作流：
-      1. 把 ``{"t_new": [...], "delta_overrides": {...}}`` 写到临时 JSON
-         ``replan_actions_<config_name>.json``；
-      2. 调用：
-            ``<python> <root>/scripts/replan_what_if.py
-                --config <root>/configs/<profile>/<cname>.json
-                --baseline-from <static_skeletons_path>
-                --actions-file <tmp_actions>
-                --out <tmp_out>``
-      3. 读取 ``<tmp_out>`` 里的 JSON。
-    """
-
-    def __init__(
-            self,
-            *,
-            rescale_optimizer_root: str,
-            configs: Mapping[str, str],
-            baseline_archive: str,
-            python_exe: Optional[str] = None,
-            actions_dir: Optional[str] = None,
-            output_dir: Optional[str] = None,
-            cli_script: str = "scripts/replan_what_if.py",
-            timeout_sec: float = 60.0,
-            extra_env: Optional[Mapping[str, str]] = None,
-            ):
-        self.rescale_optimizer_root = os.path.abspath(rescale_optimizer_root)
-        self.configs = {str(k): str(v) for k, v in configs.items()}
-        self.baseline_archive = str(baseline_archive)
-        self.python_exe = str(python_exe) if python_exe else sys.executable
-        self.actions_dir = str(actions_dir) if actions_dir else None
-        self.output_dir = str(output_dir) if output_dir else None
-        self.cli_script = str(cli_script)
-        self.timeout_sec = float(timeout_sec)
-        self.extra_env = dict(extra_env) if extra_env else {}
-
-    def __call__(self, config_name: str, payload: Any) -> dict:
-        cname = str(config_name)
-        if cname not in self.configs:
-            raise KeyError(
-                f"SubprocessInvoker: 未注册 config_name={cname!r}。"
-                f"可用 keys = {sorted(self.configs.keys())}"
-            )
-        config_path = self.configs[cname]
-        actions_dir = self.actions_dir or tempfile.gettempdir()
-        output_dir = self.output_dir or tempfile.gettempdir()
-        os.makedirs(actions_dir, exist_ok=True)
-        os.makedirs(output_dir, exist_ok=True)
-
-        actions_path = os.path.join(actions_dir, f"replan_actions_{cname}.json")
-        output_path = os.path.join(output_dir, f"rescale_result_{cname}.json")
-
-        t_new, delta_overrides = _split_payload(payload)
-        actions_doc: Dict[str, Any] = {"config_name": cname}
-        if t_new is not None:
-            actions_doc["t_new"] = list(t_new)
-        if delta_overrides:
-            actions_doc["delta_overrides"] = dict(delta_overrides)
-        with open(actions_path, "w", encoding="utf-8") as f:
-            json.dump(actions_doc, f, ensure_ascii=False)
-
-        argv = [
-            self.python_exe,
-            os.path.join(self.rescale_optimizer_root, self.cli_script),
-            "--config", config_path,
-            "--baseline-from", self.baseline_archive,
-            "--config-name", cname,
-            "--actions-file", actions_path,
-            "--out", output_path,
-        ]
-
-        env = os.environ.copy()
-        env.update(self.extra_env)
-        completed = subprocess.run(
-            argv, cwd=self.rescale_optimizer_root, env=env,
-            capture_output=True, text=True, timeout=self.timeout_sec,
-        )
-        # 注意 replan_what_if.py 在 valid=False 时 returncode=3，但仍然写出 JSON
-        if completed.returncode not in (0, 3):
-            raise RuntimeError(
-                f"replan_what_if.py 子进程退出码 {completed.returncode}，"
-                f"stderr={completed.stderr[-500:]!r}"
-            )
-        if not os.path.exists(output_path):
-            raise RuntimeError(
-                f"replan_what_if.py 没产出 {output_path}（stdout={completed.stdout[-500:]!r}）"
-            )
-        with open(output_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-
-# ---------------------------------------------------------------------------
-# BLB cfg → delta_overrides 映射（per-block 默认 + 可注册覆盖）
-# ---------------------------------------------------------------------------
-# 用户给的 JSON 例子展示了 Block 1 的节点命名约定：
-#   ctpt_ffn2 / ctpt_inv_d_1 / ctpt_inv_d_2 (CTPT_MUL)
-#   ctct_ext_square (CTCT_MUL，delta = "x2")
-#
-# 这里给一个**默认映射**，实际优化器节点名以用户最终使用的 config 为准。
-# 如果业务侧需要不同的命名 / delta 计算规则，请通过
-# ``RescaleOptimizerBridge.register_cfg_to_delta_overrides(block_name, fn)``
-# 注册自己的转换函数。
-
-CfgToDeltaFn = Callable[[Any], Dict[str, Union[int, str]]]
+def build_rescale_invoker(
+        *,
+        root: str,
+        profile: str,
+        baseline_archive: Optional[str] = None,
+        ) -> InProcessInvoker:
+    """Build the only supported production Rescale invoker."""
+    invoker = InProcessInvoker.from_profile(
+        rescale_optimizer_root=os.fspath(root),
+        profile=str(profile),
+        baseline_archive=baseline_archive,
+    )
+    if not invoker.baselines:
+        raise RuntimeError(f"no Rescale baselines loaded for profile={profile!r}")
+    return invoker
 
 
 def default_block1_cfg_to_delta(cfg: Block1NoiseConfig) -> Dict[str, Union[int, str]]:
@@ -940,9 +776,8 @@ def _derive_t_new_table_from_invoker(invoker: Any) -> Dict[str, Tuple[_SkelEntry
 
     Uses ``invoker.archive_entries`` (the static_skeletons cut_point_sf per graph)
     + ``skeleton_stage_map`` so the t_new ordering follows whatever the current
-    skeleton selects. Returns ``{}`` when the invoker has no archive entries
-    (StubInvoker) or the SSOT can't be imported, so the caller keeps
-    ``DEFAULT_CFG_TO_T_NEW_MAP``. Graphs with an unmapped rescale node are skipped
+    skeleton selects. Returns ``{}`` when the invoker has no archive entries.
+    Graphs with an unmapped rescale node are skipped
     (fall back to the static table for those).
     """
     try:
@@ -1004,7 +839,7 @@ class RescaleOptimizerBridge:
         """构造 bridge。
 
         Args:
-            invoker:                    ``RescaleOptimizerInvoker``（InProcess / Subprocess / Stub / Heuristic）
+            invoker:                    in-process ``RescaleOptimizerInvoker``
             cfg_to_delta_overrides:     ``{block_name: fn(cfg) -> delta_overrides_dict}``，
                                         覆盖默认 ``default_block{1..5}_cfg_to_delta``
             cfg_to_t_new_overrides:     ``{graph_key: tuple[_SkelEntry, ...]}``，扩展或覆盖

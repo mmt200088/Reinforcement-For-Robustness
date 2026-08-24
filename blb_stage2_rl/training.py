@@ -12,7 +12,10 @@ import numpy as np
 import torch
 
 from glue_data_protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
-from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+from rescale_optimizer_bridge import (
+    RescaleOptimizerBridge,
+    build_rescale_invoker,
+)
 
 from .env import ProbeBatch
 from .sequential_policy import SequentialPPOConfig
@@ -108,8 +111,6 @@ class BLBStage2TrainConfig:
     inproc_rescale_optimizer_root: str = field(
         default_factory=lambda: os.path.join(_repo_root(), "Rescale_optimizer")
     )
-    inproc_profile: Optional[str] = None
-    inproc_configs: Optional[Mapping[str, str]] = None
     inproc_baseline_archive: Optional[str] = None
 
     reward_devices: list[int] = field(default_factory=list)
@@ -416,27 +417,14 @@ class BLBStage2RLRunner:
         log: Any,
     ) -> RescaleOptimizerBridge:
         root = str(config.inproc_rescale_optimizer_root)
-        profile = str(config.inproc_profile or config.profile)
+        profile = str(config.profile)
         log(f"  * Rescale_optimizer root: {root}")
         try:
-            if config.inproc_configs:
-                if not config.inproc_baseline_archive:
-                    raise ValueError(
-                        "inproc_configs requires inproc_baseline_archive"
-                    )
-                invoker = InProcessInvoker(
-                    configs=dict(config.inproc_configs),
-                    baseline_archive=str(config.inproc_baseline_archive),
-                    rescale_optimizer_root=root,
-                )
-            else:
-                invoker = InProcessInvoker.from_profile(
-                    rescale_optimizer_root=root,
-                    profile=profile,
-                    baseline_archive=config.inproc_baseline_archive,
-                )
-            if not getattr(invoker, "baselines", {}):
-                raise ValueError(f"no Rescale baselines loaded for {profile}")
+            invoker = build_rescale_invoker(
+                root=root,
+                profile=profile,
+                baseline_archive=config.inproc_baseline_archive,
+            )
         except Exception as exc:
             raise RuntimeError(
                 f"failed to initialize in-process Rescale for {profile}: {exc}"

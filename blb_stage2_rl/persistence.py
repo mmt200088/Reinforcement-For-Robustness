@@ -1305,7 +1305,7 @@ def write_blb_final_report(
         baseline: Optional[Mapping[str, Any]],
         reward_weights: Optional[Mapping[str, Any]],
         episode_returns: Sequence[float],
-        rescale_invoker_kind: str,
+        rescale_backend: str,
         any_invalid_baseline: bool = False,
         extra_lines: Sequence[str] = (),
         log_fn=None,
@@ -1335,7 +1335,7 @@ def write_blb_final_report(
     lines.append(f"- 生成时间: {_dt.datetime.now().isoformat()}")
     lines.append(f"- 训练时长: {elapsed_sec:.1f} 秒（约 {elapsed_sec/60:.1f} 分钟）")
     lines.append(f"- Episode 进度: {completed_episodes} / {total_episodes}")
-    lines.append(f"- 模数链 invoker: `{rescale_invoker_kind}`")
+    lines.append(f"- 模数链 backend: `{rescale_backend}`")
     lines.append("")
     lines.append("## 1. Reward 概览")
     lines.append("")

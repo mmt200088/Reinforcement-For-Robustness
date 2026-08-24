@@ -713,7 +713,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             runner.evaluator = FakeEvaluator()
             runner.repeat_n = 1
             runner.rescale_optimizer_mode = "cfg_derived"
-            runner.rescale_invoker_kind = "stub"
+            runner.rescale_backend = "test"
             runner.rescale_optimizer_root = ""
             runner.rescale_bridge = type(
                 "Bridge",
@@ -1000,7 +1000,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
                     baseline={"loss": 0.3},
                     reward_weights={"cost": 1.0},
                     episode_returns=[0.1, 0.2, 0.3],
-                    rescale_invoker_kind="unit",
+                    rescale_backend="in_process",
                 )
                 try:
                     raise RuntimeError("boom")

@@ -146,8 +146,6 @@ def run_embedded_final_eval(
             action_fixed=settings.action_fixed,
             cost_match_count=settings.cost_match_count,
             cost_match_max_attempts=settings.cost_match_max_attempts,
-            glue_submission_enabled=settings.glue_submission_enabled,
-            glue_submission_seed=settings.glue_submission_seed,
         )
         return runner.run(
             search_best_stage1=search_best_stage1,

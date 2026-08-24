@@ -42,11 +42,9 @@ from final_evaluation_module import (
 from glue_data_protocol import FINAL_EVAL_SPLIT
 from json_utils import read_json_file, to_jsonable
 from rescale_optimizer_bridge import (
-    InProcessInvoker,
     RescaleOptimizerBridge,
-    SubprocessInvoker,
     aggregate_optimizer_signals,
-    load_baseline_archive,
+    build_rescale_invoker,
 )
 
 from .action_grid import (
@@ -112,8 +110,6 @@ class BLBActionFinalEvaluationModule:
         action_fixed=(),
         cost_match_count: int = 50,
         cost_match_max_attempts: int = 5000,
-        glue_submission_enabled: bool = True,
-        glue_submission_seed: int = 42,
     ):
         self.evaluator = evaluator
         self.config_source = (config_source or "search").lower()
@@ -126,8 +122,6 @@ class BLBActionFinalEvaluationModule:
         self.repeat_n = max(1, int(repeat_n))
         self.cost_match_count = max(0, int(cost_match_count))
         self.cost_match_max_attempts = max(0, int(cost_match_max_attempts))
-        self.glue_submission_enabled = bool(glue_submission_enabled)
-        self.glue_submission_seed = int(glue_submission_seed)
         default_results_dir = getattr(
             evaluator, "final_eval_dir", os.path.join("rl_results", "final_eval")
         )
@@ -391,11 +385,10 @@ class BLBActionFinalEvaluationModule:
         total_layers = int(ev.total_layers)
         (
             self.rescale_bridge,
-            self.rescale_invoker_kind,
+            self.rescale_backend,
             self.rescale_optimizer_root,
         ) = self._build_rescale_bridge(
             profile,
-            require_in_process=(final_eval_handoff is not None),
         )
 
         stage1_resolver = UnifiedFinalEvaluationModule(
@@ -548,7 +541,7 @@ class BLBActionFinalEvaluationModule:
         ev.log("PHASE: BLB ACTION FINAL EVALUATION (validation_full)")
         ev.log(f"CONFIG_SOURCE={self.config_source}  STAGE1_SOURCE={stage1_source}")
         ev.log(
-            f"RESCALE_OPTIMIZER={self.rescale_invoker_kind} "
+            f"RESCALE_OPTIMIZER={self.rescale_backend} "
             f"root={self.rescale_optimizer_root or '(none)'} "
             f"mode={self.rescale_optimizer_mode}"
         )
@@ -750,16 +743,6 @@ class BLBActionFinalEvaluationModule:
         if scatter_path:
             ev.log(f"BLB action scatter plot saved to: {scatter_path}")
 
-        glue_payload = self._maybe_run_glue_submission(
-            selected_candidate=selected_candidate,
-            selected_result=selected_result,
-            opt_gelu=opt_gelu,
-            opt_softmax=opt_softmax,
-            profile=profile,
-            action_context=action_context,
-            final_eval_handoff=final_eval_handoff,
-        )
-
         ev.apply_configuration(opt_gelu, opt_softmax)
         self._clear_all_noise()
         best = selected_result
@@ -785,7 +768,6 @@ class BLBActionFinalEvaluationModule:
             "text_report_path": text_path,
             "plot_path": plot_path,
             "scatter_path": scatter_path,
-            "glue_submission": glue_payload,
             "stage2_final_eval_handoff": final_eval_handoff,
             "variance_plot_path": None,
         }
@@ -1004,7 +986,7 @@ class BLBActionFinalEvaluationModule:
                 materialization_consistency or {}
             ),
             "rescale_optimizer": {
-                "invoker_kind": str(getattr(self, "rescale_invoker_kind", "unknown")),
+                "invoker_kind": str(getattr(self, "rescale_backend", "unknown")),
                 "root": str(getattr(self, "rescale_optimizer_root", "") or ""),
                 "mode": str(getattr(self, "rescale_optimizer_mode", "cfg_derived")),
                 "request_count": int(len(opt_outputs)),
@@ -1098,7 +1080,7 @@ class BLBActionFinalEvaluationModule:
         if bridge is None:
             bridge, kind, root = self._build_rescale_bridge(profile)
             self.rescale_bridge = bridge
-            self.rescale_invoker_kind = kind
+            self.rescale_backend = kind
             self.rescale_optimizer_root = root
         requests = build_optimizer_requests(profile, cfgs_dict)
         outputs = bridge.evaluate_blocks(requests)
@@ -1433,84 +1415,23 @@ class BLBActionFinalEvaluationModule:
             "matches_realized_total": bool(int(declared_total) == int(realized_total)),
         }
 
-    def _resolve_rescale_invoker_kind(
-            self,
-            *,
-            require_in_process: bool,
-            ) -> str:
-        if require_in_process:
-            return "in_process"
-        kind = str(
-            getattr(
-                self.evaluator,
-                "blb_v3_rescale_invoker_kind",
-                "in_process",
-            ) or "in_process"
-        )
-        return kind.lower().replace("-", "_")
-
     def _build_rescale_bridge(
             self,
             profile: str,
-            *,
-            require_in_process: bool = False,
             ) -> Tuple[RescaleOptimizerBridge, str, str]:
-        ev = self.evaluator
-        kind = self._resolve_rescale_invoker_kind(
-            require_in_process=require_in_process,
-        )
         root = self._resolve_rescale_optimizer_root()
-
-        def fail(reason: Exception | str):
+        try:
+            invoker = build_rescale_invoker(root=root, profile=str(profile))
+        except Exception as exc:
             raise RuntimeError(
-                "BLB final_eval requires a real Rescale_optimizer invoker "
-                f"(kind={kind!r}, root={root!r}): {reason}"
-            )
-
-        if kind == "heuristic":
-            fail(
-                "heuristic invoker has been removed; set "
-                "evaluator.blb_v3_rescale_invoker_kind='in_process' (or 'subprocess')"
-            )
-
-        if kind == "in_process":
-            try:
-                invoker = InProcessInvoker.from_profile(
-                    rescale_optimizer_root=root,
-                    profile=str(profile),
-                )
-                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), "in_process", root
-            except Exception as exc:
-                fail(exc)
-
-        if kind == "subprocess":
-            try:
-                cfg_dir = Path(root) / "configs" / str(profile)
-                archive = cfg_dir / f"static_skeletons_{profile}.json"
-                baselines = load_baseline_archive(str(archive))
-                configs = {
-                    name: str(cfg_dir / f"{name}.json")
-                    for name in baselines
-                    if (cfg_dir / f"{name}.json").is_file()
-                }
-                invoker = SubprocessInvoker(
-                    rescale_optimizer_root=root,
-                    configs=configs,
-                    baseline_archive=str(archive),
-                )
-                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), "subprocess", root
-            except Exception as exc:
-                fail(exc)
-
-        if kind == "stub":
-            canned = getattr(ev, "blb_v3_stub_canned", None)
-            if canned:
-                from rescale_optimizer_bridge import StubInvoker
-
-                return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), "stub", ""
-            fail("stub invoker requested but no blb_v3_stub_canned was provided")
-
-        fail(f"unknown rescale invoker kind {kind!r}; expected one of in_process/subprocess/stub")
+                f"BLB final_eval failed to initialize in-process Rescale "
+                f"for profile={profile!r}, root={root!r}: {exc}"
+            ) from exc
+        bridge = RescaleOptimizerBridge(
+            invoker=invoker,
+            **self._rescale_bridge_options(),
+        )
+        return bridge, "in_process", root
 
     def _load_rescale_optimizer_mode(self) -> str:
         if not self.action_config_path:
@@ -1550,7 +1471,6 @@ class BLBActionFinalEvaluationModule:
         ev = self.evaluator
         raw = (
             getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
-            or getattr(ev, "blb_v3_subprocess_optimizer_root", None)
             or "Rescale_optimizer"
         )
         path = Path(str(raw))
@@ -1982,7 +1902,7 @@ class BLBActionFinalEvaluationModule:
             f"- split: `validation_full`",
             f"- selected_source: `{selected_source}`",
             f"- repeat_n: `{self.repeat_n}`",
-            f"- rescale_optimizer: `{getattr(self, 'rescale_invoker_kind', 'unknown')}`",
+            f"- rescale_optimizer: `{getattr(self, 'rescale_backend', 'unknown')}`",
             f"- rescale_optimizer_root: `{getattr(self, 'rescale_optimizer_root', '') or '(none)'}`",
             f"- json: `{json_path}`",
             "",
@@ -2438,177 +2358,6 @@ class BLBActionFinalEvaluationModule:
     # Optional auto-trigger of GLUE submission for the selected BLB action
     # ------------------------------------------------------------------
 
-    def _maybe_run_glue_submission(
-            self,
-            *,
-            selected_candidate: Optional[ActionCandidate],
-            selected_result: Optional[Dict[str, Any]],
-            opt_gelu: np.ndarray,
-            opt_softmax: np.ndarray,
-            profile: str,
-            action_context,
-            final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
-            ) -> Dict[str, Any]:
-        handoff = to_jsonable(final_eval_handoff)
-        if not self.glue_submission_enabled:
-            return {
-                "enabled": False,
-                "skipped_reason": "disabled_by_settings",
-            }
-        if selected_candidate is None or selected_result is None:
-            return {
-                "enabled": True,
-                "skipped_reason": "no_selected_candidate",
-            }
-        install_verification = selected_result.get("install_verification")
-        if not isinstance(install_verification, Mapping):
-            install_verification = {}
-        if not (
-                selected_result.get("skipped_forward") is False
-                and type(selected_result.get("evaluation_n")) is int
-                and selected_result["evaluation_n"] > 0
-                and install_verification.get(
-                    "model_will_use_selected_cfg"
-                ) is True
-        ):
-            return {
-                "enabled": True,
-                "skipped_reason": "selected_action_not_evaluated",
-            }
-        try:
-            from generate_glue_submission import generate_blb_glue_submission
-        except Exception as exc:
-            self.evaluator.log(
-                f"  [glue][warning] cannot import generate_blb_glue_submission: {exc}"
-            )
-            return {"enabled": True, "skipped_reason": f"import_error: {exc}"}
-
-        glue_dir = os.path.join(self.results_dir, "glue_submission")
-        os.makedirs(glue_dir, exist_ok=True)
-        action_json_path = os.path.join(glue_dir, "blb_action_used.json")
-        # 加大精度 handoff: if the selected candidate is a fusion run, persist a
-        # fusion_count_fixed_action_v1 config (carries group.option_by_step + the
-        # Stage-1 ladder) so the generator replays the BOOSTED config + override —
-        # the same config this final eval just scored. A slot-form JSON (from the
-        # flat vec) would silently drop the boost. Per-slot runs fall back to slots.
-        cand_meta = selected_candidate.metadata or {}
-        if str(cand_meta.get("schema_version", "")) == "fusion_count_fixed_action_v1":
-            fusion_fixed_cfg = {
-                "schema_version": "fusion_count_fixed_action_v1",
-                "profile": str(profile),
-                "num_layers": int(self.evaluator.total_layers),
-                "source": "blb_final_eval_selected_best",
-                "anchor_name": str(selected_candidate.name),
-                "action_vec": np.asarray(selected_candidate.action_vec, dtype=int).tolist(),
-                "gelu_degree": np.asarray(opt_gelu, dtype=int).tolist(),
-                "attn_degree": np.asarray(opt_softmax, dtype=int).tolist(),
-                "group": cand_meta.get("group"),
-                "calibrated_action_context": to_jsonable(
-                    action_context.provenance
-                ),
-                "stage2_final_eval_handoff": handoff,
-            }
-            _atomic_json(action_json_path, fusion_fixed_cfg)
-        else:
-            # Persist the BLB action as a slot-form JSON the generator can load
-            # without depending on training-side artifacts.
-            self._dump_action_to_slots_json(
-                path=action_json_path,
-                action_vec=np.asarray(selected_candidate.action_vec, dtype=int),
-                profile=profile,
-                opt_gelu=opt_gelu,
-                opt_softmax=opt_softmax,
-                anchor_name=str(selected_candidate.name),
-                max_sfs=action_context.max_sfs,
-                action_context_provenance=action_context.provenance,
-                final_eval_handoff=handoff,
-            )
-
-        try:
-            payload = generate_blb_glue_submission(
-                action_config_path=action_json_path,
-                blb_task=str(self.evaluator.dataset_key),
-                model_type=str(getattr(self.evaluator, "model_type", "bert-base")),
-                output_dir=glue_dir,
-                seed=int(self.glue_submission_seed),
-                profile=profile,
-                gelu_degree=np.asarray(opt_gelu, dtype=int).tolist(),
-                softmax_degree=np.asarray(opt_softmax, dtype=int).tolist(),
-                calibrated_action_context=action_context,
-                log_fn=self.evaluator.log,
-            )
-        except Exception as exc:
-            self.evaluator.log(f"  [glue][error] submission failed: {exc}")
-            return {"enabled": True, "error": str(exc), "output_dir": glue_dir}
-
-        zip_path = payload.get("zip_path")
-        if zip_path:
-            self.evaluator.log(f"  [glue] submission zip ready: {zip_path}")
-        return {
-            "enabled": True,
-            "output_dir": glue_dir,
-            "action_config_path": action_json_path,
-            "blb_task": str(self.evaluator.dataset_key),
-            "seed": int(self.glue_submission_seed),
-            **{k: v for k, v in payload.items() if k != "log"},
-        }
-
-    def _dump_action_to_slots_json(
-            self,
-            *,
-            path: str,
-            action_vec: np.ndarray,
-            profile: str,
-            opt_gelu: np.ndarray,
-            opt_softmax: np.ndarray,
-            anchor_name: str,
-            max_sfs,
-            action_context_provenance: Mapping[str, Any],
-            final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
-            ) -> None:
-        try:
-            from blb_stage2_rl.action_io import action_vec_to_slots_list
-            from blb_stage2_rl.action_space import describe_action_vector
-        except ImportError:
-            return
-        num_layers = int(self.evaluator.total_layers)
-        slots = action_vec_to_slots_list(
-            np.asarray(action_vec, dtype=int),
-            max_sfs=max_sfs,
-            num_layers=num_layers,
-            gelu_degree=np.asarray(opt_gelu, dtype=int),
-            attn_degree=np.asarray(opt_softmax, dtype=int),
-            profile=str(profile),
-        )
-        # describe_action_vector emits the full records list including
-        # location / operation / N — useful for the human reader.
-        description = describe_action_vector(
-            np.asarray(action_vec, dtype=int),
-            max_sfs=max_sfs,
-            num_layers=num_layers,
-            gelu_degree=np.asarray(opt_gelu, dtype=int),
-            attn_degree=np.asarray(opt_softmax, dtype=int),
-            profile=str(profile),
-        )
-        payload = {
-            "schema_version": "blb_v3_slots_human_v1",
-            "label": str(anchor_name),
-            "profile": str(profile),
-            "num_layers": int(num_layers),
-            "action_length": int(np.asarray(action_vec, dtype=int).size),
-            "gelu_degree": np.asarray(opt_gelu, dtype=int).tolist(),
-            "attn_degree": np.asarray(opt_softmax, dtype=int).tolist(),
-            "action_vec": np.asarray(action_vec, dtype=int).tolist(),
-            "slots": slots,
-            "records": description.get("records", []),
-            "calibrated_action_context": to_jsonable(
-                action_context_provenance
-            ),
-            "stage2_final_eval_handoff": to_jsonable(final_eval_handoff),
-        }
-        _atomic_json(path, payload)
-
-    @staticmethod
     def _attach_relative_metrics(baseline, results):
         for result in results:
             result["delta_loss_vs_baseline"] = float(result["loss"] - baseline["loss"])

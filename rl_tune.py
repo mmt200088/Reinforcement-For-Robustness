@@ -643,9 +643,6 @@ def train(
         # Same-cost random comparison group for the BLB Stage-2 final eval.
         final_eval_cost_match_count: int = 50,
         final_eval_cost_match_max_attempts: int = 5000,
-        # Auto-generate a GLUE benchmark submission zip after final eval.
-        final_eval_glue_submission_enabled: bool = True,
-        final_eval_glue_submission_seed: int = 42,
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
@@ -698,7 +695,6 @@ def train(
         blb_v3_search_full_validation: bool = True,
         comparator_smoke: bool = False,
         comparator_stage1_only: bool = False,
-        final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -720,12 +716,6 @@ def train(
     decoupled_layout = parse_bool_flag(decoupled_layout, "decoupled_layout")
     final_eval_random_enabled = parse_bool_flag(
         final_eval_random_enabled, "final_eval_random_enabled"
-    )
-    final_eval_require_rescale_optimizer = parse_bool_flag(
-        final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
-    )
-    final_eval_glue_submission_enabled = parse_bool_flag(
-        final_eval_glue_submission_enabled, "final_eval_glue_submission_enabled"
     )
     from blb_stage2_rl.search_baselines import normalize_search_backend
 
@@ -912,7 +902,6 @@ def train(
         f"final_eval_action_config: {final_eval_action_config}\n"
         f"final_eval_action_ranges: {final_eval_action_ranges}\n"
         f"final_eval_action_fixed: {final_eval_action_fixed}\n"
-        f"final_eval_require_rescale_optimizer: {final_eval_require_rescale_optimizer}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
         f"comparator_stage1_only: {comparator_stage1_only}\n"
@@ -1183,9 +1172,6 @@ def train(
             final_eval_action_fixed=final_eval_action_fixed,
             final_eval_cost_match_count=final_eval_cost_match_count,
             final_eval_cost_match_max_attempts=final_eval_cost_match_max_attempts,
-            final_eval_glue_submission_enabled=final_eval_glue_submission_enabled,
-            final_eval_glue_submission_seed=final_eval_glue_submission_seed,
-            final_eval_require_rescale_optimizer=final_eval_require_rescale_optimizer,
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,

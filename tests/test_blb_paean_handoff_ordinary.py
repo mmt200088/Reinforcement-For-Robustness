@@ -353,7 +353,7 @@ class PaeanOrdinaryFinalEvalHandoffTest(unittest.TestCase):
                 dataset_key="mrpc",
                 get_simulated_cost=lambda _gelu, _softmax: (1.0, 0.5, 0.5),
             ),
-            rescale_invoker_kind="in_process_real",
+            rescale_backend="in_process",
             rescale_optimizer_root="/repo/Rescale_optimizer",
             rescale_optimizer_mode="cfg_derived",
             _decode_action_candidate=lambda **_kwargs: (_ for _ in ()).throw(
@@ -467,23 +467,6 @@ class PaeanOrdinaryFinalEvalHandoffTest(unittest.TestCase):
         self.assertNotIn("stage2_final_eval_handoff_identity", payload)
         self.assertNotIn("stage2_final_eval_handoff_identity_hash", payload)
 
-    def test_comparator_path_forces_real_in_process_optimizer(self):
-        resolve = _load_paean_method("_resolve_rescale_invoker_kind")
-        module = types.SimpleNamespace(
-            evaluator=types.SimpleNamespace(
-                blb_v3_rescale_invoker_kind="subprocess",
-            ),
-        )
-
-        self.assertEqual(
-            resolve(module, require_in_process=True),
-            "in_process",
-        )
-        self.assertEqual(
-            resolve(module, require_in_process=False),
-            "subprocess",
-        )
-
     def test_install_verification_failure_aborts_before_model_forward(self):
         class FakeBridge:
             def __init__(self, _handler, *, layers_attribute):
@@ -546,119 +529,6 @@ class PaeanOrdinaryFinalEvalHandoffTest(unittest.TestCase):
             )
 
         self.assertEqual(evaluator.eval_calls, 0)
-
-    def test_zero_forward_result_does_not_generate_glue_submission(self):
-        write_glue = _load_paean_method(
-            "_maybe_run_glue_submission",
-            Mapping=Mapping,
-            np=np,
-            os=os,
-            to_jsonable=lambda value: value,
-        )
-        module = types.SimpleNamespace(
-            glue_submission_enabled=True,
-            glue_submission_seed=42,
-            results_dir="unused",
-            evaluator=types.SimpleNamespace(
-                dataset_key="mrpc",
-                model_type="bert-base",
-                total_layers=2,
-                log=lambda _message: None,
-            ),
-        )
-        candidate = types.SimpleNamespace(
-            name="selected",
-            action_vec=np.asarray([3, 1, 4], dtype=int),
-            metadata={
-                "schema_version": "fusion_count_fixed_action_v1",
-                "group": {"option_by_step": {"0": 1}},
-            },
-        )
-
-        result = write_glue(
-            module,
-            selected_candidate=candidate,
-            selected_result={
-                "skipped_forward": True,
-                "evaluation_n": 0,
-                "install_verification": {
-                    "model_will_use_selected_cfg": False,
-                },
-            },
-            opt_gelu=np.asarray([4, 4], dtype=int),
-            opt_softmax=np.asarray([6, 6], dtype=int),
-            profile="mrpc",
-            action_context=types.SimpleNamespace(provenance={}),
-            final_eval_handoff=_ordinary_handoff(),
-        )
-
-        self.assertEqual(
-            result["skipped_reason"],
-            "selected_action_not_evaluated",
-        )
-
-    def test_glue_action_json_persists_plain_handoff(self):
-        calls = []
-        write_glue = _load_paean_method(
-            "_maybe_run_glue_submission",
-            Mapping=Mapping,
-            np=np,
-            os=os,
-            to_jsonable=lambda value: value,
-            _atomic_json=lambda path, payload: pathlib.Path(path).write_text(json.dumps(payload), encoding="utf-8"),
-        )
-        fake_generator = types.ModuleType("generate_glue_submission")
-        fake_generator.generate_blb_glue_submission = lambda **kwargs: calls.append(kwargs) or {}
-        handoff = _ordinary_handoff()
-
-        with tempfile.TemporaryDirectory() as td:
-            module = types.SimpleNamespace(
-                glue_submission_enabled=True,
-                glue_submission_seed=42,
-                results_dir=td,
-                evaluator=types.SimpleNamespace(
-                    dataset_key="mrpc",
-                    model_type="bert-base",
-                    total_layers=2,
-                    log=lambda _message: None,
-                ),
-            )
-            candidate = types.SimpleNamespace(
-                name="selected",
-                action_vec=np.asarray([3, 1, 4], dtype=int),
-                metadata={
-                    "schema_version": "fusion_count_fixed_action_v1",
-                    "group": copy.deepcopy(handoff["blb_v3_best_action_group"]),
-                },
-            )
-            with mock.patch.dict(
-                "sys.modules",
-                {"generate_glue_submission": fake_generator},
-            ):
-                result = write_glue(
-                    module,
-                    selected_candidate=candidate,
-                    selected_result={
-                        "skipped_forward": False,
-                        "evaluation_n": 1,
-                        "install_verification": {
-                            "model_will_use_selected_cfg": True,
-                        },
-                    },
-                    opt_gelu=np.asarray([4, 4], dtype=int),
-                    opt_softmax=np.asarray([6, 6], dtype=int),
-                    profile="mrpc",
-                    action_context=types.SimpleNamespace(provenance={}),
-                    final_eval_handoff=handoff,
-                )
-            action_payload = json.loads(pathlib.Path(result["action_config_path"]).read_text(encoding="utf-8"))
-
-        self.assertEqual(
-            action_payload["stage2_final_eval_handoff"],
-            handoff,
-        )
-        self.assertEqual(len(calls), 1)
-        self.assertNotIn("stage2_final_eval_handoff_identity_hash", result)
 
 
 if __name__ == "__main__":
