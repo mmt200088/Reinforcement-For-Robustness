@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import json
 import numpy as np
 import pytest
 
 from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
     GlueDataProtocolError,
     SUPPORTED_DATASETS,
     SUPPORTED_MODEL_FAMILIES,
     TRAIN_PROBE_SIZE,
     build_train_probe,
+    load_train_probe_fixture,
     supported_profiles,
     validate_supported_profile,
+    write_train_probe_fixture,
 )
 
 
@@ -34,10 +38,10 @@ class FakeDataset:
         return FakeDataset(self.rows[int(position)] for position in positions)
 
 
-def fake_binary_dataset(size=600, zero_count=240):
+def fake_binary_dataset(size=600, zero_count=240, offset=0):
     return FakeDataset(
         {
-            "idx": index,
+            "idx": offset + index,
             "label": 0 if index < zero_count else 1,
             "sentence": f"sample-{index}",
         }
@@ -114,3 +118,53 @@ def test_train_probe_rejects_duplicate_ids():
     rows[-1]["idx"] = rows[0]["idx"]
     with pytest.raises(GlueDataProtocolError, match="duplicate idx"):
         build_train_probe(FakeDataset(rows), dataset="sst2")
+
+
+def _fixture_identities():
+    identities = {}
+    for offset, dataset in enumerate(SUPPORTED_DATASETS):
+        _, identity = build_train_probe(
+            fake_binary_dataset(offset=offset * 10_000),
+            dataset=dataset,
+        )
+        identities[dataset] = identity
+    return identities
+
+
+def test_train_probe_fixture_round_trips_exact_identities(tmp_path):
+    identities = _fixture_identities()
+    path = tmp_path / "glue_train_probe_v1.json"
+    write_train_probe_fixture(path, identities)
+    fixture = load_train_probe_fixture(path)
+
+    assert fixture.dataset_revision == GLUE_DATASET_REVISION
+    assert fixture.task_names == SUPPORTED_DATASETS
+    for dataset in SUPPORTED_DATASETS:
+        assert fixture.identity_for(dataset) == identities[dataset]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (lambda payload: payload.update(dataset_revision="wrong"), "revision"),
+        (
+            lambda payload: payload["tasks"].update(extra=payload["tasks"]["mrpc"]),
+            "task set",
+        ),
+        (
+            lambda payload: payload["tasks"]["mrpc"].update(
+                raw_ids=payload["tasks"]["mrpc"]["raw_ids"][:-1]
+                + [payload["tasks"]["mrpc"]["raw_ids"][0]]
+            ),
+            "duplicate raw IDs",
+        ),
+    ),
+)
+def test_train_probe_fixture_rejects_tampering(tmp_path, mutation, message):
+    path = tmp_path / "glue_train_probe_v1.json"
+    write_train_probe_fixture(path, _fixture_identities())
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    mutation(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(GlueDataProtocolError, match=message):
+        load_train_probe_fixture(path)
