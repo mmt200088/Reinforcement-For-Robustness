@@ -77,6 +77,14 @@ class GlueTrainProbeFixture:
         return matches[0]
 
 
+@dataclass(frozen=True)
+class GlueProtocolViews:
+    train_full: Any
+    train_probe: Any
+    validation_full: Any
+    identity: TrainProbeIdentity
+
+
 def supported_profiles() -> tuple[tuple[str, str], ...]:
     return tuple(
         (model_family, dataset)
@@ -356,4 +364,37 @@ def load_train_probe_fixture(path: str | Path) -> GlueTrainProbeFixture:
     return GlueTrainProbeFixture(
         dataset_revision=GLUE_DATASET_REVISION,
         identities=identities,
+    )
+
+
+def resolve_glue_protocol_views(
+    dataset_dict: Any,
+    *,
+    dataset: str,
+    fixture: GlueTrainProbeFixture,
+) -> GlueProtocolViews:
+    dataset_name = validate_dataset(dataset)
+    try:
+        raw_train = dataset_dict[TRAIN_PROBE_SOURCE_SPLIT]
+    except Exception as exc:
+        raise GlueDataProtocolError("GLUE dataset has no training split") from exc
+    try:
+        validation_full = dataset_dict["validation"]
+    except Exception as exc:
+        raise GlueDataProtocolError("GLUE dataset has no validation split") from exc
+
+    train_probe, actual_identity = build_train_probe(
+        raw_train,
+        dataset=dataset_name,
+    )
+    expected_identity = fixture.identity_for(dataset_name)
+    if actual_identity != expected_identity:
+        raise GlueDataProtocolError(
+            f"training probe identity mismatch for {dataset_name}"
+        )
+    return GlueProtocolViews(
+        train_full=raw_train,
+        train_probe=train_probe,
+        validation_full=validation_full,
+        identity=actual_identity,
     )
