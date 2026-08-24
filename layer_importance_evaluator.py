@@ -7454,6 +7454,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     else "least_violating"
                 ),
                 "backend": backend,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "evaluation": selected_stage1.as_dict(),
                 "result_path": stage1_result_path,
                 "selection_binding": stage1_selection_binding,
@@ -8206,7 +8207,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     'gelu': np.array(env.gelu_config),
                     'softmax': np.array(env.softmax_config),
                     'cost': env.accumulated_cost,
-                    'reward': episode_reward
+                    'reward': episode_reward,
+                    'dataset_protocol_hash': self.dataset_protocol_hash,
                 }
 
                 if episode_reward > window_best_reward:
@@ -8217,6 +8219,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         'softmax': np.array(env.softmax_config),
                         'cost': env.accumulated_cost,
                         'reward': episode_reward,
+                        'dataset_protocol_hash': self.dataset_protocol_hash,
                     }
                 
                 _stage1_is_new_best = bool(episode_reward > best_reward)

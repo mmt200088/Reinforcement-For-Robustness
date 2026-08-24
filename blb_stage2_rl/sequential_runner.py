@@ -4571,6 +4571,9 @@ def _run_layerwise_training_branch(
                 f"Stage-2 {search_backend} smoke-only search complete"
             )
             return {
+                "dataset_protocol_hash": getattr(
+                    evaluator, "dataset_protocol_hash", None
+                ),
                 "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
                 "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
                 "status": "smoke_only_complete",
@@ -4648,6 +4651,9 @@ def _run_layerwise_training_branch(
         )
         status.set_phase(f"Stage-2 {search_backend} search complete")
         return {
+            "dataset_protocol_hash": getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
             "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
             "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
             "best_noise_config": {
@@ -6486,6 +6492,9 @@ def _run_layerwise_training_branch(
         "metric2_std": float(robust_reference.metric2_std_limit),
     }
     return {
+        "dataset_protocol_hash": getattr(
+            evaluator, "dataset_protocol_hash", None
+        ),
         "fixed_gelu": fixed_gelu.copy(),
         "fixed_softmax": fixed_softmax.copy(),
         "baseline_noise_config": {
@@ -7011,6 +7020,7 @@ def _build_completed_search_resume_result(
             "Stage-2 completed inner search has no valid inference batch size"
         )
     common = {
+        "dataset_protocol_hash": manifest.get("dataset_protocol_hash"),
         "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
         "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
         "strict_feasible": strict_feasible,
@@ -11254,6 +11264,9 @@ def _run_sequential_via_runner_locked(
     )
 
     result: Dict[str, Any] = {
+        "dataset_protocol_hash": getattr(
+            ev, "dataset_protocol_hash", None
+        ),
         "fixed_gelu": fixed_gelu.copy(),
         "fixed_softmax": fixed_softmax.copy(),
         "baseline_noise_config": {k: v.copy() for k, v in cost_reference_noise_config.items()},

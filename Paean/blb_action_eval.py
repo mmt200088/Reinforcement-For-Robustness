@@ -35,7 +35,11 @@ from blb_stage2_rl.eval_metrics import (
 from blb_stage2_rl.fusion_count_map import FusionCountMap
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import materialize_decoded_action
-from final_evaluation_module import UnifiedFinalEvaluationModule
+from final_evaluation_module import (
+    UnifiedFinalEvaluationModule,
+    require_final_evaluation_protocol,
+)
+from glue_data_protocol import FINAL_EVAL_SPLIT
 from json_utils import read_json_file, to_jsonable
 from rescale_optimizer_bridge import (
     InProcessInvoker,
@@ -369,6 +373,12 @@ class BLBActionFinalEvaluationModule:
         limit_p: float,
         limit_s: float,
     ) -> Dict[str, object]:
+        protocol = require_final_evaluation_protocol(
+            self.evaluator,
+            search_results=(search_best_stage1, search_best_stage2),
+            requested_split=FINAL_EVAL_SPLIT,
+        )
+        self.final_eval_split = protocol["split_name"]
         if self.random_enabled and self.action_ranges:
             raise ValueError("BLB action final_eval random mode cannot be combined with action ranges")
 
@@ -754,6 +764,9 @@ class BLBActionFinalEvaluationModule:
         self._clear_all_noise()
         best = selected_result
         return {
+            "final_eval_split": self.final_eval_split,
+            "dataset_protocol_hash": protocol["dataset_protocol_hash"],
+            "validation_example_count": protocol["example_count"],
             "selected_source": f"blb_action(stage1={stage1_source})",
             "opt_gelu": opt_gelu,
             "opt_softmax": opt_softmax,
@@ -848,7 +861,10 @@ class BLBActionFinalEvaluationModule:
             np.asarray(baseline_stage1_softmax, dtype=int),
         )
         self._clear_all_noise()
-        split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
+        split_name = ev._resolve_eval_split(
+            use_train=False,
+            split=getattr(self, "final_eval_split", FINAL_EVAL_SPLIT),
+        )
         trials = []
         for _idx in range(max(1, int(repeats))):
             loss, p, s, t = ev._run_evaluation(
@@ -1870,7 +1886,10 @@ class BLBActionFinalEvaluationModule:
                 raise RuntimeError(
                     "selected configuration installation verification failed"
                 )
-            split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
+            split_name = ev._resolve_eval_split(
+                use_train=False,
+                split=getattr(self, "final_eval_split", FINAL_EVAL_SPLIT),
+            )
             trials = []
             for _idx in range(max(1, int(repeats))):
                 loss, p, s, time_ms = ev._run_evaluation(
@@ -2182,6 +2201,12 @@ class BLBActionFinalEvaluationModule:
             "schema_version": "paean_blb_action_final_eval_result_v1",
             "status": "complete",
             "dataset": self.evaluator.dataset_key,
+            "final_eval_split": getattr(
+                self, "final_eval_split", FINAL_EVAL_SPLIT
+            ),
+            "dataset_protocol_hash": getattr(
+                self.evaluator, "dataset_protocol_hash", None
+            ),
             "selected_source": selected_source,
             "stage2_final_eval_handoff": handoff,
             "baseline_stage1": {
