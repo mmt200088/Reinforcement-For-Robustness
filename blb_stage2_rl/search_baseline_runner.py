@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
+from glue_data_protocol import TRAIN_PROBE_SPLIT
 from json_utils import read_json_file, stable_json_hash, to_jsonable
 from jsonl_utils import read_jsonl, recover_jsonl_file
 
@@ -42,6 +43,7 @@ STAGE2_FORMAL_GA_EVALUATIONS = (
     + STAGE2_FORMAL_GA_GENERATIONS
     * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
 )
+SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT
 _STAGE2_LEGACY_GA_GENERATIONS = 800
 _STAGE2_LEGACY_GA_EVALUATIONS = (
     STAGE2_FORMAL_GA_POPULATION_SIZE
@@ -1842,7 +1844,10 @@ def canonical_strict_validation(
     }
     return {
         "schema_version": "stage2_search_strict_validation_v3",
-        "split": "validation_full",
+        "split": SEARCH_EVIDENCE_SPLIT,
+        "dataset_protocol_hash": identity_context.get(
+            "dataset_protocol_hash"
+        ),
         "validation_banks": validation_banks.contract_payload(),
         "joint_and_axis_counterfactual_gate": True,
         "hard_gate": (
@@ -2526,8 +2531,8 @@ def run_layerwise_search_baseline(
             else "running"
         ),
         "scientific_status": (
-            "full_search_with_validation_full_gate"
-            if strict_run else "smoke_only_no_validation_full_gate"
+            "full_search_with_strict_train_probe_gate"
+            if strict_run else "smoke_only_no_strict_search_gate"
         ),
         "evaluation_budget": budget,
         "seed": int(seed),

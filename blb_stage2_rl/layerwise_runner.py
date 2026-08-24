@@ -5097,7 +5097,7 @@ def train_layerwise(
             ranking_evidence=(
                 "not_eligible_protected_k1"
                 if k1_only_reject else (
-                    "F4_validation_full"
+                    "F4_train_probe"
                     if promotion.evidence is not None else "F1_prefilter_only"
                 )
             ),

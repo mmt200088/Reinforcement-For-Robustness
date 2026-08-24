@@ -34,6 +34,7 @@ import numpy as np
 import torch
 
 from cli_parse_utils import parse_int_list_text
+from glue_data_protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
 from rescale_optimizer_bridge import RescaleOptimizerBridge
 from .action_mask import (
     action_allowed,
@@ -3342,80 +3343,37 @@ class BLBStage2RLRunner:
             *,
             probe_size_override: Optional[int] = None,
             ) -> List[ProbeBatch]:
-        """构造 RL 评估子集：使用 evaluator 已有的 stability probe。"""
-        device = ev.device
-        split_name = ev.get_reward_reference_split_name()
-        probe_size = int(
+        """Materialize the registered train probe once in its fixed order."""
+        requested_probe_size = int(
             getattr(ev, "stage2_probe_size", 256)
             if probe_size_override is None else probe_size_override
         )
-        if probe_size <= 0:
-            raise ValueError("Stage-2 probe size must be positive")
-
-        try:
-            probe_subset, probe_subset_mm = ev._get_stability_probe(
-                split_name, probe_size, probe_seed=int(train_cfg.seed),
+        if requested_probe_size != TRAIN_PROBE_SIZE:
+            raise ValueError(
+                f"Stage-2 requires the fixed {TRAIN_PROBE_SIZE}-example "
+                f"train probe, got {requested_probe_size}"
             )
-        except Exception:
-            if getattr(ev, "mrpc_reproducibility", None) is not None:
-                raise
-            probe_subset = None
-
+        dataset_splits = getattr(ev, "dataset_splits", None)
+        if not isinstance(dataset_splits, Mapping):
+            raise RuntimeError("Stage-2 requires evaluator.dataset_splits")
+        probe_subset = dataset_splits.get("train_probe")
         if probe_subset is None:
-            ds = ev.dataset_splits.get(split_name) or ev.dataset_splits.get("train")
-            if ds is None:
-                return []
-            probe_subset = ds
+            raise RuntimeError(
+                f"Stage-2 requires the registered {TRAIN_PROBE_SPLIT} split"
+            )
+        if len(probe_subset) != TRAIN_PROBE_SIZE:
+            raise RuntimeError(
+                f"Stage-2 {TRAIN_PROBE_SPLIT} must contain exactly "
+                f"{TRAIN_PROBE_SIZE} examples"
+            )
 
         stage2_batch_size = _effective_stage2_inference_batch_size(
             ev, train_cfg,
         )
-        # 构造 dataloader
         from torch.utils.data import DataLoader
         loader = DataLoader(
             probe_subset,
             batch_size=stage2_batch_size,
-            shuffle=False,
-            drop_last=False,
-            collate_fn=ev.data_collator,
-            pin_memory=torch.cuda.is_available(),
-        )
-        max_count = (
-            _effective_probe_batch_count(ev, train_cfg)
-            if probe_size_override is None
-            else int(math.ceil(float(probe_size) / stage2_batch_size))
-        )
-        out: List[ProbeBatch] = []
-        for batch in loader:
-            out.append(ProbeBatch.from_batch(batch, torch.device(device)))
-            if len(out) >= max_count:
-                break
-        return out
-
-    def _build_validation_full_batches(
-            self,
-            ev,
-            train_cfg: BLBStage2TrainConfig,
-            ) -> List[ProbeBatch]:
-        """Materialize every example from the authoritative validation split."""
-        dataset_splits = getattr(ev, "dataset_splits", None)
-        if not isinstance(dataset_splits, Mapping):
-            raise RuntimeError("Stage-2 F4 evaluation requires evaluator.dataset_splits")
-        validation_full = dataset_splits.get("validation_full")
-        if validation_full is None:
-            raise RuntimeError("Stage-2 F4 evaluation requires validation_full")
-        try:
-            example_count = len(validation_full)
-        except TypeError as exc:
-            raise RuntimeError("validation_full must be a sized dataset") from exc
-        if example_count <= 0:
-            raise RuntimeError("validation_full must contain at least one example")
-
-        from torch.utils.data import DataLoader
-
-        loader = DataLoader(
-            validation_full,
-            batch_size=_effective_stage2_inference_batch_size(ev, train_cfg),
             shuffle=False,
             drop_last=False,
             collate_fn=ev.data_collator,

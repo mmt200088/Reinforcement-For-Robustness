@@ -36,6 +36,7 @@ from elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
+from glue_data_protocol import PROTOCOL_SCHEMA, TRAIN_PROBE_SPLIT
 from report_format_utils import format_elapsed as _seq_fmt_elapsed
 from report_format_utils import progress_bar as _seq_progress_bar
 from rl_data_points import (
@@ -84,6 +85,9 @@ if TYPE_CHECKING:
 
 
 CUDA_RNG_ROLE_REGISTRY_VERSION = 1
+SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT
+DATASET_PROTOCOL_SCHEMA = PROTOCOL_SCHEMA
+LAYERWISE_RUN_SCHEMA = "stage2_layerwise_train_probe_run_v1"
 
 
 def merge_cuda_rng_role_registry(
@@ -3534,7 +3538,7 @@ def _run_legacy_preflight_if_needed(
         run_legacy_preflight()
 
 
-def _build_authoritative_validation_env(
+def _build_search_gate_env(
         *,
         runner: Any,
         ev: Any,
@@ -3543,19 +3547,22 @@ def _build_authoritative_validation_env(
         reward_devices: Sequence[int],
         log: Callable[[str], None],
         ) -> Tuple[Any, int]:
-    """Clone the probe shell while preserving the canonical primary bridge."""
-    validation_full_batches = runner._build_validation_full_batches(
-        ev, train_cfg,
-    )
-    validation_full = ev.dataset_splits.get("validation_full")
-    example_count = len(validation_full)
+    """Clone the environment while reusing the exact online probe batches."""
+    del runner, train_cfg
+    dataset_splits = getattr(ev, "dataset_splits", None)
+    if not isinstance(dataset_splits, Mapping):
+        raise RuntimeError("Stage-2 search gate requires evaluator.dataset_splits")
+    train_probe = dataset_splits.get("train_probe")
+    if train_probe is None:
+        raise RuntimeError("Stage-2 search gate requires train_probe")
+    example_count = len(train_probe)
 
     promotion_env = copy.copy(base_env)
     promotion_env.env_cfg = copy.copy(base_env.env_cfg)
-    promotion_env.env_cfg.probe_batch_count = len(validation_full_batches)
+    promotion_env.env_cfg.probe_batch_count = len(base_env.probe_batches)
     promotion_env.env_cfg.persistent_probe_install = False
-    promotion_env.probe_batches = list(validation_full_batches)
-    promotion_env.probe_runner = None
+    promotion_env.probe_batches = base_env.probe_batches
+    promotion_env.probe_runner = base_env.probe_runner
     promotion_env.baseline = copy.deepcopy(base_env.baseline)
     promotion_env.reward_weights = copy.deepcopy(base_env.reward_weights)
     promotion_env.statistical_reference = None
@@ -3565,40 +3572,14 @@ def _build_authoritative_validation_env(
     promotion_env._last_probe_diagnostics = {}
 
     devices = [int(value) for value in reward_devices]
-    shared_owner = getattr(base_env, "_shared_probe_runner_owner", None)
-    if shared_owner is not None:
-        frozen_batches = tuple(validation_full_batches)
-        registered_sets = getattr(
-            base_env, "_shared_probe_batch_sets", None,
-        )
-        if registered_sets is None:
-            registered_sets = {}
-            base_env._shared_probe_batch_sets = registered_sets
-        registered_f4 = registered_sets.get("F4")
-        if registered_f4 is None:
-            shared_owner.register_batch_set("F4", frozen_batches)
-            registered_sets["F4"] = frozen_batches
-        elif (
-                len(registered_f4) != len(frozen_batches)
-                or any(
-                    previous is not current
-                    for previous, current in zip(
-                        registered_f4, frozen_batches,
-                    )
-                )
-        ):
-            raise ValueError(
-                "F4 probe batch set is already registered with different batches"
-            )
-        promotion_env.probe_runner = shared_owner.view("F4")
-    elif len(devices) >= 2:
+    if len(devices) >= 2 and promotion_env.probe_runner is None:
         raise RuntimeError(
-            "authoritative validation requires the shared F1 probe-runner owner"
+            "Stage-2 search gate requires the shared train-probe runner"
         )
     log(
-        "  * F4 authoritative validation: "
-        f"split=validation_full examples={example_count} "
-        f"batches={len(validation_full_batches)} devices={devices or ['primary']}"
+        "  * strict search gate: "
+        f"split={SEARCH_EVIDENCE_SPLIT} examples={example_count} "
+        f"batches={len(base_env.probe_batches)} devices={devices or ['primary']}"
     )
     return promotion_env, int(example_count)
 
@@ -3884,6 +3865,9 @@ def _build_layerwise_candidate_identity_context(
         {"stage2_inference_batch_size": stage2_inference_batch_size}
         if stage1_binding_payload is not None else {}
     )
+    dataset_protocol_hash = str(
+        getattr(evaluator, "dataset_protocol_hash", "") or ""
+    )
 
     def reference_payload(reference: Any) -> Dict[str, Any]:
         return {
@@ -3903,6 +3887,9 @@ def _build_layerwise_candidate_identity_context(
 
     threshold_policy = {
         **comparator_batch_identity,
+        "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+        "dataset_protocol_hash": dataset_protocol_hash,
+        "search_split": SEARCH_EVIDENCE_SPLIT,
         "precision_tolerance": float(robust_reference.precision_tolerance),
         "stability_multiplier": float(robust_reference.stability_multiplier),
         "bootstrap_seed": int(robust_reference.bootstrap_seed),
@@ -3926,12 +3913,12 @@ def _build_layerwise_candidate_identity_context(
         },
         "evidence_tiers": {
             "F1": {
-                "split": "validation_full_stratified_probe",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(probe_example_count),
                 "reference": reference_payload(robust_reference),
             },
             "F4": {
-                "split": "validation_full",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(authoritative_example_count),
                 "reference": reference_payload(authoritative_robust_reference),
                 "validation_banks": validation_banks.contract_payload(),
@@ -3970,6 +3957,9 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_COST_MODEL_REVISION,
         {
             "algorithm_contract_hash": str(algorithm_contract_hash),
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": dataset_protocol_hash,
+            "search_split": SEARCH_EVIDENCE_SPLIT,
             **comparator_batch_identity,
             **(
                 {"stage1_selection_binding": stage1_binding_payload}
@@ -4030,7 +4020,7 @@ def _run_layerwise_training_branch(
             or authoritative_validation_banks is None
     ):
         raise RuntimeError(
-            "layerwise robust PPO requires an authoritative validation_full evaluator"
+            "layerwise robust PPO requires the strict train-probe evaluator"
         )
     if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
         raise RuntimeError(
@@ -4306,6 +4296,11 @@ def _run_layerwise_training_branch(
 
         search_contract = {
             "schema_version": "stage2_search_baseline_contract_v3",
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
+            "search_split": SEARCH_EVIDENCE_SPLIT,
             "search_backend": search_backend,
             "backend_contract": backend_contract,
             "stage2_inference_batch_size": stage2_inference_batch_size,
@@ -4360,6 +4355,11 @@ def _run_layerwise_training_branch(
         search_contract_hash = sha256_json(search_contract)
 
         search_manifest = {
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
+            "search_split": SEARCH_EVIDENCE_SPLIT,
             "profile": str(train_cfg.profile),
             "model_type": str(getattr(evaluator, "model_type", "") or ""),
             "num_layers": int(layerwise_horizon),
@@ -4379,7 +4379,7 @@ def _run_layerwise_training_branch(
             ),
             "stage1_selection_binding": stage1_selection_binding,
             "online_fidelity": {
-                "split": "validation_full_stratified_probe",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(online_probe_example_count),
                 "batch_size": stage2_inference_batch_size,
                 "trials_per_action": int(
@@ -4387,7 +4387,7 @@ def _run_layerwise_training_branch(
                 ),
             },
             "authoritative_fidelity": {
-                "split": "validation_full",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(
                     authoritative_validation_example_count
                 ),
@@ -4405,9 +4405,9 @@ def _run_layerwise_training_branch(
                 "metric2_std": float(robust_reference.metric2_std_limit),
             },
             "scientific_status": (
-                "full_search_with_validation_full_gate"
+                "full_search_with_strict_train_probe_gate"
                 if bool(getattr(train_cfg, "search_full_validation", True))
-                else "smoke_only_no_validation_full_gate"
+                else "smoke_only_no_strict_search_gate"
             ),
             "algorithm_contract": search_contract,
             "algorithm_contract_hash": search_contract_hash,
@@ -4575,7 +4575,7 @@ def _run_layerwise_training_branch(
                 "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
                 "status": "smoke_only_complete",
                 "scientific_status": (
-                    "smoke_only_no_validation_full_gate"
+                    "smoke_only_no_strict_search_gate"
                 ),
                 "strict_feasible": False,
                 "stage2_inference_batch_size": stage2_inference_batch_size,
@@ -4642,7 +4642,7 @@ def _run_layerwise_training_branch(
             "completed" if strict_feasible else "completed_infeasible"
         )
         scientific_status = (
-            "full_search_with_validation_full_gate"
+            "full_search_with_strict_train_probe_gate"
             if strict_feasible
             else "full_search_strict_least_violating"
         )
@@ -4769,6 +4769,11 @@ def _run_layerwise_training_branch(
     )
     algorithm_contract = {
         "schema_version": "stage2_layerwise_algorithm_contract_v7",
+        "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+        "dataset_protocol_hash": getattr(
+            evaluator, "dataset_protocol_hash", None
+        ),
+        "search_split": SEARCH_EVIDENCE_SPLIT,
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": layerwise_action_space_version(
@@ -4823,7 +4828,7 @@ def _run_layerwise_training_branch(
         "termination": algorithm_termination,
         "evidence_tiers": {
             "F1": {
-                "split": "validation_full_stratified_probe",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(online_probe_example_count),
                 "trials_per_episode": int(
                     train_cfg.online_num_trials_per_step
@@ -4836,7 +4841,7 @@ def _run_layerwise_training_branch(
                 "authoritative": False,
             },
             "F4": {
-                "split": "validation_full",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(authoritative_validation_example_count),
                 "bank_a_trial_count": int(
                     authoritative_validation_banks.bank_a.trial_count
@@ -4924,6 +4929,11 @@ def _run_layerwise_training_branch(
         identity_context,
         algorithm_contract_hash,
         {
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
+            "search_split": SEARCH_EVIDENCE_SPLIT,
             "online_trials_per_episode": int(
                 train_cfg.online_num_trials_per_step
             ),
@@ -4957,7 +4967,7 @@ def _run_layerwise_training_branch(
             "validation_banks": authoritative_validation_banks.contract_payload(),
             "evidence_tiers": {
                 "F1": {
-                    "split": "validation_full_stratified_probe",
+                    "split": SEARCH_EVIDENCE_SPLIT,
                     "example_count": int(online_probe_example_count),
                     "fidelity": "F1",
                     "baseline_reference": dict(
@@ -4965,7 +4975,7 @@ def _run_layerwise_training_branch(
                     ),
                 },
                 "F4": {
-                    "split": "validation_full",
+                    "split": SEARCH_EVIDENCE_SPLIT,
                     "example_count": int(authoritative_validation_example_count),
                     "fidelity": "F4",
                     "baseline_reference": dict(authoritative_robust_summary or {}),
@@ -4976,7 +4986,12 @@ def _run_layerwise_training_branch(
     run_context_hash = sha256_json(run_context)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v5",
+        "schema_version": LAYERWISE_RUN_SCHEMA,
+        "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+        "dataset_protocol_hash": getattr(
+            evaluator, "dataset_protocol_hash", None
+        ),
+        "search_split": SEARCH_EVIDENCE_SPLIT,
         "status": "running",
         "rl_variant": rl_variant,
         "policy_network_variant": policy_network_variant,
@@ -7020,7 +7035,7 @@ def _build_completed_search_resume_result(
         return {
             **common,
             "status": "smoke_only_complete",
-            "scientific_status": "smoke_only_no_validation_full_gate",
+            "scientific_status": "smoke_only_no_strict_search_gate",
             "rl_variant": f"blb_v3_layerwise_search_{search_backend}_smoke",
             "selection_diagnostics": {
                 "selection_mode": "smoke_only_layerwise_search_baseline",
@@ -7088,7 +7103,7 @@ def _build_completed_search_resume_result(
         },
         "status": "completed" if strict_feasible else "completed_infeasible",
         "scientific_status": (
-            "full_search_with_validation_full_gate"
+            "full_search_with_strict_train_probe_gate"
             if strict_feasible else "full_search_strict_least_violating"
         ),
         "search_accounting": {
@@ -8585,7 +8600,7 @@ def _run_sequential_via_runner_locked(
             (
                 promotion_base_env,
                 authoritative_validation_example_count,
-            ) = _build_authoritative_validation_env(
+            ) = _build_search_gate_env(
                 runner=runner,
                 ev=ev,
                 base_env=base_env,
@@ -8742,17 +8757,17 @@ def _run_sequential_via_runner_locked(
             )
             authoritative_preflight = {
                 **dict(authoritative_robust_summary),
-                "split": "validation_full",
+                "split": SEARCH_EVIDENCE_SPLIT,
                 "example_count": int(authoritative_validation_example_count),
                 "fidelity": "F4",
             }
             if restored_pending_evidence is None:
                 baseline_preflight_metrics[
-                    "authoritative_validation_full"
+                    "strict_train_probe"
                 ] = authoritative_preflight
             elif (
                     baseline_preflight_metrics.get(
-                        "authoritative_validation_full"
+                        "strict_train_probe"
                     ) != authoritative_preflight
             ):
                 raise RuntimeError(
