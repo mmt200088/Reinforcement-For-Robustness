@@ -123,7 +123,7 @@ def test_stage1_search_source_has_no_validation_guided_branch():
     assert "eval_split_name=online_reward_split" in stage1_flow
     assert stage1_flow.count(
         "dataset_protocol_hash=self.dataset_protocol_hash"
-    ) == 3
+    ) == 4
 
 
 def test_stage2_search_artifacts_name_only_train_probe_evidence():
