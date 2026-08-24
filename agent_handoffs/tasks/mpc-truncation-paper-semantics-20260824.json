@@ -1,0 +1,58 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "480e154053b1303e140077a05c46295cab95ef0a",
+  "base_tree": "556ee67f7af1be94cdea349d18145fb032230bad",
+  "branch": "codex/task-mpc-truncation-paper-semantics-20260824",
+  "branch_role": "task",
+  "changed_scopes": [
+    "AGENTS.md",
+    "blb_stage2_rl/layerwise_action.py",
+    "blb_stage2_rl/precision_presets.py",
+    "docs/BLB_stage2_rl_INTERNAL_FLOW.md",
+    "docs/BLB_stage2_rl_spec.md",
+    "docs/superpowers/plans/2026-08-24-mpc-truncation-paper-semantics.md",
+    "docs/superpowers/specs/2026-08-24-mpc-truncation-paper-semantics-design.md",
+    "tests/test_blb_layerwise_precision_presets.py"
+  ],
+  "completed_at": "2026-08-24T23:25:44+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-mpc-truncation-paper-semantics-20260824@2ce211ced57093aabe872b259fe36aa4d17c033a:experiments/server_command_runs/mpc_truncation_paper_semantics_f437dd6a_20260824/",
+    "/hy-tmp/mpc_truncation_paper_semantics_f437dd6a_20260824"
+  ],
+  "source_commit": "f437dd6afcd3b883bfccc533acb4759db56a56e3",
+  "source_tree": "d39f5bd32208f02bace53642634a3498aa5260f6",
+  "started_at": "2026-08-24T22:55:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "mpc-truncation-paper-semantics-20260824",
+  "verification": [
+    {
+      "command": "python -m unittest -v tests.test_blb_layerwise_precision_presets.LayerwisePrecisionPresetContractTest.test_preset_table_exposes_paper_semantics_without_changing_simulation_k",
+      "evidence": "shared school server at RED source be2b93e5: expected AttributeError proved the paper-facing preset fields were absent before implementation",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m unittest -v tests.test_blb_layerwise_precision_presets tests.test_blb_layerwise_action tests.test_blb_layerwise_env tests.test_blb_stage2_eval_single_path_static tests.test_blb_truncation_backends",
+      "evidence": "shared school server at exact source f437dd6a: 81 tests ran in 0.066s; 64 passed and 17 torch-dependent backend tests skipped because the image has no torch; overall rc=0",
+      "outcome": "passed"
+    },
+    {
+      "command": "pre/post execution snapshot comparison for H/M/L x Block4 fusion 0/1 plus mixed 12-layer action",
+      "evidence": "server compared baseline 480e154 with source f437dd6a across complete legacy vectors, decoded simulation K, fusion option IDs, boosted overrides, removed bits, and all variable-cost fields; cmp_rc=0 and both SHA-256 values are 68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m py_compile blb_stage2_rl/precision_presets.py blb_stage2_rl/layerwise_action.py",
+      "evidence": "shared school server at exact source f437dd6a: rc=0",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 scripts/repo_sync_guard.py result-check --base-commit f437dd6a --allowed-prefix experiments/server_command_runs/mpc_truncation_paper_semantics_f437dd6a_20260824 --remote origin --require-remote --json",
+      "evidence": "result branch codex/result-mpc-truncation-paper-semantics-20260824 at 2ce211ce: ok=true and remote_parity=true",
+      "outcome": "passed"
+    }
+  ]
+}
