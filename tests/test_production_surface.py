@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 import subprocess
 import unittest
@@ -107,6 +108,11 @@ def tracked_text(relative: str) -> str:
 
 
 class ProductionSurfaceTests(unittest.TestCase):
+    def test_guard_cli_module_exists(self):
+        self.assertIsNotNone(
+            importlib.util.find_spec("scripts.production_surface_guard")
+        )
+
     def test_obsolete_runtime_paths_are_absent(self):
         paths = set(tracked_paths())
         self.assertEqual(sorted(paths & FORBIDDEN_RUNTIME_PATHS), [])
