@@ -294,6 +294,20 @@ Layer 0 的 Block1 SF/fusion 链仍不进入 Rescale_optimizer，但
 调用统一的 configured-truncation executor。平均 K、通信成本和 PPO
 log-prob 均包含该位置。
 
+### 6.5.1 MPC precision preset 的双层语义
+
+layerwise policy 对外选择 H/M/L。论文/密态语义为 H
+`(13,13,13,13,13)` / 40-bit ring、M `(12,12,12,12,12)` / 39-bit ring、L
+`(11,11,11,12,11)` / 38-bit ring。共享 action description 同时输出这组值、
+明文 simulation K 和 reserve bit。
+
+模型执行层不消费论文值。`PrecisionPreset.k_by_block` 是兼容属性，继续返回 H
+`(11,10,10,12,11)`、M `(9,8,8,10,9)`、L `(7,6,6,8,7)`；
+`apply_layer_action` 将这组值写入 legacy full vector，最终 cfg 的
+`output_truncation_k` 也保持这组值。reserve 仅为两组值的差，不会在
+`function_handler` 或 fused CUDA 中再次扣减。这个边界保证加入论文语义前后，
+相同 RL action 的模型输入、reward 与 final-eval 结果不变。
+
 ### 6.6 解码结果
 
 一个 action vector 解码后得到：

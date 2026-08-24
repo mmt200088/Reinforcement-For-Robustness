@@ -69,6 +69,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   inference, and saved/final evaluation. Under `all4`, every layer's Block 5
   graph must resolve to `block5_n4`; keep `block5_n1/n2` maps for switch-back
   and historical reproduction.
+- Stage-2 MPC precision semantics, added 2026-08-24: the public H/M/L choices
+  follow the paper's ciphertext presets `(13,13,13,13,13)` with a 40-bit ring,
+  `(12,12,12,12,12)` with a 39-bit ring, and `(11,11,11,12,11)` with a 38-bit
+  ring. Cleartext execution intentionally remains on the historical simulation
+  tuples `(11,10,10,12,11)`, `(9,8,8,10,9)`, and `(7,6,6,8,7)`. Their
+  element-wise differences are explicit reserve-bit metadata. Do not repurpose
+  `output_truncation_k`: it remains the executable simulation K consumed by
+  CPU/CUDA model paths. RL action matrices, legacy full vectors, rewards,
+  installed model cfgs, checkpoints, final eval, and fixed-action experiments
+  must remain execution-identical; only shared descriptions and deployment
+  reports expose the paper-facing values.
 - GPU utilization clarification, added 2026-07-02: when a task is semantically
   suitable for GPU or multi-GPU execution, prefer moving it off CPU and onto
   the server GPUs instead of leaving expensive hardware idle. Treat this as one

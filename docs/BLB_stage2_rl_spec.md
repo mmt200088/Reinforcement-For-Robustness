@@ -342,6 +342,29 @@ K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)  # action_idx ∈ {0,...,7}; idx3 = base
 def sf_from(idx, max, levels): return max - 2 * (levels - 1 - int(idx))
 ```
 
+### 4.2.1 MPC H/M/L 的论文语义与明文执行语义
+
+当前 layerwise policy 的三档公开含义采用论文中的密态配置：
+
+| 档位 | 密态 K（Block1..5） | MPC ring |
+| --- | --- | ---: |
+| H | `(13,13,13,13,13)` | 40 |
+| M | `(12,12,12,12,12)` | 39 |
+| L | `(11,11,11,12,11)` | 38 |
+
+为复现现有明文训练，模型实际执行的 K 保持为 H
+`(11,10,10,12,11)`、M `(9,8,8,10,9)`、L `(7,6,6,8,7)`。两者差值
+分别为 reserve `(2,3,3,1,2)`、`(3,4,4,2,3)`、`(4,5,5,4,4)`。
+
+这里有两个不可混淆的字段语义：
+
+- `ciphertext_k_by_block` 只用于论文/部署语义与报告。
+- `output_truncation_k` 始终是送入明文模型的 simulation K。
+
+reserve 是解释明密文精度差异的元数据，不是在模型中再次执行的减法。训练、reward
+probe、final eval、固定动作实验和 CUDA fused 路径继续使用原来的
+`output_truncation_k`，因此同一 RL action 的执行结果保持不变。
+
 > ⚠️ 上面 `max_sfs[(block_name, node_name)]` 的具体节点名要对照
 > [`docs/README_configs.md`](README_configs.md) 里 `cut_point_sf[i].name`（例如
 > block1 的 `ctpt_ffn2`/`ctct_ext_square`/`ctpt_inv_d_1`、block2 的
