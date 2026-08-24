@@ -1,0 +1,53 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+  warnings.warn("Can't initialize NVML")
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+  r = torch._C._cuda_getDeviceCount() if nvml_count < 0 else nvml_count
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+test_equivalent_parquet_route_rejects_wrong_schema (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: metadata listing failed); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://huggingface.co
+ok
+test_equivalent_route_can_be_disabled_by_code_variable (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_equivalent_route_can_use_configured_alternate_endpoint (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: 500 Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://huggingface.co; audit_log=/tmp/tmptmyjlxj1/glue_dataset_equivalent_route.txt
+ok
+test_evaluator_frozen_probe_bypasses_runtime_resampling (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_evaluator_rejects_frozen_probe_size_drift_before_sampling (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_evaluator_returns_exact_frozen_probe_without_sampling (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_loader_rejects_unsupported_task_before_dataset_access (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_primary_loader_uses_pinned_glue_revision (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+ok
+test_public_glue_registry_contains_only_supported_tasks (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_raw_row_fixture_validation_runs_on_hf_local_cache (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] using cached local GLUE dataset for task 'mrpc'
+ok
+test_raw_row_fixture_validation_runs_on_local_parquet (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] using local GLUE parquet files for task 'mrpc' from /tmp/tmpgbt25dgy/mrpc
+ok
+test_raw_row_fixture_validation_runs_on_local_saved_dataset (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] using local GLUE dataset for task 'mrpc' from /tmp/tmpcnlud2lv/mrpc
+ok
+test_raw_row_fixture_validation_runs_on_primary_remote_success (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+ok
+test_raw_row_fixture_validation_runs_on_remote_parquet (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: network unavailable); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://huggingface.co
+ok
+test_raw_row_mismatch_on_primary_route_does_not_fallback (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_reproducibility_fixture_selects_ordered_full_and_probe_views (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_reproducibility_views_reject_missing_fixture_and_other_tasks (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_reproducible_pretrained_loads_use_the_pinned_snapshot (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_stage2_probe_reads_registered_train_probe_without_resampling (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_supported_local_dataset_requires_stable_idx (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_train_contains_only_supported_bert_classification_dispatch (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_train_rejects_missing_fixture_before_runtime_access (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_train_rejects_unsupported_model_before_runtime_initialization (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_train_wires_raw_row_fixture_before_validation_preprocessing (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_train_wires_shared_probe_before_tokenization (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_unknown_glue_task_fails_before_loader_access (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... ok
+test_uses_hf_local_files_cache_before_remote_parquet_fallback (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] using cached local GLUE dataset for task 'mrpc'; audit_log=/tmp/tmpyn8zniws/glue_dataset_local_route.txt
+ok
+test_uses_local_glue_dataset_dir_when_glue_network_routes_fail (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] using local GLUE dataset for task 'mrpc' from /tmp/tmpo87_nxqe/mrpc; audit_log=/tmp/tmpo87_nxqe/glue_dataset_local_route.txt
+ok
+test_uses_same_revision_task_parquet_when_glue_metadata_listing_fails (tests.test_glue_dataset_loading.GlueDatasetLoadingRegressionTests) ... [dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: 500 Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://hf-mirror.com; audit_log=/tmp/tmpa5e9xf9s/glue_dataset_equivalent_route.txt
+ok
+
+----------------------------------------------------------------------
+Ran 29 tests in 0.161s
+
+OK

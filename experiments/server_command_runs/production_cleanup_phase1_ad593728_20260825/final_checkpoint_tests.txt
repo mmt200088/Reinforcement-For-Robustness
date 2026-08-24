@@ -1,0 +1,80 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+  warnings.warn("Can't initialize NVML")
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+  r = torch._C._cuda_getDeviceCount() if nvml_count < 0 else nvml_count
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+test_comparison_plot_scans_random_points_once_per_panel (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_final_eval_comparison_plot_reuses_ordered_families (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_final_eval_plots_iterate_axes_without_flat_list_copy (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_final_eval_plots_reuse_static_family_color_map (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_final_eval_summary_bar_chart_collects_series_once (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_float_stat_helpers_stream_values_without_clean_lists (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_numeric_axis_limits_stream_float_values_once (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_ordered_families_reuses_static_preferred_order (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_random_summary_uses_running_stats_without_np_materialization (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_random_summary_vectorizes_dominance_checks (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_relative_metric_attach_does_not_copy_random_results (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_run_validates_final_protocol_before_resolving_search_config (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage1_and_stage2_json_resolution_share_loaded_config (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage1_total_cost_sampling_reuses_feasible_pairs (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage2_count_combo_plan_caches_feasible_keys_by_state (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage2_equiv_sampling_uses_exact_cached_count_solutions (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage2_only_random_generation_skips_stage1_solution_enumeration (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage2_total_cost_sampling_reuses_count_combo_plan (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_stage2_total_cost_sampling_reuses_count_solution_maps (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_variance_plot_scans_random_points_once_per_panel (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_variance_plot_streams_group_means_without_numpy_mean (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest) ... ok
+test_final_evaluator_uses_resolved_validation_split_for_every_forward (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_full_signature_avoids_tolist_materialization (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_invalid_value_checks_scan_arrays_without_tolist_materialization (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_normalize_config_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_normalize_noise_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_stage2_cost_matched_array_tracks_cost_incrementally (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests) ... ok
+test_blb_action_run_requires_protocol_and_resolved_final_split (tests.test_blb_paean_handoff_ordinary.FinalEvaluationSplitSourceTests) ... ok
+test_comparator_path_forces_real_in_process_optimizer (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_glue_action_json_persists_plain_handoff (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_install_verification_failure_aborts_before_model_forward (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_preflight_rejects_non_strict_backend_profile_and_fingerprint_drift (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_preflight_validates_plain_handoff (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_prepared_materialization_is_reused_without_redecode_or_replan (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_prepared_materialization_requires_exact_selected_fingerprint (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_results_json_persists_plain_handoff_without_seal (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_run_checks_fingerprint_before_artifacts_and_reuses_prepared_object (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_selected_candidate_must_match_plain_action_and_group (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_zero_forward_result_does_not_generate_glue_submission (tests.test_blb_paean_handoff_ordinary.PaeanOrdinaryFinalEvalHandoffTest) ... ok
+test_final_eval_eligibility_requires_completed_strict_feasible_result (tests.test_blb_paean_handoff_ordinary.Stage2OrdinaryFinalEvalHandoffTest) ... ok
+test_handoff_copies_direct_selected_configuration_without_authority (tests.test_blb_paean_handoff_ordinary.Stage2OrdinaryFinalEvalHandoffTest) ... ok
+test_handoff_rejects_backend_variant_and_profile_drift (tests.test_blb_paean_handoff_ordinary.Stage2OrdinaryFinalEvalHandoffTest) ... ok
+test_embedded_entrypoint_validates_protocol_before_runner_dispatch (tests.test_blb_two_stage_binding_ordinary.EmbeddedFinalEvaluationProtocolSourceTests) ... ok
+test_active_comparator_uses_direct_materialization_without_authority (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_active_stage2_comparator_branch_consumes_plain_binding_only (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_candidate_identity_context_binds_plain_stage1_selection_only (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_candidate_identity_rejects_missing_stage1_content_hashes (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_legacy_authority_helpers_are_removed (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_preflight_uses_plain_inner_artifacts (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_restores_stage2_inference_batch_size (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_result_uses_scientific_fields_only (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_returns_before_model_or_materialization_setup (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_completed_resume_writer_is_plain_atomic_json (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_invocation_loads_completed_stage1_result_and_emits_plain_binding (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_invocation_rejects_stage1_result_byte_drift (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_invocation_rejects_stage1_result_that_disagrees_with_binding (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_optional_paean_failure_preserves_strict_stage2_result (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_outer_two_stage_publication_has_no_authority_layer (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_outer_two_stage_result_accepts_relative_and_absolute_result_path (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_outer_two_stage_result_rejects_final_eval_for_infeasible_selection (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_outer_two_stage_result_uses_plain_stage_binding (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_pending_strict_context_is_plain_atomic_json (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_pending_strict_preflight_needs_no_online_completion_seal (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_stage1_producer_puts_result_path_in_plain_binding (tests.test_blb_two_stage_binding_ordinary.OrdinaryTwoStageBindingTest) ... ok
+test_legacy_extension_without_train_probe_protocol_is_rejected (tests.test_stage2_ga_extension_preflight.Stage2GAExtensionPreflightTests) ... ok
+
+----------------------------------------------------------------------
+Ran 65 tests in 2.364s
+
+OK

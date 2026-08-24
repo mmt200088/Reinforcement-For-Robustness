@@ -1,0 +1,69 @@
+.............................................................s [  2%]
+ss...........s.s....................................... [  4%]
+......................................................ss..................................................................................... [ 10%]
+.................................................................... [ 13%]
+..................................................................... [ 16%]
+...................................................................s. [ 18%]
+......................................................................................................... [ 23%]
+....................................................... [ 25%]
+............................................................ [ 27%]
+........................................................................ [ 30%]
+.......................................................................s.......ss.......................................................... [ 36%]
+......................................................... [ 38%]
+........................................................................................................... [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+..........................................s................................................................................. [ 54%]
+........................................................ [ 56%]
+..........................................................s.................................................... [ 60%]
+........................................................................ [ 63%]
+........................................... [ 65%]
+................................................................... [ 68%]
+............s...........................................................s.............................................................. [ 73%]
+........................................................................................... [ 77%]
+........................................................................ [ 80%]
+................................................................. [ 82%]
+........................................................................ [ 85%]
+............................................s........................... [ 88%]
+................................................................ [ 91%]
+.................................................. [ 93%]
+....................................................................................................................... [ 98%]
+.........................................                        [100%]
+=============================== warnings summary ===============================
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:182
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:182: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+    return torch._C._cuda_getDeviceCount() > 0
+
+tests/test_blb_layerwise_policy.py::LayerwisePolicyTest::test_initial_probabilities_disable_existing_epsilon_exploration
+  /hy-tmp/rfr_verify_glue_train_probe_20260825/tests/test_blb_layerwise_policy.py:444: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+  Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+    self.assertAlmostEqual(float(sampled_log_prob), expected_selected_log_prob, places=6)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:31: CUDA unavailable
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:113: CUDA unavailable
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:11: CUDA unavailable
+SKIPPED [1] tests/test_blb_block5_cuda_fusion.py:52: CUDA unavailable
+SKIPPED [1] tests/test_blb_block5_cuda_fusion.py:32: CUDA unavailable
+SKIPPED [1] tests/test_blb_chain_integrity.py:936: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_blb_chain_integrity.py:923: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_blb_inference_noise_fastpath.py:96: CUDA unavailable
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:390: CUDA is required for scoped same-device probe concurrency test
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:214: CUDA is required for ProbeWorker deterministic-noise tests
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:202: CUDA is required for ProbeWorker deterministic-noise tests
+SKIPPED [1] tests/test_blb_truncation_backends.py:72: CUDA unavailable
+SKIPPED [1] tests/test_fusion_count_prediction_capture.py:89: Python 3.9 interpreter is not available
+SKIPPED [1] tests/test_probe_runner_process_backend.py:1476: requires BLB_STAGE2_RUN_GPU_INTEGRATION=1 and at least five CUDA devices
+SKIPPED [1] tests/test_render_three_group_per_example_logits_report.py:777: Python 3.9 interpreter is not available
+SKIPPED [1] tests/test_stage1_eval_accel.py:880: paired GELU size gate requires CUDA
+2441 passed, 16 skipped, 5 warnings, 616 subtests passed in 109.70s (0:01:49)
