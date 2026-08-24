@@ -7,6 +7,50 @@ import unittest
 
 import numpy as np
 
+from glue_data_protocol import SUPPORTED_DATASETS
+
+
+class SupportedMetricContractTest(unittest.TestCase):
+    def test_all_supported_tasks_use_accuracy_and_weighted_f1(self):
+        from blb_stage2_rl.eval_metrics import metric_pair_for_dataset
+
+        labels = np.asarray([0, 0, 1, 1])
+        predictions = np.asarray([0, 1, 1, 1])
+        expected = metric_pair_for_dataset(
+            "mrpc", labels, predictions, predictions_are_classes=True
+        )
+        for dataset in SUPPORTED_DATASETS:
+            with self.subTest(dataset=dataset):
+                self.assertEqual(
+                    metric_pair_for_dataset(
+                        dataset,
+                        labels,
+                        predictions,
+                        predictions_are_classes=True,
+                    ),
+                    expected,
+                )
+
+    def test_unsupported_metric_profile_fails_closed(self):
+        from blb_stage2_rl.eval_metrics import metric_pair_for_dataset
+
+        with self.assertRaisesRegex(ValueError, "unsupported dataset"):
+            metric_pair_for_dataset("stsb", [0, 1], [0, 1], predictions_are_classes=True)
+
+    def test_metric_module_has_no_unsupported_metric_implementations(self):
+        source = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "eval_metrics.py"
+        ).read_text(encoding="utf-8")
+        for forbidden in (
+            "pearson_corr",
+            "spearman_corr",
+            "matthews_corrcoef",
+            "is_regression and",
+        ):
+            self.assertNotIn(forbidden, source)
+
 
 def _function_region_from_source(source: str, name: str) -> str:
     marker = f"def {name}("

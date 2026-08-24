@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -149,3 +150,26 @@ def test_general_and_submission_modules_remain_syntax_valid():
         ast.parse(
             (ROOT / relative_path).read_text(encoding="utf-8").lstrip("\ufeff")
         )
+
+
+def test_active_config_inventory_contains_only_supported_profiles():
+    glue_config = json.loads((ROOT / "glue_configs.json").read_text())
+    assert tuple(key for key in glue_config if key != "_comment") == (
+        "mrpc", "rte", "sst2"
+    )
+
+    approx_config = json.loads(
+        (ROOT / "Model_analysis/configs/approx_per_dataset.json").read_text()
+    )
+    assert tuple(key for key in approx_config if key != "_comment") == (
+        "mrpc", "rte", "sst2", "mrpc_large", "rte_large", "sst2_large"
+    )
+
+    rescale_profiles = tuple(sorted(
+        path.name
+        for path in (ROOT / "Rescale_optimizer/configs").iterdir()
+        if path.is_dir()
+    ))
+    assert rescale_profiles == (
+        "mrpc", "mrpc_large", "rte", "rte_large", "sst2", "sst2_large"
+    )
