@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import numpy as np
+from pathlib import Path
 import pytest
+import subprocess
+import sys
 
 from glue_data_protocol import (
     GLUE_DATASET_REVISION,
@@ -189,3 +192,19 @@ def test_fixture_builder_loads_all_tasks_at_pinned_revision(tmp_path):
         for task in SUPPORTED_DATASETS
     ]
     assert load_train_probe_fixture(output) == fixture
+
+
+def test_fixture_builder_runs_as_a_direct_script():
+    root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_glue_train_probe_fixture.py",
+            "--help",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
