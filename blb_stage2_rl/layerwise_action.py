@@ -889,17 +889,32 @@ def describe_layerwise_action_matrix(
                 f"action_matrix[{layer_idx}][0]={fusion} outside [0, 2)"
             )
         preset = precision_preset(preset_index)
+        simulation_k_by_block = {
+            f"block{block_idx}": int(k_value)
+            for block_idx, k_value in enumerate(
+                preset.simulation_k_by_block, start=1,
+            )
+        }
         description.append({
             "layer_idx": int(layer_idx),
             "block4_fusion_count": int(fusion),
             "precision_preset_index": int(preset_index),
             "precision_preset_name": str(preset.name),
-            "truncation_k_by_block": {
+            "truncation_k_by_block": dict(simulation_k_by_block),
+            "cleartext_simulation_k_by_block": dict(simulation_k_by_block),
+            "ciphertext_truncation_k_by_block": {
                 f"block{block_idx}": int(k_value)
                 for block_idx, k_value in enumerate(
-                    preset.k_by_block, start=1,
+                    preset.ciphertext_k_by_block, start=1,
                 )
             },
+            "reserve_bits_by_block": {
+                f"block{block_idx}": int(reserve_bits)
+                for block_idx, reserve_bits in enumerate(
+                    preset.reserve_bits_by_block, start=1,
+                )
+            },
+            "ciphertext_ring_bits": int(preset.ciphertext_ring_bits),
         })
     return description
 
