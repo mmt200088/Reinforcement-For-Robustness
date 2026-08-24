@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import random
 from pathlib import Path
 import tempfile
@@ -223,9 +224,15 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
         source = (
             Path(__file__).resolve().parents[1] / "stage1_rl/checkpoint.py"
         ).read_text(encoding="utf-8")
-        start = source.index("def load_stage1_rl_checkpoint(")
-        end = source.index("\n\ndef ", start)
-        method = source[start:end]
+        tree = ast.parse(source)
+        node = next(
+            item
+            for item in tree.body
+            if isinstance(item, ast.FunctionDef)
+            and item.name == "load_stage1_rl_checkpoint"
+        )
+        method = ast.get_source_segment(source, node)
+        self.assertIsNotNone(method)
 
         validation = method.index("validate_dataset_protocol_binding(")
         self.assertLess(validation, method.index("gtrxl_net.load_state_dict("))
