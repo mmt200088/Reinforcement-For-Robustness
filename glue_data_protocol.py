@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from json_utils import stable_json_hash
+from json_utils import read_json_file, stable_json_hash, write_json_file
 
 
 PROTOCOL_SCHEMA = "glue_train_probe_protocol_v1"
@@ -48,8 +49,32 @@ class TrainProbeIdentity:
     source_size: int
     positions: tuple[int, ...]
     raw_ids: tuple[int, ...]
+    labels: tuple[int, ...]
     label_histogram: tuple[tuple[int, int], ...]
     ordered_identity_hash: str
+
+
+@dataclass(frozen=True)
+class GlueTrainProbeFixture:
+    dataset_revision: str
+    identities: tuple[TrainProbeIdentity, ...]
+
+    @property
+    def task_names(self) -> tuple[str, ...]:
+        return tuple(identity.dataset for identity in self.identities)
+
+    def identity_for(self, dataset: str) -> TrainProbeIdentity:
+        dataset_name = validate_dataset(dataset)
+        matches = [
+            identity
+            for identity in self.identities
+            if identity.dataset == dataset_name
+        ]
+        if len(matches) != 1:
+            raise GlueDataProtocolError(
+                f"fixture has no unique identity for {dataset_name}"
+            )
+        return matches[0]
 
 
 def supported_profiles() -> tuple[tuple[str, str], ...]:
@@ -89,6 +114,27 @@ def _required_column(dataset: Any, name: str) -> list[Any]:
             f"training split {name} length does not match the dataset"
         )
     return values
+
+
+def _identity_hash_payload(
+    *,
+    dataset: str,
+    source_size: int,
+    positions: tuple[int, ...],
+    raw_ids: tuple[int, ...],
+    labels: tuple[int, ...],
+) -> dict[str, Any]:
+    return {
+        "schema_version": PROTOCOL_SCHEMA,
+        "dataset": dataset,
+        "source_split": TRAIN_PROBE_SOURCE_SPLIT,
+        "source_size": source_size,
+        "probe_size": TRAIN_PROBE_SIZE,
+        "probe_seed": TRAIN_PROBE_SEED,
+        "positions": positions,
+        "raw_ids": raw_ids,
+        "labels": labels,
+    }
 
 
 def build_train_probe(raw_train: Any, *, dataset: str):
@@ -147,23 +193,167 @@ def build_train_probe(raw_train: Any, *, dataset: str):
     probe_labels = tuple(
         int(value) for value in _required_column(probe, "label")
     )
-    identity_payload = {
-        "schema_version": PROTOCOL_SCHEMA,
-        "dataset": dataset_name,
-        "source_split": TRAIN_PROBE_SOURCE_SPLIT,
-        "source_size": source_size,
-        "probe_size": TRAIN_PROBE_SIZE,
-        "probe_seed": TRAIN_PROBE_SEED,
-        "positions": selected_positions,
-        "raw_ids": probe_ids,
-        "labels": probe_labels,
-    }
+    identity_payload = _identity_hash_payload(
+        dataset=dataset_name,
+        source_size=source_size,
+        positions=selected_positions,
+        raw_ids=probe_ids,
+        labels=probe_labels,
+    )
     identity = TrainProbeIdentity(
         dataset=dataset_name,
         source_size=source_size,
         positions=selected_positions,
         raw_ids=probe_ids,
+        labels=probe_labels,
         label_histogram=tuple(sorted(Counter(probe_labels).items())),
         ordered_identity_hash=stable_json_hash(identity_payload),
     )
     return probe, identity
+
+
+def _identity_payload(identity: TrainProbeIdentity) -> dict[str, Any]:
+    return {
+        "source_size": int(identity.source_size),
+        "positions": list(identity.positions),
+        "raw_ids": list(identity.raw_ids),
+        "labels": list(identity.labels),
+        "label_histogram": {
+            str(label): int(count)
+            for label, count in identity.label_histogram
+        },
+        "ordered_identity_hash": identity.ordered_identity_hash,
+    }
+
+
+def write_train_probe_fixture(
+    path: str | Path,
+    identities: dict[str, TrainProbeIdentity],
+) -> Path:
+    if tuple(sorted(identities)) != tuple(sorted(SUPPORTED_DATASETS)):
+        raise GlueDataProtocolError("fixture task set must match supported datasets")
+    payload = {
+        "schema_version": PROTOCOL_SCHEMA,
+        "dataset_repo": GLUE_DATASET_REPO,
+        "dataset_revision": GLUE_DATASET_REVISION,
+        "probe_size": TRAIN_PROBE_SIZE,
+        "probe_seed": TRAIN_PROBE_SEED,
+        "tasks": {
+            dataset: _identity_payload(identities[dataset])
+            for dataset in SUPPORTED_DATASETS
+        },
+    }
+    return write_json_file(path, payload, ensure_ascii=True)
+
+
+def _parse_fixture_identity(dataset: str, payload: Any) -> TrainProbeIdentity:
+    if not isinstance(payload, dict):
+        raise GlueDataProtocolError(f"fixture identity for {dataset} must be an object")
+    expected_fields = {
+        "source_size",
+        "positions",
+        "raw_ids",
+        "labels",
+        "label_histogram",
+        "ordered_identity_hash",
+    }
+    if set(payload) != expected_fields:
+        raise GlueDataProtocolError(f"fixture identity field set mismatch for {dataset}")
+    try:
+        source_size = int(payload["source_size"])
+        positions = tuple(int(value) for value in payload["positions"])
+        raw_ids = tuple(int(value) for value in payload["raw_ids"])
+        labels = tuple(int(value) for value in payload["labels"])
+        stored_histogram = {
+            int(label): int(count)
+            for label, count in payload["label_histogram"].items()
+        }
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise GlueDataProtocolError(
+            f"fixture identity values are invalid for {dataset}"
+        ) from exc
+    if not (
+        len(positions)
+        == len(raw_ids)
+        == len(labels)
+        == TRAIN_PROBE_SIZE
+    ):
+        raise GlueDataProtocolError(
+            f"fixture identity for {dataset} must contain 256 rows"
+        )
+    if positions != tuple(sorted(positions)) or len(set(positions)) != len(positions):
+        raise GlueDataProtocolError(
+            f"fixture positions for {dataset} must be sorted and unique"
+        )
+    if len(set(raw_ids)) != len(raw_ids):
+        raise GlueDataProtocolError(f"fixture contains duplicate raw IDs for {dataset}")
+    if set(labels) != {0, 1}:
+        raise GlueDataProtocolError(
+            f"fixture labels for {dataset} must contain both binary labels"
+        )
+    histogram = dict(Counter(labels))
+    if histogram != stored_histogram:
+        raise GlueDataProtocolError(f"fixture label histogram mismatch for {dataset}")
+    computed_hash = stable_json_hash(
+        _identity_hash_payload(
+            dataset=dataset,
+            source_size=source_size,
+            positions=positions,
+            raw_ids=raw_ids,
+            labels=labels,
+        )
+    )
+    stored_hash = str(payload["ordered_identity_hash"] or "")
+    if computed_hash != stored_hash:
+        raise GlueDataProtocolError(f"fixture identity hash mismatch for {dataset}")
+    return TrainProbeIdentity(
+        dataset=dataset,
+        source_size=source_size,
+        positions=positions,
+        raw_ids=raw_ids,
+        labels=labels,
+        label_histogram=tuple(sorted(histogram.items())),
+        ordered_identity_hash=computed_hash,
+    )
+
+
+def load_train_probe_fixture(path: str | Path) -> GlueTrainProbeFixture:
+    try:
+        payload = read_json_file(path)
+    except Exception as exc:
+        raise GlueDataProtocolError(f"cannot load train-probe fixture at {path}") from exc
+    if not isinstance(payload, dict):
+        raise GlueDataProtocolError("train-probe fixture must be an object")
+    expected_fields = {
+        "schema_version",
+        "dataset_repo",
+        "dataset_revision",
+        "probe_size",
+        "probe_seed",
+        "tasks",
+    }
+    if set(payload) != expected_fields:
+        raise GlueDataProtocolError("train-probe fixture field set mismatch")
+    if payload["schema_version"] != PROTOCOL_SCHEMA:
+        raise GlueDataProtocolError("train-probe fixture schema mismatch")
+    if payload["dataset_repo"] != GLUE_DATASET_REPO:
+        raise GlueDataProtocolError("train-probe fixture dataset repository mismatch")
+    if payload["dataset_revision"] != GLUE_DATASET_REVISION:
+        raise GlueDataProtocolError("train-probe fixture revision mismatch")
+    if int(payload["probe_size"]) != TRAIN_PROBE_SIZE:
+        raise GlueDataProtocolError("train-probe fixture size mismatch")
+    if int(payload["probe_seed"]) != TRAIN_PROBE_SEED:
+        raise GlueDataProtocolError("train-probe fixture seed mismatch")
+    tasks = payload["tasks"]
+    if not isinstance(tasks, dict) or tuple(sorted(tasks)) != tuple(
+        sorted(SUPPORTED_DATASETS)
+    ):
+        raise GlueDataProtocolError("train-probe fixture task set mismatch")
+    identities = tuple(
+        _parse_fixture_identity(dataset, tasks[dataset])
+        for dataset in SUPPORTED_DATASETS
+    )
+    return GlueTrainProbeFixture(
+        dataset_revision=GLUE_DATASET_REVISION,
+        identities=identities,
+    )
