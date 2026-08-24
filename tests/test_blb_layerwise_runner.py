@@ -2172,6 +2172,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         if validator is None:
             return
         checkpoint = {
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
             "rl_variant": "layerwise",
             "algorithm_revision": "v3",
             "algorithm_contract_hash": "algorithm-a",
@@ -2183,7 +2185,30 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             algorithm_revision="v3",
             algorithm_contract_hash="algorithm-a",
             run_context_hash="run-a",
+            dataset_protocol_schema="glue_train_probe_protocol_v1",
+            dataset_protocol_hash="probe-a",
         )
+        with self.assertRaisesRegex(RuntimeError, "train-probe protocol"):
+            validator(
+                {key: value for key, value in checkpoint.items()
+                 if key != "dataset_protocol_hash"},
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
+            )
+        with self.assertRaisesRegex(RuntimeError, "train-probe protocol"):
+            validator(
+                checkpoint,
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-b",
+            )
         with self.assertRaisesRegex(RuntimeError, "run context"):
             validator(
                 checkpoint,
@@ -2191,6 +2216,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision="v3",
                 algorithm_contract_hash="algorithm-a",
                 run_context_hash="run-b",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
         with self.assertRaisesRegex(RuntimeError, "algorithm revision"):
             validator(
@@ -2202,6 +2229,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision="factorized_slot_credit_equivalence_convergence_v6",
                 algorithm_contract_hash="algorithm-a",
                 run_context_hash="run-a",
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
 
     def test_cuda_rng_role_registry_survives_shrink_and_reexpansion(self):
@@ -2431,6 +2460,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotEqual(old_run_context_hash, current_run_context_hash)
 
         old_checkpoint = {
+            "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+            "dataset_protocol_hash": "probe-a",
             "rl_variant": LEGACY_SHARED_RL_VARIANT,
             "algorithm_revision": algorithm_revision,
             "algorithm_contract_hash": old_algorithm_hash,
@@ -2442,6 +2473,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=old_algorithm_hash,
             run_context_hash=old_run_context_hash,
+            dataset_protocol_schema="glue_train_probe_protocol_v1",
+            dataset_protocol_hash="probe-a",
         )
         with self.assertRaisesRegex(RuntimeError, "algorithm contract"):
             validate_layerwise_checkpoint_metadata(
@@ -2450,6 +2483,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision=algorithm_revision,
                 algorithm_contract_hash=current_algorithm_hash,
                 run_context_hash=current_run_context_hash,
+                dataset_protocol_schema="glue_train_probe_protocol_v1",
+                dataset_protocol_hash="probe-a",
             )
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
@@ -2467,6 +2502,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
         self.assertLess(validation, branch_source.index("policy.load_state_dict("))
+        self.assertIn(
+            "dataset_protocol_schema=DATASET_PROTOCOL_SCHEMA",
+            branch_source,
+        )
+        self.assertIn(
+            "dataset_protocol_hash=getattr(",
+            branch_source,
+        )
         self.assertLess(
             validation,
             branch_source.index("policy.load_ppo_aux_state_dict("),
@@ -2867,6 +2910,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
+        self.assertIn(
+            '"dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA',
+            branch_source,
+        )
+        self.assertIn(
+            '"dataset_protocol_hash": getattr(',
+            branch_source,
+        )
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
         self.assertIn('"decode_version": LAYERWISE_DECODE_VERSION', branch_source)
         self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
