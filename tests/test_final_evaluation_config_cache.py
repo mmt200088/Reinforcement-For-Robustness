@@ -14,6 +14,16 @@ import final_evaluation_module as fem
 
 
 class FinalEvaluationConfigCacheTest(unittest.TestCase):
+    def test_run_validates_final_protocol_before_resolving_search_config(self):
+        source = inspect.getsource(fem.UnifiedFinalEvaluationModule.run)
+
+        self.assertIn("require_final_evaluation_protocol(", source)
+        self.assertIn("self.final_eval_split = protocol[\"split_name\"]", source)
+        self.assertLess(
+            source.index("require_final_evaluation_protocol("),
+            source.index("self._resolve_selected_config("),
+        )
+
     def _make_runner(self, config_path: Path):
         runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
         runner.config_path = str(config_path)

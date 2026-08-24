@@ -21,6 +21,27 @@ _EVALUATOR_PATH = _REPO / "layer_importance_evaluator.py"
 _PAEAN_PATH = _REPO / "Paean" / "blb_action_eval.py"
 
 
+class FinalEvaluationSplitSourceTests(unittest.TestCase):
+    def test_blb_action_run_requires_protocol_and_resolved_final_split(self):
+        source = _PAEAN_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        class_node = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "BLBActionFinalEvaluationModule"
+        )
+        run_node = next(
+            node for node in class_node.body
+            if isinstance(node, ast.FunctionDef) and node.name == "run"
+        )
+        run_source = ast.get_source_segment(source, run_node)
+
+        self.assertIn("require_final_evaluation_protocol(", run_source)
+        self.assertIn(
+            'self.final_eval_split = protocol["split_name"]', run_source
+        )
+
+
 def _load_class_method(path, class_name, method_name, **runtime_globals):
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))

@@ -26,6 +26,12 @@ def _module():
 
 
 class FinalEvalNormalizeArrayTests(unittest.TestCase):
+    def test_final_evaluator_uses_resolved_validation_split_for_every_forward(self):
+        run_source = inspect.getsource(UnifiedFinalEvaluationModule.run)
+
+        self.assertIn("split=self.final_eval_split", run_source)
+        self.assertNotIn('split="validation_full"', run_source)
+
     def test_normalize_config_array_avoids_list_materialization_for_ndarray(self):
         module = _module()
         values = np.array([[1, 2], [4, 1]], dtype=np.int64)

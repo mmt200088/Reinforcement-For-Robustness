@@ -12,6 +12,7 @@ from glue_data_protocol import (
 )
 from json_utils import read_json_file
 from layer_importance_evaluator import LayerImportanceEvaluator
+from final_evaluation_module import require_final_evaluation_protocol
 from rl_data_points import write_dataset_protocol
 
 
@@ -144,3 +145,85 @@ def test_stage2_search_artifacts_name_only_train_probe_evidence():
         assert "validation_full_stratified_probe" not in source
         assert "F4_validation_full" not in source
     assert '"split": SEARCH_EVIDENCE_SPLIT' in baseline
+
+
+def test_final_evaluation_requires_validation_full_and_matching_search_hash(tmp_path):
+    context = _context()
+    protocol_path = write_dataset_protocol(tmp_path, context.as_payload())
+    validation_loader = ["validation-batch-1", "validation-batch-2"]
+    evaluator = SimpleNamespace(
+        dataset_protocol_hash=context.dataset_protocol_hash,
+        dataset_protocol_path=protocol_path,
+        dataset_splits={
+            "train_probe": context.train_probe,
+            "validation_full": context.validation_full,
+        },
+        dataloaders={"validation_full": validation_loader},
+    )
+    search_results = (
+        {"dataset_protocol_hash": context.dataset_protocol_hash},
+        {"dataset_protocol_hash": context.dataset_protocol_hash},
+    )
+
+    resolved = require_final_evaluation_protocol(
+        evaluator,
+        search_results=search_results,
+        requested_split="validation_full",
+    )
+
+    assert resolved["split_name"] == "validation_full"
+    assert resolved["dataset"] is context.validation_full
+    assert resolved["dataloader"] is validation_loader
+    assert resolved["example_count"] == 408
+
+    with pytest.raises(RuntimeError, match="validation_full"):
+        require_final_evaluation_protocol(
+            evaluator,
+            search_results=search_results,
+            requested_split="train_probe",
+        )
+    with pytest.raises(RuntimeError, match="protocol hash"):
+        require_final_evaluation_protocol(
+            evaluator,
+            search_results=({"dataset_protocol_hash": "wrong"},),
+            requested_split="validation_full",
+        )
+
+
+def test_blb_final_eval_consumes_full_validation_once_per_repeat():
+    from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+    validation_ids = tuple(range(408))
+    passes = []
+
+    class ValidationLoader:
+        def __iter__(self):
+            passes.append([])
+            for start in range(0, len(validation_ids), 64):
+                batch = validation_ids[start:start + 64]
+                passes[-1].extend(batch)
+                yield batch
+
+    evaluator = SimpleNamespace(
+        apply_configuration=lambda *_args, **_kwargs: None,
+        dataloaders={"validation_full": ValidationLoader()},
+        _resolve_eval_split=lambda *, use_train, split: split,
+        _run_evaluation=lambda loader, **_kwargs: (
+            tuple(loader) and (0.5, 0.8, 0.7, 1.0)
+        ),
+    )
+    module = BLBActionFinalEvaluationModule.__new__(
+        BLBActionFinalEvaluationModule
+    )
+    module.evaluator = evaluator
+    module.final_eval_split = "validation_full"
+    module._clear_all_noise = lambda: None
+
+    trials = module._run_clean_baseline_trials(
+        baseline_stage1_gelu=[4],
+        baseline_stage1_softmax=[6],
+        repeats=2,
+    )
+
+    assert len(trials) == 2
+    assert passes == [list(validation_ids), list(validation_ids)]

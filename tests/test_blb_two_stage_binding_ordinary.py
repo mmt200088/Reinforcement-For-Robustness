@@ -19,6 +19,24 @@ from json_utils import stable_json_hash
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class EmbeddedFinalEvaluationProtocolSourceTests(unittest.TestCase):
+    def test_embedded_entrypoint_validates_protocol_before_runner_dispatch(self):
+        source = (ROOT / "Paean" / "embedded.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "run_embedded_final_eval"
+        )
+        function_source = ast.get_source_segment(source, function)
+
+        self.assertIn("require_final_evaluation_protocol(", function_source)
+        self.assertLess(
+            function_source.index("require_final_evaluation_protocol("),
+            function_source.index("should_run_blb_action_eval ="),
+        )
+
+
 def _load_function(rel_path: str, name: str, **globals_):
     path = ROOT / rel_path
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
