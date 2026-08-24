@@ -63,6 +63,7 @@ from function_handler import (
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
+from glue_data_protocol import TRAIN_PROBE_SPLIT
 from mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
     validate_mrpc_evaluation_setup,
@@ -850,34 +851,6 @@ def _rl_opt_entropy_recovery_mul():
 # ``layer_importance_evaluator.detect_rl_local_optimum`` 以及 ``noise_rl_module_v2``
 # 的历史 import 不变；Stage-1 行为逐字一致。
 from rl_local_optimum import detect_rl_local_optimum  # noqa: E402,F401
-
-# ==================== 验证集引导（Validation Guided）配置 ====================
-# 在计算奖励时使用验证集而非训练集，防止过拟合，提高泛化能力
-#
-# 原理与优势：
-# 1. 防止过拟合：使用训练集计算奖励可能导致Agent学习到只在训练集上表现好的配置
-# 2. 提高泛化性：验证集作为未见数据的代理，迫使Agent寻找在新数据上也稳健的策略
-# 3. 更真实的优化目标：实际部署时关心的是在新数据上的表现，而非训练数据
-#
-# 实施策略：
-# - Stage-1 baseline、RL reward 和 final eval 均使用验证集全集
-#   validation_full；过程中不切训练集或 validation proxy，也不做窗口二次确认。
-# - 约束设定：基于 validation_full baseline。
-USE_VALIDATION_FOR_REWARD = True  # Stage-1 协议要求保持 True
-
-# ==================== 验证集引导搜索配置 ====================
-# [已禁用] 不再将验证集拆分为 val_search_full / val_holdout / val_proxy，统一使用 validation_full。
-USE_VALIDATION_SEARCH_PROTOCOL = False
-VALIDATION_SMALL_TASKS = {"mrpc", "rte", "cola", "wnli"}
-# VALIDATION_HOLDOUT_RATIO_DEFAULT = 0.20   # [已禁用]
-# VALIDATION_HOLDOUT_RATIO_SMALL = 0.30     # [已禁用]
-# VALIDATION_PROXY_RATIO_DEFAULT = 0.15     # [已禁用]
-# VALIDATION_PROXY_RATIO_SMALL = 0.50       # [已禁用]
-RL_DATASET_SPLIT_SEED = 42
-
-USE_TRAIN_ANCHOR = False
-TRAIN_ANCHOR_SIZE_DEFAULT = 256
-TRAIN_ANCHOR_SIZE_SMALL = 128
 
 def orthogonal_init(layer, gain=1.0):
     """正交初始化"""
@@ -3995,8 +3968,8 @@ class LayerImportanceEvaluator(TrainerCallback):
     ):
         """解耦 stage1-only 完成时：归档 config + 基础指标 + 曲线进 stage1/record/，并打 COMPLETED。
 
-        全程 best-effort：任何异常只记日志，绝不让训练在收尾处崩溃。基础指标用训练中
-        记录的（已是 validation_full 明文评估）最优一档；重型同-cost 51 组对比是独立工具。
+        全程 best-effort：任何异常只记日志，绝不让训练在收尾处崩溃。基础指标来自
+        训练中固定的 train_probe；重型同-cost 51 组对比是独立工具。
         """
         try:
             import datetime as _dt
@@ -4041,7 +4014,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if ys:
                     _plt.figure(figsize=(8, 4))
                     _plt.plot(range(1, len(ys) + 1), ys, lw=1)
-                    _plt.xlabel("episode"); _plt.ylabel("metric1 (validation_full)")
+                    _plt.xlabel("episode"); _plt.ylabel("metric1 (train_probe)")
                     _plt.title("Stage-1 metric1 curve")
                     metric_curve_path = os.path.join(wd, "stage1_metric_curve.png")
                     _plt.savefig(metric_curve_path, dpi=150); _plt.close()
@@ -4058,8 +4031,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "total_degree_cost": gelu_cost + softmax_cost,
             }
             final_eval = {
-                "source": "training_best_validation_full",
-                "note": "basic single-eval snapshot (训练中记录的 validation_full 明文最优档); "
+                "source": "training_best_train_probe",
+                "note": "basic single-eval snapshot (训练中记录的 train_probe 最优档); "
                         "重型同-cost 51 组对比见独立 final-eval 工具。",
                 "metric1": m1,
                 "metric2": m2,
@@ -4074,13 +4047,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "completed_at": _dt.datetime.now().isoformat(),
                 "episodes": int(completed_episodes) if completed_episodes is not None else None,
                 "stage1_accuracy_tolerance": getattr(self, "stage1_accuracy_tolerance", None),
+                "dataset_protocol_hash": self.dataset_protocol_hash,
             }
             report_md = (
                 f"# Stage-1 record: {combo}\n\n"
                 f"- gelu_degree_per_layer: {gelu}\n"
                 f"- softmax_degree_per_layer: {softmax}\n"
                 f"- total_degree_cost: {gelu_cost + softmax_cost}\n"
-                f"- best validation_full metric1: {m1}\n"
+                f"- best train_probe metric1: {m1}\n"
                 f"- best_reward: {best_reward}, best_cost: {best_cost}\n"
                 f"- episodes: {completed_episodes}\n"
             )
@@ -4234,25 +4208,6 @@ class LayerImportanceEvaluator(TrainerCallback):
     def get_num_metrics(self) -> int:
         """返回当前数据集的评估指标数量 (1 或 2)"""
         return len(self.dataset_config['metrics'])
-
-    def _is_small_validation_task(self):
-        return getattr(self, "dataset_key", None) in VALIDATION_SMALL_TASKS
-
-    # [已禁用] 不再使用 val_search / val_holdout / val_proxy 划分。
-    # def _get_validation_holdout_ratio(self):
-    #     if self._is_small_validation_task():
-    #         return VALIDATION_HOLDOUT_RATIO_SMALL
-    #     return VALIDATION_HOLDOUT_RATIO_DEFAULT
-
-    # def _get_validation_proxy_ratio(self):
-    #     if self._is_small_validation_task():
-    #         return VALIDATION_PROXY_RATIO_SMALL
-    #     return VALIDATION_PROXY_RATIO_DEFAULT
-
-    def _get_train_anchor_size(self):
-        if self._is_small_validation_task():
-            return TRAIN_ANCHOR_SIZE_SMALL
-        return TRAIN_ANCHOR_SIZE_DEFAULT
 
     def _make_dataloader(self, dataset, *, batch_size=None):
         if dataset is None:
@@ -4469,17 +4424,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.dataloader_test = self.dataloaders.get("validation_full")
         self.dataloader_test_mm = None
 
-    def refresh_validation_proxy(self, window_index, stage_label="RL", quiet=False):
-        """[已简化] 不再从 val_search_full 抽 proxy，直接返回 validation_full。"""
-        if self.has_dataset_split("train_probe"):
-            return "train_probe"
-        raise RuntimeError("Stage-1 requires the registered train_probe split.")
-
     def get_reward_reference_split_name(self):
-        return "train_probe"
+        return TRAIN_PROBE_SPLIT
 
     def get_online_reward_split_name(self):
-        return "train_probe"
+        return TRAIN_PROBE_SPLIT
 
     def _resolve_eval_split(self, use_train=True, split=None):
         if split is not None:
@@ -7174,7 +7123,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(cost_ref_gelu, cost_ref_softmax)
         num_metrics = self.get_num_metrics()
         base_loss = base_p = base_s = None
-        base_loss_train = base_p_train = base_s_train = None
         reward_reference_split = self.get_reward_reference_split_name()
 
         if self.skip_stage1_rl:
@@ -7185,29 +7133,26 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.run_output_dir, "stage1_search", "skipped")
 
             if not self.skip_final_eval:
-                # 统一 final-eval 仍需要约束阈值；仅在需要最终评估时静默计算。
-                if USE_VALIDATION_FOR_REWARD:
-                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
-                        base_gelu,
-                        base_softmax,
-                        split=reward_reference_split,
-                    )
-                else:
-                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(base_gelu, base_softmax, use_train=True)
+                base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
+                    base_gelu,
+                    base_softmax,
+                    split=reward_reference_split,
+                )
                 limit_loss = base_loss * (1.0 + self.error_threshold)
                 limit_p = base_p * (1.0 - self.correlation_drop_ratio)
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
             # ---------------------------------------------------------
-            # Phase 1: Baseline (validation_full only)
+            # Phase 1: Baseline on the fixed training probe.
             # ---------------------------------------------------------
             self.log(
-                "\n--- 阶段1（Phase 1）: 建立基线（验证集全集 validation_full）"
-                "（Establishing Baseline on validation_full） ---"
+                "\n--- 阶段1（Phase 1）: 建立基线 "
+                "(Establishing Baseline on train_probe) ---"
             )
-            if reward_reference_split != "validation_full":
+            if reward_reference_split != TRAIN_PROBE_SPLIT:
                 raise RuntimeError(
-                    f"Stage-1 baseline must use validation_full, got {reward_reference_split!r}."
+                    "Stage-1 baseline must use train_probe, got "
+                    f"{reward_reference_split!r}."
                 )
 
             # Stage-1 评估是 matmul 主导的 fp32 BERT forward（bert-large 尤甚）。
@@ -7242,7 +7187,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"(GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})"
             )
 
-            # 使用验证集全集 baseline 作为约束基准
             base_loss = base_loss_val
             base_p = base_p_val
             base_s = base_s_val
@@ -7252,7 +7196,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
 
-            self.log("约束条件（Constraints）（基于验证集全集 validation_full）：")
+            self.log("约束条件（Constraints）（基于 train_probe）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
         # 供绘图使用：仅 RL 时会填充
@@ -7359,7 +7303,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             self.log(
                 f"\n--- 阶段2（Phase 2）: {backend} Stage-1 search "
-                "(validation_full) ---"
+                "(train_probe) ---"
             )
             self.log(
                 "  [优雅停止] 可发送一次 SIGINT，或创建 "
@@ -7381,7 +7325,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                             type(self.model).__name__,
                         )),
                         "dataset": str(self.data_path),
-                        "split": "validation_full",
+                        "split": TRAIN_PROBE_SPLIT,
+                        "dataset_protocol_hash": self.dataset_protocol_hash,
                         "comparator_smoke": bool(self.comparator_smoke),
                         "stage1_bound_into_stage2": not self.comparator_stage1_only,
                         "stage2_backend": (
@@ -7482,6 +7427,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "gelu_degrees": list(selected_stage1.gelu_degrees),
                 "softmax_degrees": list(selected_stage1.softmax_degrees),
                 "num_layers": int(self.total_layers),
+                "dataset_protocol_hash": self.dataset_protocol_hash,
             }
             stage1_selection_binding = {
                 **stage1_selection_payload,
@@ -7638,14 +7584,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             
             # 创建用于RL的评估器包装
             class RLEvaluatorWrapper:
-                def __init__(wrapper_self, evaluator, split_name=None, use_train=None):
+                def __init__(wrapper_self, evaluator, split_name):
                     wrapper_self.evaluator = evaluator
-                    if split_name is not None:
-                        wrapper_self.split_name = split_name
-                    elif use_train is None:
-                        wrapper_self.split_name = "train"
-                    else:
-                        wrapper_self.split_name = "train" if use_train else "validation_full"
+                    wrapper_self.split_name = split_name
                 
                 def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
                     return wrapper_self.evaluator.stage1_evaluate(
@@ -7654,26 +7595,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                         split=wrapper_self.split_name,
                     )
             
-            # ==================== 验证集引导（Validation Guided）====================
-            if USE_VALIDATION_FOR_REWARD:
-                self.refresh_validation_proxy(window_index=0, stage_label="Stage-1 RL")
-                online_reward_split = self.get_online_reward_split_name()
-                proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
-                    base_gelu,
-                    base_softmax,
-                    split=online_reward_split,
-                )
-                self.log(
-                    f"[信息] 使用 {online_reward_split} 进行在线奖励计算 "
-                    f"（约束保持在 {reward_reference_split} 上）"
-                )
-                rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
-            else:
-                self.log("[信息] 使用训练集（TRAINING set）进行奖励计算")
-                rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
-            
-            if not USE_VALIDATION_FOR_REWARD:
-                proxy_base_loss, proxy_base_p, proxy_base_s = base_loss_train, base_p_train, base_s_train
+            online_reward_split = self.get_online_reward_split_name()
+            proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
+                base_gelu,
+                base_softmax,
+                split=online_reward_split,
+            )
+            self.log(
+                f"[信息] 使用 {online_reward_split} 进行在线奖励计算 "
+                f"（约束保持在 {reward_reference_split} 上）"
+            )
+            rl_evaluator = RLEvaluatorWrapper(self, online_reward_split)
 
             env = TransformerOptEnv(
                 self.total_layers,
@@ -7687,8 +7619,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 },
                 num_metrics=self.get_num_metrics(),
             )
-            if USE_VALIDATION_FOR_REWARD:
-                rl_evaluator.split_name = online_reward_split
             env.prev_episode_metrics = {
                 "loss": proxy_base_loss,
                 "metric1": proxy_base_p,
@@ -7802,9 +7732,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "metric1": float(limit_p),
                     "metric2": float(limit_s),
                 },
-                eval_split_name=(
-                    online_reward_split if USE_VALIDATION_FOR_REWARD else "train"
-                ),
+                eval_split_name=online_reward_split,
                 proxy_prev_metrics={
                     "loss": proxy_base_loss,
                     "metric1": proxy_base_p,
@@ -8313,6 +8241,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage1_data_writer.write_episode({
                     "episode": int(episode + 1),
                     "episode_zero_based": int(episode),
+                    "split": online_reward_split,
+                    "dataset_protocol_hash": self.dataset_protocol_hash,
                     "reward": float(episode_reward),
                     "loss": float(_episode_metrics["loss"]),
                     "metric1": float(_episode_metrics["metric1"]),
@@ -8550,24 +8480,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                     window_best_cost = float('inf')
                     window_best_config = None
 
-                    if (not stage1_entropy_converged
-                            and USE_VALIDATION_FOR_REWARD
+                    if (
+                            not stage1_entropy_converged
                             and (
                                 self.stage1_rl_unbounded_until_entropy
                                 or (episode + 1) < self.stage1_rl_episode_limit
-                            )):
-                        next_window_idx = gtrxl_ppo_update_count
-                        self.refresh_validation_proxy(
-                            window_index=next_window_idx,
-                            stage_label="Stage-1 RL",
-                        )
-                        online_reward_split = self.get_online_reward_split_name()
-                        rl_evaluator.split_name = online_reward_split
-                        proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
-                            base_gelu,
-                            base_softmax,
-                            split=online_reward_split,
-                        )
+                            )
+                    ):
                         env.prev_episode_metrics = {
                             "loss": proxy_base_loss,
                             "metric1": proxy_base_p,
@@ -8613,6 +8532,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        dataset_protocol_hash=self.dataset_protocol_hash,
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
@@ -8695,6 +8615,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        dataset_protocol_hash=self.dataset_protocol_hash,
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
@@ -8779,6 +8700,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     },
                     stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                     stage1_warnings=stage1_warnings,
+                    dataset_protocol_hash=self.dataset_protocol_hash,
                     structured_run_id=stage1_data_writer.run_id,
                     structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                     detail_file_sizes=_stage1_detail_file_sizes,
@@ -8955,7 +8877,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     episodes_ma = episodes
 
                 dataset_info = f" ({self.data_path})"
-                val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
+                val_guided_info = " [Train Probe]"
                 
                 if _num_m == 1:
                     fig, axes = plt.subplots(1, 3, figsize=(18, 5))

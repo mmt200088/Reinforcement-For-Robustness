@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
+from glue_data_protocol import TRAIN_PROBE_SPLIT
 from json_utils import (
     json_default,
     read_json_file,
@@ -113,6 +114,9 @@ class Stage1EvaluatorAdapter:
         self.constraints = constraints
         self.on_evaluation = on_evaluation
         self.evaluation_count = 0
+        self.dataset_protocol_hash = getattr(
+            evaluator, "dataset_protocol_hash", None
+        )
         self._cost_cache: dict[Stage1Action, tuple[float, list[float]]] = {}
         if not callable(getattr(evaluator, "stage1_evaluate", None)):
             raise TypeError("evaluator must provide stage1_evaluate")
@@ -153,7 +157,7 @@ class Stage1EvaluatorAdapter:
             gelu_degrees,
             softmax_degrees,
             use_train=False,
-            split="validation_full",
+            split=TRAIN_PROBE_SPLIT,
         )
         loss, metrics, inference_time_ms, runtime_metadata = _runtime_metrics(
             runtime_result,
@@ -170,8 +174,9 @@ class Stage1EvaluatorAdapter:
             metadata={
                 **dict(runtime_metadata),
                 "evaluation_index": evaluation_index,
-                "split": "validation_full",
+                "split": TRAIN_PROBE_SPLIT,
                 "use_train": False,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "wall_seconds": float(time.perf_counter() - started),
                 "inference_time_ms": inference_time_ms,
                 "cost_components": cost_components,
@@ -286,6 +291,9 @@ def _observation_store(
 def _compact_result(result: SearchResult) -> dict[str, Any]:
     payload = result.as_dict(include_observations=False, include_history=False)
     payload["schema_version"] = "stage1_gelu_search_compact_result_v3"
+    payload["dataset_protocol_hash"] = result.best.metadata.get(
+        "dataset_protocol_hash"
+    )
     return payload
 
 
@@ -383,8 +391,11 @@ def save_search_checkpoint(
                 "gelu_degree_categories": list(GELU_DEGREES),
                 "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
                 "constraints": observations[0].constraints.as_dict(),
-                "split": "validation_full",
+                "split": TRAIN_PROBE_SPLIT,
                 "use_train": False,
+                "dataset_protocol_hash": observations[0].metadata.get(
+                    "dataset_protocol_hash"
+                ),
             }
         )
     )
@@ -1458,6 +1469,16 @@ class Stage1SearchRunner:
         self.config = config or SearchConfig()
         self.output_dir = None if output_dir is None else Path(output_dir)
         self.manifest = _ordinary_manifest_fields(manifest)
+        adapter_protocol_hash = self.adapter.dataset_protocol_hash
+        manifest_protocol_hash = self.manifest.get("dataset_protocol_hash")
+        if (
+                manifest_protocol_hash is not None
+                and manifest_protocol_hash != adapter_protocol_hash
+        ):
+            raise ValueError(
+                "Stage-1 manifest dataset protocol hash does not match evaluator"
+            )
+        self.manifest["dataset_protocol_hash"] = adapter_protocol_hash
         self.checkpoint_callback = checkpoint_callback
         self.checkpoint_interval = int(checkpoint_interval)
         self.stop_requested = stop_requested
@@ -1481,8 +1502,9 @@ class Stage1SearchRunner:
             "gelu_degree_categories": list(GELU_DEGREES),
             "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
             "constraints": self.adapter.constraints.as_dict(),
-            "split": "validation_full",
+            "split": TRAIN_PROBE_SPLIT,
             "use_train": False,
+            "dataset_protocol_hash": self.adapter.dataset_protocol_hash,
         }
         if (
                 preload_path is None
@@ -1733,7 +1755,7 @@ class Stage1SearchRunner:
                 result=result,
                 manifest={
                     **self.manifest,
-                    "split": "validation_full",
+                    "split": TRAIN_PROBE_SPLIT,
                     "gelu_degree_categories": list(GELU_DEGREES),
                     "softmax_degrees": (
                         [FIXED_SOFTMAX_DEGREE]

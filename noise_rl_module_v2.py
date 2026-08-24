@@ -991,6 +991,7 @@ def save_stage1_rl_checkpoint(
     ev_runtime_state,
     stage1_prev_avg_reward,
     stage1_warnings,
+    dataset_protocol_hash=None,
     structured_run_id=None,
     structured_jsonl_sizes=None,
     detail_file_sizes=None,
@@ -1028,6 +1029,10 @@ def save_stage1_rl_checkpoint(
         "ev_runtime_state": ev_runtime_state,
         "stage1_prev_avg_reward": stage1_prev_avg_reward,
         "stage1_warnings": _serialize_numpy(stage1_warnings),
+        "dataset_protocol_hash": (
+            str(dataset_protocol_hash)
+            if dataset_protocol_hash is not None else None
+        ),
         "structured_run_id": (
             str(structured_run_id) if structured_run_id is not None else None
         ),
