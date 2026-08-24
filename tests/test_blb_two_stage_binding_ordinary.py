@@ -156,7 +156,10 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 )
 
         load_completed.assert_called_once_with(os.path.dirname(result_path))
-        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v4")
+        self.assertEqual(
+            invocation["schema_version"],
+            "stage2_search_train_probe_invocation_v1",
+        )
         self.assertEqual(invocation["search_backend"], "bo_rf")
         self.assertEqual(invocation["seed"], 1729)
         self.assertEqual(invocation["num_layers"], 2)
@@ -1007,7 +1010,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             Mapping=dict,
             os=os,
             _build_search_invocation_contract=lambda **_kwargs: {
-                "schema_version": "stage2_search_invocation_v4",
+                "schema_version": "stage2_search_train_probe_invocation_v1",
+                "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+                "dataset_protocol_hash": "probe-a",
                 "search_backend": "bo_rf",
             },
         )
@@ -1015,7 +1020,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             output_dir = os.path.join(tmpdir, "search_bo_rf")
             os.makedirs(output_dir)
             invocation = {
-                "schema_version": "stage2_search_invocation_v4",
+                "schema_version": "stage2_search_train_probe_invocation_v1",
+                "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+                "dataset_protocol_hash": "probe-a",
                 "search_backend": "bo_rf",
             }
             resume_contract = {
@@ -1038,6 +1045,10 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                     "manifest.json",
                     {
                         "status": "search_complete_pending_strict",
+                        "dataset_protocol_schema": (
+                            "glue_train_probe_protocol_v1"
+                        ),
+                        "dataset_protocol_hash": "probe-a",
                         "resume_contract": resume_contract,
                     },
                 ),
@@ -1053,7 +1064,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                     json.dump(payload, handle)
 
             restored = preflight(
-                runner=SimpleNamespace(evaluator=SimpleNamespace()),
+                runner=SimpleNamespace(evaluator=SimpleNamespace(
+                    dataset_protocol_hash="probe-a",
+                )),
                 train_cfg=SimpleNamespace(
                     search_backend="bo_rf",
                     search_full_validation=True,

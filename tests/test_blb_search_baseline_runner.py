@@ -72,7 +72,12 @@ def _strict_identity_context(marker="a"):
 
 
 def _search_manifest(**overrides):
-    payload = {"profile": "mrpc"}
+    payload = {
+        "profile": "mrpc",
+        "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+        "dataset_protocol_hash": "probe-a",
+        "search_split": "train_probe",
+    }
     payload.update(overrides)
     return payload
 

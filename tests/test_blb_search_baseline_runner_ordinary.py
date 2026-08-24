@@ -209,6 +209,16 @@ def _run_kwargs(output_dir, **overrides):
     return values
 
 
+def _protocol_manifest(**overrides):
+    payload = {
+        "dataset_protocol_schema": "glue_train_probe_protocol_v1",
+        "dataset_protocol_hash": "probe-a",
+        "search_split": "train_probe",
+    }
+    payload.update(overrides)
+    return payload
+
+
 class OrdinaryRunnerApiTest(unittest.TestCase):
     def test_resume_rejects_missing_protocol_before_search_replay(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -601,7 +611,7 @@ class OrdinaryRunnerPersistenceTest(unittest.TestCase):
                 backend="coinn_ga",
                 evaluation_budget=11_464,
                 patience_generations=5,
-                manifest={"backend": "coinn_ga"},
+                manifest=_protocol_manifest(backend="coinn_ga"),
                 strict_validator=strict_validator,
             )
             with (
@@ -784,10 +794,10 @@ class OrdinaryRunnerPersistenceTest(unittest.TestCase):
                     handle.write(b"partial-strict-evidence\n")
                 raise RuntimeError("strict interruption")
 
-            manifest = {
-                "backend": "greedy",
-                "strict_candidate_store": store_path,
-            }
+            manifest = _protocol_manifest(
+                backend="greedy",
+                strict_candidate_store=store_path,
+            )
             with (
                 mock.patch.object(
                     search_baseline_runner,
