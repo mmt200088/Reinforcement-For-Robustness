@@ -153,21 +153,6 @@ def _effective_stage2_inference_batch_size(ev, train_cfg) -> int:
     return value
 
 
-def _effective_probe_batch_count(ev, train_cfg) -> int:
-    """Return enough mini-batches to cover stage2_probe_size unless overridden."""
-    explicit = getattr(ev, "blb_v3_probe_batch_count", None)
-    if explicit not in (None, ""):
-        acc_threshold_resolution: Optional[BaselineMetricThreshold] = None
-        baseline_preflight_metrics: Dict[str, Any] = {}
-        try:
-            return max(1, int(explicit))
-        except Exception:
-            pass
-    probe_size = max(1, int(getattr(ev, "stage2_probe_size", 256)))
-    batch_size = _effective_stage2_inference_batch_size(ev, train_cfg)
-    return max(1, int(math.ceil(float(probe_size) / float(batch_size))))
-
-
 def _selection_float(value: Any, default: float = 0.0) -> float:
     try:
         out = float(value)
