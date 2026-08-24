@@ -39,7 +39,7 @@ TASK_SPECS = {
 }
 
 
-class GlueDataProtocolError(RuntimeError):
+class GlueDataProtocolError(ValueError):
     """Raised when a dataset cannot satisfy the formal probe contract."""
 
 

@@ -37,6 +37,10 @@ from cli_parse_utils import (
     parse_stage1_episode_limit,
     parse_stage2_episode_limit,
 )
+from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
+    validate_dataset,
+)
 from mrpc_reproducibility import (
     MRPC_FULL_EXAMPLE_COUNT,
     MRPCReproducibilityContext,
@@ -83,33 +87,15 @@ def seed_everything(seed: int) -> int:
 
 
 GLUE_PARQUET_SPLITS = {
-    "cola": ("train", "validation", "test"),
-    "sst2": ("train", "validation", "test"),
     "mrpc": ("train", "validation", "test"),
-    "stsb": ("train", "validation", "test"),
-    "qqp": ("train", "validation", "test"),
-    "qnli": ("train", "validation", "test"),
     "rte": ("train", "validation", "test"),
-    "wnli": ("train", "validation", "test"),
-    "mnli": (
-        "train",
-        "validation_matched",
-        "validation_mismatched",
-        "test_matched",
-        "test_mismatched",
-    ),
+    "sst2": ("train", "validation", "test"),
 }
 
 GLUE_REQUIRED_COLUMNS = {
-    "cola": ("sentence", "label"),
-    "sst2": ("sentence", "label"),
-    "mrpc": ("sentence1", "sentence2", "label"),
-    "stsb": ("sentence1", "sentence2", "label"),
-    "qqp": ("question1", "question2", "label"),
-    "qnli": ("question", "sentence", "label"),
-    "rte": ("sentence1", "sentence2", "label"),
-    "wnli": ("sentence1", "sentence2", "label"),
-    "mnli": ("premise", "hypothesis", "label"),
+    "mrpc": ("sentence1", "sentence2", "label", "idx"),
+    "rte": ("sentence1", "sentence2", "label", "idx"),
+    "sst2": ("sentence", "label", "idx"),
 }
 
 
@@ -400,6 +386,7 @@ def _try_load_local_glue_dataset(
         data = load_dataset_fn(
             "nyu-mll/glue",
             task,
+            revision=GLUE_DATASET_REVISION,
             download_config=DownloadConfig(local_files_only=True),
         )
         _finalize_glue_load_success(
@@ -483,6 +470,7 @@ def load_glue_dataset_equivalent(
         mrpc_reproducibility_fixture=None,
         ):
     task = str(task_name).strip().lower()
+    validate_dataset(task)
     # GLUE data loading has 4 possible routes (HF remote / local save_to_disk /
     # local parquet / HF cache local-only). When debugging "why does this run
     # see stale data?", knowing which route fired is essential — so we log
@@ -490,7 +478,11 @@ def load_glue_dataset_equivalent(
     # branches already log their own route; here we log when the primary
     # remote loader succeeds.
     try:
-        data = load_dataset_fn("nyu-mll/glue", task)
+        data = load_dataset_fn(
+            "nyu-mll/glue",
+            task,
+            revision=GLUE_DATASET_REVISION,
+        )
         _finalize_glue_load_success(
             data,
             task,
@@ -507,7 +499,7 @@ def load_glue_dataset_equivalent(
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
         primary_endpoint = _extract_hf_endpoint_from_error(primary_exc)
-        revision = _extract_hf_revision_from_error(primary_exc)
+        revision = GLUE_DATASET_REVISION
         candidate_endpoints = _glue_equivalent_candidate_endpoints(primary_endpoint)
         if _glue_parquet_data_files(task, endpoint=candidate_endpoints[0], revision=revision) is None:
             raise
