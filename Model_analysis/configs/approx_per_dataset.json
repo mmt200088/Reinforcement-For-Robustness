@@ -17,12 +17,6 @@
     "Select a stage at runtime with --stage (default: stage1)."
   ],
 
-  "wnli": {
-    "stage1": {
-      "gelu":    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
-      "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
-    }
-  },
   "mrpc": {
     "stage1": {
       "gelu":    [1,2,1,1,1,1,1,1,2,1,1,1],
