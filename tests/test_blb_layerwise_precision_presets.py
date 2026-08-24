@@ -118,6 +118,51 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
             ],
         )
 
+    def test_preset_table_exposes_paper_semantics_without_changing_simulation_k(self):
+        self.assertEqual(
+            [
+                (
+                    preset.name,
+                    preset.ciphertext_k_by_block,
+                    preset.simulation_k_by_block,
+                    preset.reserve_bits_by_block,
+                    preset.ciphertext_ring_bits,
+                    preset.k_by_block,
+                    preset.communication_utility,
+                )
+                for preset in PRECISION_PRESETS
+            ],
+            [
+                (
+                    "high",
+                    (13, 13, 13, 13, 13),
+                    (11, 10, 10, 12, 11),
+                    (2, 3, 3, 1, 2),
+                    40,
+                    (11, 10, 10, 12, 11),
+                    0.0,
+                ),
+                (
+                    "medium",
+                    (12, 12, 12, 12, 12),
+                    (9, 8, 8, 10, 9),
+                    (3, 4, 4, 2, 3),
+                    39,
+                    (9, 8, 8, 10, 9),
+                    0.5,
+                ),
+                (
+                    "low",
+                    (11, 11, 11, 12, 11),
+                    (7, 6, 6, 8, 7),
+                    (4, 5, 5, 4, 4),
+                    38,
+                    (7, 6, 6, 8, 7),
+                    1.0,
+                ),
+            ],
+        )
+
     def test_every_preset_reaches_legacy_vector_and_boosted_overrides(self):
         from blb_stage2_rl.truncation_levels import K_LEVELS
 
