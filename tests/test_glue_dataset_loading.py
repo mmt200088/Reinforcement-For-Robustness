@@ -438,25 +438,19 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 ValueError, "MRPC reproducibility probe size mismatch"):
             method(evaluator, "validation_full", 1, probe_seed=42)
 
-    def test_stage2_fixture_probe_failure_cannot_fall_back_to_other_data(self):
+    def test_stage2_probe_reads_registered_train_probe_without_resampling(self):
         source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
         method_start = source.index("    def _build_probe_batches(")
         method_end = source.index(
-            "    def _build_validation_full_batches(", method_start
+            "    def _build_rescale_bridge(", method_start
         )
         method = source[method_start:method_end]
 
-        self.assertIn(
-            'getattr(ev, "mrpc_reproducibility", None)', method
-        )
+        self.assertIn('dataset_splits.get("train_probe")', method)
         self.assertIn("drop_last=False", method)
-        self.assertLess(
-            method.index('getattr(ev, "mrpc_reproducibility", None)'),
-            method.index(
-                'ds = ev.dataset_splits.get(split_name) '
-                'or ev.dataset_splits.get("train")'
-            ),
-        )
+        self.assertNotIn("_get_stability_probe", method)
+        self.assertNotIn('dataset_splits.get("validation_full")', method)
+        self.assertNotIn('dataset_splits.get("train")', method)
 
     def test_raw_row_fixture_validation_runs_on_primary_remote_success(self):
         rl_tune = _import_rl_tune()

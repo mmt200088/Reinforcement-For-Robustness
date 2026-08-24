@@ -369,7 +369,7 @@ _STRICT_BANK_PROBE_SEEDS = {
     "C": (301, 302, 303, 304, 305),
 }
 _STRICT_TRIALS_PER_PROBE = 3
-_STRICT_BATCH_SET_KEY = "validation_full"
+_STRICT_BATCH_SET_KEY = "train_probe"
 
 
 def _strict_metrics_from_trial_results(results):
@@ -1482,7 +1482,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             self.assertNotIn("scientific_export_allowed", run)
             self.assertEqual(
                 run["manifest"]["scientific_status"],
-                "smoke_only_no_validation_full_gate",
+                "smoke_only_no_strict_search_gate",
             )
             self.assertEqual(
                 run["manifest"]["search_config"]["population_size"], 4,

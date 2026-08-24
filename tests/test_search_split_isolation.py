@@ -121,3 +121,26 @@ def test_stage1_search_source_has_no_validation_guided_branch():
     assert stage1_flow.count(
         "dataset_protocol_hash=self.dataset_protocol_hash"
     ) == 3
+
+
+def test_stage2_search_artifacts_name_only_train_probe_evidence():
+    sequential = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        encoding="utf-8"
+    )
+    layerwise = Path("blb_stage2_rl/layerwise_runner.py").read_text(
+        encoding="utf-8"
+    )
+    baseline = Path("blb_stage2_rl/search_baseline_runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT" in sequential
+    assert "DATASET_PROTOCOL_SCHEMA = PROTOCOL_SCHEMA" in sequential
+    assert (
+        'LAYERWISE_RUN_SCHEMA = "stage2_layerwise_train_probe_run_v1"'
+        in sequential
+    )
+    for source in (sequential, layerwise, baseline):
+        assert "validation_full_stratified_probe" not in source
+        assert "F4_validation_full" not in source
+    assert '"split": SEARCH_EVIDENCE_SPLIT' in baseline
