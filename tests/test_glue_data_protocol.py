@@ -15,6 +15,7 @@ from glue_data_protocol import (
     TRAIN_PROBE_SIZE,
     build_train_probe,
     load_train_probe_fixture,
+    resolve_glue_protocol_views,
     supported_profiles,
     validate_supported_profile,
     write_train_probe_fixture,
@@ -208,3 +209,42 @@ def test_fixture_builder_runs_as_a_direct_script():
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_protocol_views_use_fixture_probe_and_preserve_validation(tmp_path):
+    raw_train = fake_binary_dataset()
+    validation = fake_binary_dataset(size=300, zero_count=120, offset=20_000)
+    identities = _fixture_identities()
+    fixture_path = tmp_path / "fixture.json"
+    write_train_probe_fixture(fixture_path, identities)
+    fixture = load_train_probe_fixture(fixture_path)
+
+    views = resolve_glue_protocol_views(
+        {"train": raw_train, "validation": validation},
+        dataset="mrpc",
+        fixture=fixture,
+    )
+
+    assert views.train_full is raw_train
+    assert views.validation_full is validation
+    assert tuple(views.train_probe["idx"]) == identities["mrpc"].raw_ids
+    assert views.identity == identities["mrpc"]
+
+
+def test_protocol_views_reject_training_identity_drift(tmp_path):
+    identities = _fixture_identities()
+    fixture_path = tmp_path / "fixture.json"
+    write_train_probe_fixture(fixture_path, identities)
+    fixture = load_train_probe_fixture(fixture_path)
+    changed_rows = list(fake_binary_dataset().rows)
+    changed_rows[0]["label"] = 1
+
+    with pytest.raises(GlueDataProtocolError, match="identity mismatch"):
+        resolve_glue_protocol_views(
+            {
+                "train": FakeDataset(changed_rows),
+                "validation": fake_binary_dataset(size=300),
+            },
+            dataset="mrpc",
+            fixture=fixture,
+        )
