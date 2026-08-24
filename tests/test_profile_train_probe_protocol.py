@@ -7,7 +7,6 @@ import sys
 import pytest
 
 from glue_data_protocol import (
-    GLUE_DATASET_REVISION,
     SUPPORTED_DATASETS,
     TRAIN_PROBE_SIZE,
 )
@@ -96,4 +95,4 @@ def test_all_profile_programs_persist_the_shared_protocol_payload():
     assert "write_profile_protocol(" in plain_source
     assert "write_profile_protocol(" in approx_source
     assert "write_profile_protocol(" in gelu_source
-    assert GLUE_DATASET_REVISION in plain_source
+    assert "GLUE_DATASET_REVISION" in plain_source
