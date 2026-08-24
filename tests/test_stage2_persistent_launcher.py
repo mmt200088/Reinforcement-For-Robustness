@@ -27,7 +27,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             textwrap.dedent(
                 f"""\
                 #!/usr/bin/env bash
-                printf '%s\\0' "$@" > {str(capture)!r}
+                tmp={str(capture)!r}.tmp.$$
+                printf '%s\\0' "$@" > "$tmp"
+                mv "$tmp" {str(capture)!r}
                 exit 0
                 """
             ),
