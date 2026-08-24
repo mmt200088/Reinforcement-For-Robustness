@@ -39,6 +39,7 @@ import os
 import shutil
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from glue_data_protocol import validate_supported_profile
 from config.paths import (
     COMPLETED_MARKER_FILENAME,
     RECORD_SUBDIR,
@@ -78,10 +79,10 @@ def stage_subdir(stage) -> str:
 
 def combo_name(model_type: str, dataset: str) -> str:
     """``("bert-base", "mrpc") -> "bert base mrpc"``（空格按用户指定）。"""
-    mt = str(model_type).strip().replace("-", " ")
-    ds = str(dataset).strip()
-    if not mt or not ds:
-        raise ValueError(f"combo 需要非空 model_type/dataset，当前：{model_type!r}/{dataset!r}")
+    model_family = str(model_type).strip().lower()
+    ds = str(dataset).strip().lower()
+    validate_supported_profile(model_family, ds)
+    mt = model_family.replace("-", " ")
     # 折叠多余空白，避免 "bert  base"。
     return " ".join(f"{mt} {ds}".split())
 
