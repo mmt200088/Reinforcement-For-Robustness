@@ -3832,9 +3832,14 @@ def _build_layerwise_candidate_identity_context(
             "result_sha256": str(
                 stage1_selection_binding.get("result_sha256") or ""
             ),
-            "selection_hash": str(
-                stage1_selection_binding.get("selection_hash") or ""
-            ),
+                "selection_hash": str(
+                    stage1_selection_binding.get("selection_hash") or ""
+                ),
+                "dataset_protocol_hash": str(
+                    stage1_selection_binding.get(
+                        "dataset_protocol_hash"
+                    ) or ""
+                ),
         }
         hash_fields = (
             stage1_binding_payload["result_sha256"],
@@ -3855,6 +3860,8 @@ def _build_layerwise_candidate_identity_context(
                 != stage1_degrees["softmax"]
                 or stage1_binding_payload["num_layers"]
                 != len(stage1_degrees["gelu"])
+                or stage1_binding_payload["dataset_protocol_hash"]
+                != str(getattr(evaluator, "dataset_protocol_hash", "") or "")
         ):
             raise RuntimeError(
                 "strict candidate identity does not match Stage-1 binding"
@@ -5079,6 +5086,10 @@ def _run_layerwise_training_branch(
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=algorithm_contract_hash,
             run_context_hash=run_context_hash,
+            dataset_protocol_schema=DATASET_PROTOCOL_SCHEMA,
+            dataset_protocol_hash=getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
         )
         active_cuda_role_count = (
             int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
@@ -5562,6 +5573,10 @@ def _run_layerwise_training_branch(
             active_cuda_rng_states,
         )
         checkpoint = {
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": getattr(
+                evaluator, "dataset_protocol_hash", None
+            ),
             "policy": policy.state_dict(),
             "policy_ppo_aux": policy.ppo_aux_state_dict(),
             "optimizer": optimizer.state_dict(),
@@ -6610,13 +6625,11 @@ def _build_search_invocation_contract(
         ) -> dict[str, Any]:
     import hashlib as _hashlib
 
-    from json_utils import stable_json_hash, to_jsonable
-    from mrpc_reproducibility import (
-        MRPC_DATASET_REPO,
-        MRPC_MODEL_ID,
-        MRPC_MODEL_REVISION,
-        MRPC_TOKENIZER_REVISION,
+    from glue_data_protocol import (
+        PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
+        validate_dataset_protocol_binding,
     )
+    from json_utils import stable_json_hash, to_jsonable
     from stage1_rl.search_runner import load_completed_search_result
 
     from .search_baselines import normalize_search_backend
@@ -6680,6 +6693,9 @@ def _build_search_invocation_contract(
             int(value) for value in binding.get("softmax_degrees") or []
         ],
         "num_layers": int(binding.get("num_layers", 0)),
+        "dataset_protocol_hash": str(
+            binding.get("dataset_protocol_hash") or ""
+        ),
     }
     normalized_binding = {
         **selection_payload,
@@ -6693,6 +6709,19 @@ def _build_search_invocation_contract(
             result_hasher.update(chunk)
     actual_result_sha256 = result_hasher.hexdigest()
     actual_selection_hash = stable_json_hash(selection_payload)
+    dataset_protocol_hash = str(
+        getattr(evaluator, "dataset_protocol_hash", "") or ""
+    )
+    validate_dataset_protocol_binding(
+        {
+            "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+            "dataset_protocol_hash": normalized_binding[
+                "dataset_protocol_hash"
+            ],
+        },
+        expected_hash=dataset_protocol_hash,
+        artifact="Stage-2 comparator invocation",
+    )
     if (
             completed_stage1.algorithm != backend
             or int(getattr(completed_stage1.config, "seed", -1)) != seed
@@ -6707,42 +6736,14 @@ def _build_search_invocation_contract(
             or normalized_binding["gelu_degrees"] != completed_gelu
             or normalized_binding["softmax_degrees"] != completed_softmax
             or normalized_binding["num_layers"] != num_layers
+            or normalized_binding["dataset_protocol_hash"]
+            != dataset_protocol_hash
             or normalized_binding["result_sha256"] != actual_result_sha256
             or normalized_binding["selection_hash"] != actual_selection_hash
     ):
         raise RuntimeError(
             "Stage-2 comparator binding does not match the completed Stage-1 result"
         )
-
-    reproducibility = getattr(evaluator, "mrpc_reproducibility", None)
-    fixture = getattr(reproducibility, "fixture", None)
-    if fixture is None or not callable(getattr(fixture, "as_payload", None)):
-        raise RuntimeError(
-            "Stage-2 comparator invocation has no MRPC reproducibility identity"
-        )
-    fixture_payload = fixture.as_payload()
-    if not isinstance(fixture_payload, Mapping):
-        raise RuntimeError("MRPC reproducibility fixture payload must be an object")
-    mrpc_identity = {
-        "dataset_repo": MRPC_DATASET_REPO,
-        "dataset_revision": str(fixture_payload.get("dataset_revision") or ""),
-        "model_id": MRPC_MODEL_ID,
-        "model_revision": MRPC_MODEL_REVISION,
-        "tokenizer_revision": MRPC_TOKENIZER_REVISION,
-        "fixture_schema_version": str(
-            fixture_payload.get("schema_version") or ""
-        ),
-        "fixture_sha256": stable_json_hash(fixture_payload),
-        "canonical_rows_sha256": stable_json_hash(
-            fixture_payload.get("canonical_rows") or []
-        ),
-        "full_validation_ids_sha256": stable_json_hash(
-            fixture_payload.get("full_validation_ids") or []
-        ),
-        "probe_ids_sha256": stable_json_hash(
-            fixture_payload.get("probe_ids") or []
-        ),
-    }
 
     scientific_parameters = {
         name: getattr(train_cfg, name, default)
@@ -6845,7 +6846,9 @@ def _build_search_invocation_contract(
         )
     }
     return to_jsonable({
-        "schema_version": "stage2_search_invocation_v4",
+        "schema_version": "stage2_search_train_probe_invocation_v1",
+        "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
+        "dataset_protocol_hash": dataset_protocol_hash,
         "search_backend": backend,
         "profile": str(getattr(train_cfg, "profile", "")),
         "model_type": str(getattr(evaluator, "model_type", "") or ""),
@@ -6857,7 +6860,6 @@ def _build_search_invocation_contract(
         "seed": seed,
         "stage1_selection_binding": normalized_binding,
         "stage1_result_path": stage1_result_path,
-        "mrpc_reproducibility_identity": mrpc_identity,
         "rng_contract": {
             "online_stream": "ppo_global_evaluation_index_v1",
             "probe_seed": "derive_layerwise_episode_probe_seed_v1",
@@ -7442,6 +7444,7 @@ def _preflight_pending_strict_search_resume(
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
     """Restore ordinary pending-strict evidence before model setup."""
+    from glue_data_protocol import validate_dataset_protocol_binding
     from json_utils import read_json_file
 
     from .search_baselines import normalize_search_backend
@@ -7463,6 +7466,11 @@ def _preflight_pending_strict_search_resume(
     manifest = read_json_file(manifest_path)
     if not isinstance(manifest, Mapping):
         raise RuntimeError("Stage-2 pending strict manifest is invalid")
+    validate_dataset_protocol_binding(
+        manifest,
+        expected_hash=getattr(runner.evaluator, "dataset_protocol_hash", None),
+        artifact="Stage-2 pending strict manifest",
+    )
     status = str(manifest.get("status") or "")
     if status in {
             "complete_strict_feasible",
@@ -7542,6 +7550,7 @@ def _preflight_completed_search_resume(
         fixed_source: Any,
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
+    from glue_data_protocol import validate_dataset_protocol_binding
     from json_utils import read_json_file, stable_json_hash
 
     from .search_baseline_runner import (
@@ -7605,6 +7614,11 @@ def _preflight_completed_search_resume(
     manifest = read_json_file(manifest_path)
     if not isinstance(manifest, Mapping):
         raise RuntimeError("Stage-2 inner search manifest is invalid")
+    validate_dataset_protocol_binding(
+        manifest,
+        expected_hash=getattr(runner.evaluator, "dataset_protocol_hash", None),
+        artifact="Stage-2 completed search manifest",
+    )
     status = str(manifest.get("status") or "")
     completed_statuses = {
         "complete_strict_feasible",

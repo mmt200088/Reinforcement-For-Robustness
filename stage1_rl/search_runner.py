@@ -8,7 +8,11 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from glue_data_protocol import TRAIN_PROBE_SPLIT
+from glue_data_protocol import (
+    PROTOCOL_SCHEMA,
+    TRAIN_PROBE_SPLIT,
+    validate_dataset_protocol_binding,
+)
 from json_utils import (
     json_default,
     read_json_file,
@@ -41,7 +45,8 @@ _REPLAY_SEMANTICS = (
     "population, RNG, and local-search state; no serialized optimizer state "
     "is restored"
 )
-_MANIFEST_SCHEMA = "stage1_gelu_search_manifest_v1"
+_MANIFEST_SCHEMA = "stage1_gelu_search_train_probe_manifest_v1"
+_CHECKPOINT_SCHEMA = "stage1_gelu_search_train_probe_checkpoint_v1"
 _REQUIRED_COMPLETED_ARTIFACTS = (
     "observations.jsonl",
     "history.json",
@@ -117,6 +122,8 @@ class Stage1EvaluatorAdapter:
         self.dataset_protocol_hash = getattr(
             evaluator, "dataset_protocol_hash", None
         )
+        if not str(self.dataset_protocol_hash or ""):
+            raise ValueError("Stage-1 search requires dataset_protocol_hash")
         self._cost_cache: dict[Stage1Action, tuple[float, list[float]]] = {}
         if not callable(getattr(evaluator, "stage1_evaluate", None)):
             raise TypeError("evaluator must provide stage1_evaluate")
@@ -321,7 +328,7 @@ def _checkpoint_payload(
         latest_evaluation = observations[-1]
     count = len(observations) if observation_count is None else int(observation_count)
     payload = {
-        "schema_version": "stage1_gelu_search_checkpoint_v2",
+        "schema_version": _CHECKPOINT_SCHEMA,
         "status": str(status),
         "backend": normalize_search_backend(backend),
         "config": config.as_dict(),
@@ -396,6 +403,7 @@ def save_search_checkpoint(
                 "dataset_protocol_hash": observations[0].metadata.get(
                     "dataset_protocol_hash"
                 ),
+                "dataset_protocol_schema": PROTOCOL_SCHEMA,
             }
         )
     )
@@ -1200,10 +1208,19 @@ def load_completed_search_result(output_dir: str | Path) -> SearchResult:
         raise RuntimeError("Stage-1 manifest schema version is unsupported")
     if str(manifest.get("status")) != "complete":
         raise RuntimeError("Stage-1 manifest status is not complete")
-    if str(checkpoint.get("schema_version")) != (
-            "stage1_gelu_search_checkpoint_v2"
-    ):
+    if str(checkpoint.get("schema_version")) != _CHECKPOINT_SCHEMA:
         raise RuntimeError("Stage-1 checkpoint schema version is unsupported")
+    protocol_hash = str(manifest.get("dataset_protocol_hash") or "")
+    validate_dataset_protocol_binding(
+        manifest,
+        expected_hash=protocol_hash,
+        artifact="Stage-1 manifest",
+    )
+    validate_dataset_protocol_binding(
+        dict(checkpoint.get("contract") or {}),
+        expected_hash=protocol_hash,
+        artifact="Stage-1 checkpoint",
+    )
     if str(checkpoint.get("status")) != "complete":
         raise RuntimeError("Stage-1 checkpoint status is not complete")
     if dict(summary) != dict(payload):
@@ -1322,6 +1339,11 @@ def _validate_preload_contract(
     if saved_config.as_dict() != config.as_dict():
         raise RuntimeError("Stage-1 resume search configuration does not match")
     saved_contract = dict(payload.get("contract") or {})
+    validate_dataset_protocol_binding(
+        saved_contract,
+        expected_hash=str(contract.get("dataset_protocol_hash") or ""),
+        artifact="Stage-1 resume checkpoint",
+    )
     for name, value in contract.items():
         if saved_contract.get(name) != value:
             raise RuntimeError(
@@ -1479,6 +1501,8 @@ class Stage1SearchRunner:
                 "Stage-1 manifest dataset protocol hash does not match evaluator"
             )
         self.manifest["dataset_protocol_hash"] = adapter_protocol_hash
+        self.manifest["dataset_protocol_schema"] = PROTOCOL_SCHEMA
+        self.manifest["search_split"] = TRAIN_PROBE_SPLIT
         self.checkpoint_callback = checkpoint_callback
         self.checkpoint_interval = int(checkpoint_interval)
         self.stop_requested = stop_requested
@@ -1505,6 +1529,7 @@ class Stage1SearchRunner:
             "split": TRAIN_PROBE_SPLIT,
             "use_train": False,
             "dataset_protocol_hash": self.adapter.dataset_protocol_hash,
+            "dataset_protocol_schema": PROTOCOL_SCHEMA,
         }
         if (
                 preload_path is None

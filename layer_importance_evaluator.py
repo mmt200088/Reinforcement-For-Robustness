@@ -7836,7 +7836,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                         "Re-run with --fresh to retrain from scratch."
                     )
                 ckpt = load_stage1_rl_checkpoint(
-                    _stage1_resume_ckpt_path, gtrxl_net, optimizer, device=self.device,
+                    _stage1_resume_ckpt_path,
+                    gtrxl_net,
+                    optimizer,
+                    device=self.device,
+                    expected_dataset_protocol_hash=self.dataset_protocol_hash,
                 )
                 _stage1_cuda_rng_role_registry = list(
                     ckpt.get("cuda_rng_state_by_role") or ()

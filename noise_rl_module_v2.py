@@ -21,6 +21,10 @@ from torch.distributions import Categorical
 import time as _time
 from report_format_utils import format_elapsed as _fmt_elapsed
 from report_format_utils import progress_bar as _progress_bar
+from glue_data_protocol import (
+    PROTOCOL_SCHEMA,
+    validate_dataset_protocol_binding,
+)
 
 
 # ===========================================================================
@@ -998,6 +1002,8 @@ def save_stage1_rl_checkpoint(
     cuda_rng_role_registry=None,
 ):
     """保存 Stage-1 RL 的完整训练状态（checkpoint）。"""
+    if not str(dataset_protocol_hash or ""):
+        raise ValueError("Stage-1 checkpoint requires dataset_protocol_hash")
     active_cuda_rng_states = (
         [state.cpu() for state in torch.cuda.get_rng_state_all()]
         if torch.cuda.is_available()
@@ -1009,6 +1015,7 @@ def save_stage1_rl_checkpoint(
     )
     checkpoint = {
         "version": 2,
+        "dataset_protocol_schema": PROTOCOL_SCHEMA,
         "completed_episodes": episode + 1,
         "gtrxl_net_state_dict": gtrxl_net.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
@@ -1064,9 +1071,21 @@ def save_stage1_rl_checkpoint(
     _atomic_torch_save(checkpoint, path)
 
 
-def load_stage1_rl_checkpoint(path, gtrxl_net, optimizer, device="cuda"):
+def load_stage1_rl_checkpoint(
+    path,
+    gtrxl_net,
+    optimizer,
+    device="cuda",
+    *,
+    expected_dataset_protocol_hash,
+):
     """加载 Stage-1 RL checkpoint，恢复训练状态。返回 checkpoint dict。"""
     checkpoint = torch.load(path, map_location=device, weights_only=False)
+    validate_dataset_protocol_binding(
+        checkpoint,
+        expected_hash=expected_dataset_protocol_hash,
+        artifact="Stage-1 checkpoint",
+    )
     gtrxl_net.load_state_dict(checkpoint["gtrxl_net_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     _np_keys = ["gelu", "softmax"]

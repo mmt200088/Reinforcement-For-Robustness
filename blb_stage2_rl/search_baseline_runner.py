@@ -11,7 +11,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
-from glue_data_protocol import TRAIN_PROBE_SPLIT
+from glue_data_protocol import (
+    TRAIN_PROBE_SPLIT,
+    validate_dataset_protocol_binding,
+)
 from json_utils import read_json_file, stable_json_hash, to_jsonable
 from jsonl_utils import read_jsonl, recover_jsonl_file
 
@@ -2246,6 +2249,20 @@ def run_layerwise_search_baseline(
     """Run one non-RL baseline with ordinary crash-recoverable artifacts."""
     normalized_backend = normalize_search_backend(backend)
     run_started_monotonic = time.perf_counter()
+    requested_manifest = dict(manifest)
+    requested_protocol_hash = str(
+        requested_manifest.get("dataset_protocol_hash") or ""
+    )
+    validate_dataset_protocol_binding(
+        requested_manifest,
+        expected_hash=requested_protocol_hash,
+        artifact="Stage-2 search manifest",
+    )
+    if requested_manifest.get("search_split") != SEARCH_EVIDENCE_SPLIT:
+        raise RuntimeError(
+            "Stage-2 search manifest train-probe protocol mismatch; "
+            "start a fresh run"
+        )
     if normalized_backend == "ppo":
         raise ValueError("run_layerwise_search_baseline requires a non-PPO backend")
     budget = int(evaluation_budget)
@@ -2368,6 +2385,11 @@ def run_layerwise_search_baseline(
             "directory or restore the matching manifest"
         )
     if existing_manifest is not None:
+        validate_dataset_protocol_binding(
+            existing_manifest,
+            expected_hash=requested_protocol_hash,
+            artifact="Stage-2 resume manifest",
+        )
         if not resume:
             raise RuntimeError(
                 "search baseline output already exists and resume is disabled: "

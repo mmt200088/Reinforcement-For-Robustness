@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -168,6 +168,22 @@ def resolve_model_family(model_id: str) -> str:
     if "bert-base" in normalized:
         return "bert-base"
     raise ValueError(f"unsupported model: {normalized or '<empty>'}")
+
+
+def validate_dataset_protocol_binding(
+    payload: Mapping[str, Any],
+    *,
+    expected_hash: str,
+    artifact: str,
+) -> None:
+    actual_schema = str(payload.get("dataset_protocol_schema") or "")
+    actual_hash = str(payload.get("dataset_protocol_hash") or "")
+    expected = str(expected_hash or "")
+    if actual_schema != PROTOCOL_SCHEMA or not expected or actual_hash != expected:
+        raise RuntimeError(
+            f"{artifact} train-probe protocol mismatch; start a fresh run "
+            f"with {PROTOCOL_SCHEMA}"
+        )
 
 
 def validate_dataset(dataset: str) -> str:
