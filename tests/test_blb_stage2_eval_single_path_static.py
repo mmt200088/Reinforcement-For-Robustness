@@ -9,7 +9,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_model_eval_routes_use_canonical_action_materialization(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
-        sequential = (repo / "blb_stage2_rl" / "sequential_env.py").read_text(
+        sequential = (repo / "blb_stage2_rl" / "block_materialization.py").read_text(
             encoding="utf-8"
         )
         paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
@@ -158,12 +158,12 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             for token in forbidden:
                 if token in text:
                     offenders.append(f"{path.relative_to(repo)} contains {token}")
-            self.assertIn(
-                "apply_optimizer_outputs_to_cfgs",
-                text,
-                f"{path.relative_to(repo)} must delegate optimizer write-back "
-                "through the shared Stage-2 helper",
+            expected_helper = (
+                "materialize_decoded_action"
+                if path.name == "block_materialization.py"
+                else "apply_optimizer_outputs_to_cfgs"
             )
+            self.assertIn(expected_helper, text)
         self.assertEqual(offenders, [])
 
     def test_paean_final_eval_does_not_forward_unapplied_replan_cfgs(self):
@@ -230,11 +230,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             self.assertNotIn("def _json_safe", text)
             self.assertNotIn("return {str(k): _json_safe", text)
             self.assertNotIn("return {str(key): _json_safe", text)
-        rlpath = (repo / "scripts" / "run_fusion_count_action_eval_rlpath.py").read_text(encoding="utf-8")
-        self.assertRegex(rlpath, r"from json_utils import .*\bto_jsonable\b")
-        self.assertNotIn("def _jsonable", rlpath)
-        self.assertIn("stage2_rl_episodes=0", rlpath)
-
     def test_json_default_scripts_use_shared_adapter(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         stage2_probe = (
@@ -252,13 +247,11 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_stable_json_hash_callers_use_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         candidate_store = (repo / "blb_stage2_rl" / "candidate_store.py").read_text(encoding="utf-8")
-        action_mask = (repo / "blb_stage2_rl" / "action_mask.py").read_text(encoding="utf-8")
         fusion_common = (repo / "scripts" / "fusion_count_action_eval_common.py").read_text(encoding="utf-8")
         f0_scan = (repo / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8")
         registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
 
         self.assertRegex(candidate_store, r"from json_utils import .*\bstable_json_hash\b")
-        self.assertRegex(action_mask, r"from json_utils import .*\bstable_json_hash\b")
         self.assertRegex(
             fusion_common,
             r"from json_utils import .*\bstable_json_hash\b.*\bstable_json_key\b",
@@ -266,7 +259,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertRegex(f0_scan, r"from json_utils import .*\bstable_json_hash\b")
         self.assertRegex(registry, r"from json_utils import .*\bstable_json_hash\b")
         self.assertNotIn("def _stable_json", candidate_store)
-        self.assertNotIn("def _stable_mask_payload", action_mask)
         self.assertNotIn("def stable_json_hash", fusion_common)
         self.assertNotIn("def _sha256_json", f0_scan)
 

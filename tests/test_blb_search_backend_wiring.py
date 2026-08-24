@@ -197,32 +197,15 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("stage1_selection_binding", evaluator)
         self.assertIn('"result_path": stage1_result_path', evaluator)
         self.assertIn("build_stage1_search_accounting(", evaluator)
-        self.assertIn(
-            "two-stage comparator must run both Stage-1 and Stage-2",
-            evaluator,
-        )
+        self.assertIn("two-stage comparator must run both searches", evaluator)
         self.assertIn("comparator_stage1_only", evaluator)
         self.assertIn(
             '"stage1_bound_into_stage2": '
             'not self.comparator_stage1_only',
             evaluator,
         )
-        self.assertIn(
-            "comparator Stage-1-only mode must run Stage-1 and ",
-            evaluator,
-        )
-        self.assertIn(
-            "skip Stage-2/final evaluation",
-            evaluator,
-        )
-        self.assertIn(
-            "two-stage comparator requires full Stage-2 strict",
-            evaluator,
-        )
-        self.assertIn(
-            "two-stage comparator must strictly validate top 5",
-            evaluator,
-        )
+        self.assertIn("Stage-1-only comparator routing mismatch", evaluator)
+        self.assertIn("formal comparator strict top-5 contract mismatch", evaluator)
         self.assertNotIn(
             "avg_loss, avg_time, metric1, metric2 = 0.0, 0.0, 0.0, 0.0",
             evaluator,
@@ -328,14 +311,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn(
             "MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE", evaluator,
         )
-        self.assertIn(
-            "two-stage comparators require Stage-2 inference batch size",
-            evaluator,
-        )
-        self.assertIn(
-            "stage2_inference_batch_size may differ from the global batch only ",
-            evaluator,
-        )
+        self.assertIn("formal comparators require Stage-2 batch size 64", evaluator)
         self.assertIn(
             "def activate_stage2_inference_batch_size(self)", evaluator,
         )

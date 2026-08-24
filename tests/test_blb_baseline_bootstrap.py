@@ -506,10 +506,12 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         runner_path = pathlib.Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "sequential_runner.py"
         source = runner_path.read_text(encoding="utf-8")
 
-        self.assertIn("load_static_skeletons_baseline", source)
+        self.assertIn("load_calibrated_stage2_action_context", source)
+        self.assertIn("validate_calibrated_stage2_action_context", source)
         self.assertNotIn("estimate_all_max_action", source)
         self.assertIn("snap_sf_to_noise_table=False", source)
-        self.assertIn("baseline_action_vec = np.asarray(_ss_action_vec", source)
+        self.assertIn("baseline_action_vec = np.asarray(", source)
+        self.assertIn("calibrated_action_context.baseline_action_vec", source)
         self.assertNotIn("fallback 到 load_max_sfs", source)
 
 

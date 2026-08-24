@@ -76,10 +76,10 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             optimizer_cfg_overrides: list = dataclasses.field(default_factory=list)
 
         cls.RuntimeResult = RuntimeResult
-        sequential = types.ModuleType(f"{pkg_name}.sequential_env")
-        sequential.BlockRuntimeResult = RuntimeResult
-        sequential.evaluate_block_from_full_vector = lambda **kwargs: None
-        sys.modules[sequential.__name__] = sequential
+        materialization = types.ModuleType(f"{pkg_name}.block_materialization")
+        materialization.BlockRuntimeResult = RuntimeResult
+        materialization.evaluate_block_from_full_vector = lambda **kwargs: None
+        sys.modules[materialization.__name__] = materialization
 
         cls.mod = load(f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py")
         cls.fusion_map = cls.fcm.FusionCountMap.load("mrpc", root=str(BLB_DIR))
@@ -678,7 +678,8 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
         sys.modules[optimizer.__name__] = optimizer
 
         cls.sequential = load(
-            f"{pkg_name}.sequential_env", BLB_DIR / "sequential_env.py",
+            f"{pkg_name}.block_materialization",
+            BLB_DIR / "block_materialization.py",
         )
         cls.layerwise_env = load(
             f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py",

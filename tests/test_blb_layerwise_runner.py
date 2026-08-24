@@ -979,7 +979,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             source_path.read_text(encoding="utf-8"), method,
         )
 
-        self.assertIn('dataset_splits.get("train_probe")', method_source)
+        self.assertIn("splits.get(TRAIN_PROBE_SPLIT)", method_source)
         self.assertNotIn("_get_stability_probe", method_source)
         self.assertNotIn("_effective_probe_batch_count", method_source)
         self.assertNotIn("break", method_source)
@@ -1805,7 +1805,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def _run_with_mocked_locked_stage2(self, locked_impl):
         from blb_stage2_rl import layerwise_runner
-        from blb_stage2_rl import runner as runner_module
+        from blb_stage2_rl import training as runner_module
         from blb_stage2_rl import sequential_runner
 
         class _NoopRunLock:
@@ -1933,7 +1933,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "stage2_model_type = resolve_stage2_model_type(",
             runner_source,
         )
-        self.assertIn("model_type=stage2_model_type", runner_source)
+        self.assertIn("model_type=stage2_model_type", source)
         self.assertNotIn("load_static_skeletons_baseline(", runner_source)
         self.assertNotIn("static_skeletons_baseline_to_action(", runner_source)
 

@@ -446,7 +446,7 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
         )
         method = source[method_start:method_end]
 
-        self.assertIn('dataset_splits.get("train_probe")', method)
+        self.assertIn("splits.get(TRAIN_PROBE_SPLIT)", method)
         self.assertIn("drop_last=False", method)
         self.assertNotIn("_get_stability_probe", method)
         self.assertNotIn('dataset_splits.get("validation_full")', method)
