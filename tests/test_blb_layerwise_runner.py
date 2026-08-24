@@ -3020,7 +3020,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertGreaterEqual(branch_source.count("save_layerwise_checkpoint("), 3)
         self.assertIn('strict_best=summary.get("strict_best")', branch_source)
 
-    def test_layerwise_branch_persists_authoritative_run_mode_and_strict_summary(self):
+    def test_layerwise_branch_persists_train_probe_schema_and_strict_summary(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
         )
@@ -3032,7 +3032,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         branch_source = ast.get_source_segment(source, branch)
 
-        self.assertIn('"stage2_layerwise_robust_run_v5"', branch_source)
+        self.assertIn('"schema_version": LAYERWISE_RUN_SCHEMA', branch_source)
+        self.assertIn('"dataset_protocol_hash": getattr(', branch_source)
+        self.assertIn('"search_split": SEARCH_EVIDENCE_SPLIT', branch_source)
         self.assertIn('"layerwise_run_manifest.json"', branch_source)
         self.assertIn("write_strict_json_file(", branch_source)
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)
