@@ -124,7 +124,7 @@ class Stage2All4BaseConfigTest(unittest.TestCase):
         self.assertEqual({step.graph_key_suffix for step in block5}, {"block5_n4"})
 
     def test_all_committed_profiles_have_degree4_block5_map(self):
-        maps_root = REPO_ROOT / "blb_stage2_rl" / "fusion_maps"
+        maps_root = REPO_ROOT / "configs/preparation/fusion/maps"
         profiles = ("mrpc", "rte", "sst2", "mrpc_large", "rte_large", "sst2_large")
 
         for profile in profiles:

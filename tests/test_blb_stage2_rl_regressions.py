@@ -1703,7 +1703,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
 
     def test_registry_export_records_action_values_and_current_slot_count(self):
         from rfr.search.common.action_space import K_LEVELS
-        from scripts.blb_export_action_registry import build_registry_payload
+        from rfr.preparation.fusion.export_action_registry import build_registry_payload
 
         payload = build_registry_payload(
             profile="mrpc",

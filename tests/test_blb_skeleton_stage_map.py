@@ -11,22 +11,15 @@ torch-free lane. ``rescale_optimizer`` is torch-free too.
 """
 from __future__ import annotations
 
-import os
 import pathlib
-import sys
 import tempfile
 import unittest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _RO_ROOT = _REPO_ROOT / "configs/preparation/rescale"
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
 
 try:
-    if str(_BLB_DIR) not in sys.path:
-        sys.path.insert(0, str(_BLB_DIR))
-    if str(_RO_ROOT) not in sys.path:
-        sys.path.insert(0, str(_RO_ROOT))
-    import skeleton_stage_map as ssm  # type: ignore
+    from rfr.search.common import skeleton_stage_map as ssm  # type: ignore
     from rfr.preparation.rescale.optimizer import ReplanSession  # type: ignore
 
     _IMPORT_ERROR = None

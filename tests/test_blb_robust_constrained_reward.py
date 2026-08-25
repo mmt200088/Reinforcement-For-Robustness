@@ -398,12 +398,9 @@ def _runtime_modules():
         return module
 
     reward_module = load(f"{package_name}.reward", _BLB_DIR / "reward.py")
-    statistical_constraints = load(
-        f"{package_name}.statistical_constraints",
-        _BLB_DIR / "statistical_constraints.py",
-    )
+    from rfr.search.common import statistical_constraints
 
-    action_space = types.ModuleType(f"{package_name}.action_space")
+    action_space = types.ModuleType("rfr.search.common.action_space")
     for name in ("ActionDecodeResult", "MaxSFsTable"):
         setattr(action_space, name, type(name, (), {}))
     action_space.BLB_FIRST_INPUT_N = 0
@@ -419,11 +416,11 @@ def _runtime_modules():
         lambda action, *_args, **_kwargs: np.asarray(action)
     )
 
-    candidate_store = types.ModuleType(f"{package_name}.candidate_store")
+    candidate_store = types.ModuleType("rfr.search.common.candidate_store")
     candidate_store.action_hash = lambda action: "".join(
         f"{int(value):016x}" for value in np.asarray(action).reshape(-1)
     )
-    optimizer_cost = types.ModuleType(f"{package_name}.optimizer_cost")
+    optimizer_cost = types.ModuleType("rfr.preparation.rescale.optimizer_cost")
     optimizer_cost.apply_optimizer_outputs_to_cfgs = lambda **_kwargs: {
         "optimizer_cfg_overrides": {},
     }

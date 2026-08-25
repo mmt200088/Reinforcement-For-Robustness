@@ -97,7 +97,7 @@ def _reject_invalid_raw_action(action_vec, *_args, **_kwargs):
 
 @contextmanager
 def _stubbed_action_space():
-    package = importlib.import_module("blb_stage2_rl")
+    package = importlib.import_module("rfr.search.common")
     module_name = "rfr.search.common.action_space"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_space", _MISSING)
@@ -156,7 +156,7 @@ def _stubbed_action_space():
 
 @contextmanager
 def _stubbed_action_io():
-    package = importlib.import_module("blb_stage2_rl")
+    package = importlib.import_module("rfr.search.common")
     module_name = "rfr.search.common.action_io"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_io", _MISSING)

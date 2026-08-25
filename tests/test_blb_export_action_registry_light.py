@@ -5,12 +5,12 @@ from unittest import mock
 
 class BLBExportActionRegistryLightTests(unittest.TestCase):
     def test_module_import_is_dependency_light(self):
-        import scripts.blb_export_action_registry as registry
+        from rfr.preparation.fusion import export_action_registry as registry
 
         self.assertTrue(callable(registry.build_registry_payload))
 
     def test_build_registry_payload_reuses_field_offsets(self):
-        import scripts.blb_export_action_registry as registry
+        from rfr.preparation.fusion import export_action_registry as registry
 
         calls = {"offsets": 0}
 
@@ -84,7 +84,7 @@ class BLBExportActionRegistryLightTests(unittest.TestCase):
         self.assertEqual(k_records[0]["all_max_action_index"], 2)
 
     def test_all_max_action_index_scans_k_levels_once_without_copy(self):
-        import scripts.blb_export_action_registry as registry
+        from rfr.preparation.fusion import export_action_registry as registry
 
         class CountingLevels:
             def __init__(self, values):
@@ -105,7 +105,7 @@ class BLBExportActionRegistryLightTests(unittest.TestCase):
         self.assertEqual(k_levels.iterations, 1)
 
     def test_main_streams_stdout_json_without_json_dumps_string(self):
-        import scripts.blb_export_action_registry as registry
+        from rfr.preparation.fusion import export_action_registry as registry
 
         source = inspect.getsource(registry.main)
 

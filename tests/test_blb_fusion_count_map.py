@@ -313,7 +313,7 @@ class ActiveRescalePremiseTest(unittest.TestCase):
 
         from rfr.search.common import skeleton_stage_map as ssm
 
-        arch_path = _RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json"
+        arch_path = _RO_ROOT / "mrpc" / "static_skeletons_mrpc.json"
         archive = json.loads(arch_path.read_text(encoding="utf-8"))
         plans = ssm.build_stage_plans_from_archive(archive)
         for gk in ["block1_mrpc", "block2_mrpc", "block4", "block5_n1", "block5_n2", "block5_n4"]:

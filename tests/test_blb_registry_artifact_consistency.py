@@ -7,7 +7,7 @@ from unittest import mock
 
 class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
     def test_exported_registry_files_match_embedded_payload(self):
-        from scripts.blb_export_action_registry import (
+        from rfr.preparation.fusion.export_action_registry import (
             build_registry_payload,
             write_registry_artifacts,
         )
@@ -54,7 +54,7 @@ class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
             )
 
     def test_registry_json_artifacts_stream_without_materializing_strings(self):
-        import scripts.blb_export_action_registry as registry
+        from rfr.preparation.fusion import export_action_registry as registry
 
         slot_record = {
             "slot_id": "L0.B1.gelu_out_sf",

@@ -64,8 +64,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_diagnostics_restore_reconciles_primary_and_structured_mirror(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_reconcile_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_reconcile_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -145,8 +145,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_diagnostics_restore_rejects_primary_mirror_conflict(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_conflict_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_conflict_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -196,8 +196,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_diagnostics_restore_backfills_primary_from_structured_tail(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_primary_backfill_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_primary_backfill_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -243,8 +243,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_diagnostics_checkpoint_sizes_roll_back_both_jsonl_trees(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_sizes_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_sizes_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -804,8 +804,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_can_mirror_to_structured_data_writer(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -909,8 +909,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_layerwise_strict_diagnostics_propagate_mandatory_write_failures(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_strict_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_strict_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -963,8 +963,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_reuses_primary_jsonl_handles(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_jsonl_reuse_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_jsonl_reuse_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1060,8 +1060,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_restore_rebuilds_full_history_without_reappend(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_resume_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_resume_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1159,8 +1159,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_bounded_history_preserves_exact_cumulative_state(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_bounded_history_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_bounded_history_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1347,8 +1347,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_restore_existing_accepts_identity_boundaries(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_identity_boundaries_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_identity_boundaries_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1447,8 +1447,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_restore_existing_rejects_noncontiguous_identities(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_identity_validation_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_identity_validation_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1522,8 +1522,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_restore_accepts_invalid_nonfinite_metrics(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_invalid_resume_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_invalid_resume_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -1607,8 +1607,8 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_stage2_diagnostics_streams_markdown_report_writes(self):
         spec = importlib.util.spec_from_file_location(
-            "blb_stage2_rl.blb_stage2_diagnostics_report_stream_for_test",
-            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+            "rfr.search.common.blb_stage2_diagnostics_report_stream_for_test",
+            REPO_ROOT / "src/rfr/search/common/diagnostics.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module

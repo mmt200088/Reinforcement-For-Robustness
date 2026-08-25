@@ -13,7 +13,7 @@ _MISSING = object()
 
 @contextmanager
 def _stubbed_action_space():
-    package = importlib.import_module("blb_stage2_rl")
+    package = importlib.import_module("rfr.search.common")
     module_name = "rfr.search.common.action_space"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_space", _MISSING)
@@ -193,7 +193,7 @@ class TruncationLevelsTest(unittest.TestCase):
             self.assertEqual(action_space.LEVELS_K, truncation_levels.LEVELS_K)
 
     def test_action_space_stub_restores_global_module_state(self):
-        package = importlib.import_module("blb_stage2_rl")
+        package = importlib.import_module("rfr.search.common")
         module_name = "rfr.search.common.action_space"
         original_module = sys.modules.get(module_name, _MISSING)
         original_attribute = package.__dict__.get("action_space", _MISSING)

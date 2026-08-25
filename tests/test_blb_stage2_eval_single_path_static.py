@@ -9,7 +9,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_model_eval_routes_use_canonical_action_materialization(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
-        sequential = (repo / "blb_stage2_rl" / "block_materialization.py").read_text(
+        sequential = (repo / "src/rfr/preparation/rescale/block_materialization.py").read_text(
             encoding="utf-8"
         )
         paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
@@ -194,7 +194,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_stable_json_hash_callers_use_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         candidate_store = (repo / "src/rfr/search/common/candidate_store.py").read_text(encoding="utf-8")
-        registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
+        registry = (repo / "src/rfr/preparation/fusion/export_action_registry.py").read_text(encoding="utf-8")
 
         self.assertRegex(candidate_store, r"from rfr.common.json_utils import .*\bstable_json_hash\b")
         self.assertRegex(registry, r"from rfr.common.json_utils import .*\bstable_json_hash\b")

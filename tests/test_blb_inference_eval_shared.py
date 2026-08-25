@@ -40,8 +40,7 @@ class SupportedMetricContractTest(unittest.TestCase):
     def test_metric_module_has_no_unsupported_metric_implementations(self):
         source = (
             pathlib.Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
-            / "eval_metrics.py"
+            / "src/rfr/search/common/eval_metrics.py"
         ).read_text(encoding="utf-8")
         for forbidden in (
             "pearson_corr",
