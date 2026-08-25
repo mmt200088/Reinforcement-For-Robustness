@@ -6,6 +6,7 @@ from unittest import mock
 import numpy as np
 
 import rfr.search.comparators.common.stage2_core as search_baselines_module
+from rfr.search.comparators.coinn_ga import stage2 as coinn_ga_module
 from rfr.search.common.layerwise_action import (
     decode_layer_gene,
     decode_layerwise_action_genes,
@@ -18,17 +19,19 @@ from rfr.search.comparators.common.stage2_core import (
     SearchConfig,
     SearchEvaluation,
     SearchMetrics,
-    _bo_acquisition_key,
-    _diverse_second_parent,
     _hamming_distance,
-    _make_ga_child,
-    _replacement_mutation,
-    _select_hamming_diverse_elites,
     _structured_initial_design,
     candidate_rank_key,
     normalize_search_backend,
     run_search,
     validate_comparator_scientific_parameters,
+)
+from rfr.search.comparators.bo_rf.stage2 import _bo_acquisition_key
+from rfr.search.comparators.coinn_ga.stage2 import (
+    _diverse_second_parent,
+    _make_ga_child,
+    _replacement_mutation,
+    _select_hamming_diverse_elites,
 )
 
 
@@ -820,7 +823,7 @@ class GeneticSearchTests(unittest.TestCase):
                 return 1
 
         rng = RecordingRng()
-        selected = search_baselines_module._tournament_parent(
+        selected = coinn_ga_module._tournament_parent(
             (low_resource, high_resource, infeasible), rng,
         )
 

@@ -31,11 +31,13 @@ from .stage1_core import (
     Stage1Constraints,
     Stage1SearchSpace,
     SurrogateFactory,
-    _select_hamming_diverse_elites,
     candidate_rank_key,
     normalize_search_backend,
     run_search,
     structured_maximin_initial_design,
+)
+from rfr.search.comparators.coinn_ga.stage1 import (
+    _select_hamming_diverse_elites,
 )
 
 

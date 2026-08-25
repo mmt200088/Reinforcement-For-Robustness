@@ -36,6 +36,10 @@ def _load_module(short_name):
 
 _search_baselines = _load_module("stage1_core")
 _search_runner = _load_module("stage1_runner")
+from rfr.search.comparators.bo_rf.stage1 import _bo_acquisition_key
+from rfr.search.comparators.bo_rf import stage1 as _bo_module
+from rfr.search.comparators.coinn_ga import stage1 as _ga_module
+
 SearchConfig = _search_baselines.SearchConfig
 SearchEvaluation = _search_baselines.SearchEvaluation
 SearchResult = _search_baselines.SearchResult
@@ -44,11 +48,10 @@ Stage1SearchSpace = _search_baselines.Stage1SearchSpace
 candidate_rank_key = _search_baselines.candidate_rank_key
 run_search = _search_baselines.run_search
 structured_maximin_initial_design = _search_baselines.structured_maximin_initial_design
-_bo_acquisition_key = _search_baselines._bo_acquisition_key
 _select_hamming_diverse_elites = (
-    _search_baselines._select_hamming_diverse_elites
+    _ga_module._select_hamming_diverse_elites
 )
-_tournament = _search_baselines._tournament
+_tournament = _ga_module._tournament
 Stage1EvaluatorAdapter = _search_runner.Stage1EvaluatorAdapter
 Stage1SearchRunner = _search_runner.Stage1SearchRunner
 load_completed_search_result = _search_runner.load_completed_search_result
@@ -635,7 +638,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
             constraints=zero_constraints,
         )
         self.assertEqual(
-            _search_baselines._ga_parent_weights((extreme_infeasible,))[0],
+            _ga_module._ga_parent_weights((extreme_infeasible,))[0],
             np.nextafter(0.0, 1.0),
         )
 
@@ -672,7 +675,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         )
 
         weights = np.asarray(
-            _search_baselines._ga_parent_weights(
+            _ga_module._ga_parent_weights(
                 (extreme_loss, extreme_metrics),
             ),
             dtype=float,
@@ -685,7 +688,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         space = Stage1SearchSpace(8)
         base = (0,) * space.num_layers
         for seed in range(100):
-            mutated = _search_baselines._mutate_action(
+            mutated = _ga_module._mutate_action(
                 space,
                 base,
                 np.random.default_rng(seed),
@@ -733,7 +736,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
                 return_value=mutation_child,
             ) as mutate,
         ):
-            child, immigrant = _search_baselines._breed_unique_child(
+            child, immigrant = _ga_module._breed_unique_child(
                 space=space,
                 population=(first,),
                 cache=cache,
@@ -781,7 +784,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
                 side_effect=(duplicate, repaired),
             ) as mutate,
         ):
-            child, immigrant = _search_baselines._breed_unique_child(
+            child, immigrant = _ga_module._breed_unique_child(
                 space=space,
                 population=(first,),
                 cache=cache,
@@ -821,7 +824,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
                 return_value=duplicate,
             ),
         ):
-            child, immigrant = _search_baselines._breed_unique_child(
+            child, immigrant = _ga_module._breed_unique_child(
                 space=space,
                 population=(first,),
                 cache=cache,
@@ -2403,7 +2406,7 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                 sys.modules,
                 {"sklearn": sklearn, "sklearn.ensemble": ensemble},
         ):
-            _search_baselines._default_surrogate_factory(
+            _bo_module._default_surrogate_factory(
                 _comparator_config("bo_rf")
             )(42)
 

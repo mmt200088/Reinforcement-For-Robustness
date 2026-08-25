@@ -29,10 +29,12 @@ from .stage2_core import (
     SearchEvaluation,
     SearchMetrics,
     SearchResult,
-    _select_hamming_diverse_elites,
     candidate_rank_key,
     normalize_search_backend,
     run_search,
+)
+from rfr.search.comparators.coinn_ga.stage2 import (
+    _select_hamming_diverse_elites,
 )
 from rfr.search.rl.stage2.seed_utils import derive_layerwise_online_evaluation_seeds
 
