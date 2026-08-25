@@ -1,0 +1,65 @@
+.....................................sss...........s.s........ [  3%]
+....................................................... [  7%]
+..............................ss..................................... [ 11%]
+.................................................................... [ 15%]
+........................................................................ [ 19%]
+...............................s................................................................................ [ 26%]
+................................................. [ 29%]
+..................................................................... [ 33%]
+.................................................................... [ 37%]
+.............................................................s..... [ 41%]
+..ss.................................................................... [ 45%]
+...................................................... [ 49%]
+....................................................... [ 52%]
+........................................................... [ 56%]
+........................................................................ [ 60%]
+....................s......................................... [ 64%]
+........................................................ [ 67%]
+........................................................................ [ 71%]
+...................................................... [ 75%]
+................................................................. [ 79%]
+......s................................................ [ 82%]
+.............................................................. [ 86%]
+.......................................................................s [ 90%]
+........................................................................................................................... [ 97%]
+....................................                  [100%]
+=============================== warnings summary ===============================
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+    warnings.warn("Can't initialize NVML")
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+    r = torch._C._cuda_getDeviceCount() if nvml_count < 0 else nvml_count
+
+tests/test_blb_layerwise_policy.py::LayerwisePolicyTest::test_initial_probabilities_disable_existing_epsilon_exploration
+  /hy-tmp/rfr_verify_glue_train_probe_20260825/tests/test_blb_layerwise_policy.py:367: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+  Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+    self.assertAlmostEqual(float(sampled_log_prob), expected_selected_log_prob, places=6)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:31: CUDA unavailable
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:113: CUDA unavailable
+SKIPPED [1] tests/test_blb_block3_cuda_fusion.py:11: CUDA unavailable
+SKIPPED [1] tests/test_blb_block5_cuda_fusion.py:52: CUDA unavailable
+SKIPPED [1] tests/test_blb_block5_cuda_fusion.py:32: CUDA unavailable
+SKIPPED [1] tests/test_blb_chain_integrity.py:907: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_blb_chain_integrity.py:894: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_blb_inference_noise_fastpath.py:96: CUDA unavailable
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:390: CUDA is required for scoped same-device probe concurrency test
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:214: CUDA is required for ProbeWorker deterministic-noise tests
+SKIPPED [1] tests/test_blb_probe_deterministic_lock.py:202: CUDA is required for ProbeWorker deterministic-noise tests
+SKIPPED [1] tests/test_blb_truncation_backends.py:72: CUDA unavailable
+SKIPPED [1] tests/test_probe_runner_process_backend.py:1476: requires BLB_STAGE2_RUN_GPU_INTEGRATION=1 and at least five CUDA devices
+SKIPPED [1] tests/test_stage1_eval_accel.py:817: paired GELU size gate requires CUDA
+1646 passed, 14 skipped, 6 warnings, 267 subtests passed in 53.13s
