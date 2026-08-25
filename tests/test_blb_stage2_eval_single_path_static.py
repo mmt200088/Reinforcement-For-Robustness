@@ -139,7 +139,12 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             for token in forbidden:
                 if token in text:
                     offenders.append(f"{path.relative_to(repo)} contains {token}")
-            self.assertIn("apply_optimizer_outputs_to_cfgs", text)
+            expected_helper = (
+                "materialize_action_for_model"
+                if path.name == "env.py"
+                else "apply_optimizer_outputs_to_cfgs"
+            )
+            self.assertIn(expected_helper, text)
         self.assertEqual(offenders, [])
 
     def test_paean_final_eval_does_not_forward_unapplied_replan_cfgs(self):
