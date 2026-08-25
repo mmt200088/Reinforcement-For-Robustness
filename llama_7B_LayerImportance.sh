@@ -467,7 +467,7 @@ fi
 if [ "$MODE" != "stage1-only" ]; then
   command -v flock >/dev/null 2>&1 || fail "flock is required for Stage-2 persistent locking"
   mkdir -p "$(dirname "$RUN_ROOT")"
-  LOCK_PATH="$(dirname "$RUN_ROOT")/.$(basename "$RUN_ROOT").stage2.lock"
+  LOCK_PATH="$(dirname "$RUN_ROOT")/.$(basename "$RUN_ROOT").stage2_rl.lock"
   exec 9>>"$LOCK_PATH"
   flock -n 9 || fail "persistent directory is already active: $RUN_ROOT"
   printf 'pid=%s\n' "$$" 1>&9
