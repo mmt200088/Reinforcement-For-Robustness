@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import inspect
 import json
 import os
@@ -14,28 +13,8 @@ from unittest import mock
 import numpy as np
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_COMMON_DIR = _REPO_ROOT / "src/rfr/search/comparators/common"
-_PACKAGE_NAME = "_stage1_search_testpkg"
-_package = ModuleType(_PACKAGE_NAME)
-_package.__path__ = [str(_COMMON_DIR)]
-sys.modules[_PACKAGE_NAME] = _package
-
-
-def _load_module(short_name):
-    full_name = f"{_PACKAGE_NAME}.{short_name}"
-    spec = importlib.util.spec_from_file_location(
-        full_name,
-        _COMMON_DIR / f"{short_name}.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[full_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_search_baselines = _load_module("stage1_core")
-_search_runner = _load_module("stage1_runner")
+from rfr.search.comparators.common import stage1_core as _search_baselines
+from rfr.search.comparators.common import stage1_runner as _search_runner
 from rfr.search.comparators.bo_rf.stage1 import _bo_acquisition_key
 from rfr.search.comparators.bo_rf import stage1 as _bo_module
 from rfr.search.comparators.coinn_ga import stage1 as _ga_module
@@ -659,7 +638,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
     def test_ga_all_infeasible_fitness_decreases_with_violation(self):
         mild = _evaluation((0,), loss=1.02)
         severe = _evaluation((1,), loss=1.20)
-        weights = getattr(_search_baselines, "_ga_parent_weights", None)
+        weights = getattr(_ga_module, "_ga_parent_weights", None)
 
         self.assertIsNotNone(weights)
         mild_weight, severe_weight = weights((mild, severe))
@@ -721,17 +700,17 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_tournament",
                 return_value=first,
             ) as select_parent,
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_crossover",
                 side_effect=AssertionError("COINN-GA crossover is forbidden"),
             ) as crossover,
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_mutate_action",
                 return_value=mutation_child,
             ) as mutate,
@@ -769,17 +748,17 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_tournament",
                 return_value=first,
             ),
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_crossover",
                 side_effect=AssertionError("COINN-GA crossover is forbidden"),
             ),
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_mutate_action",
                 side_effect=(duplicate, repaired),
             ) as mutate,
@@ -814,12 +793,12 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_tournament",
                 return_value=first,
             ),
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_mutate_action",
                 return_value=duplicate,
             ),
@@ -939,7 +918,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                _search_baselines,
+                _ga_module,
                 "_breed_unique_child",
                 return_value=(None, False),
             ),

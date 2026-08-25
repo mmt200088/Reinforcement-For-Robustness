@@ -5,7 +5,6 @@ from unittest import mock
 
 import numpy as np
 
-import rfr.search.comparators.common.stage2_core as search_baselines_module
 from rfr.search.comparators.coinn_ga import stage2 as coinn_ga_module
 from rfr.search.common.layerwise_action import (
     decode_layer_gene,
@@ -836,7 +835,7 @@ class GeneticSearchTests(unittest.TestCase):
         space = LayerwiseSearchSpace(1)
         mild = _evaluation(space.safe_action, metric1=0.88)
         severe = _evaluation(space.max_resource_action, metric1=0.10)
-        weights = getattr(search_baselines_module, "_ga_parent_weights", None)
+        weights = getattr(coinn_ga_module, "_ga_parent_weights", None)
 
         self.assertIsNotNone(weights)
         mild_weight, severe_weight = weights((mild, severe))
@@ -872,7 +871,7 @@ class GeneticSearchTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_tournament_parent",
                 return_value=first,
             ) as select_parent,
@@ -882,7 +881,7 @@ class GeneticSearchTests(unittest.TestCase):
                 side_effect=AssertionError("COINN-GA crossover is forbidden"),
             ) as crossover,
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_replacement_mutation",
                 return_value=mutation_child,
             ) as mutate,
@@ -910,7 +909,7 @@ class GeneticSearchTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_tournament_parent",
                 return_value=first,
             ),
@@ -920,7 +919,7 @@ class GeneticSearchTests(unittest.TestCase):
                 side_effect=AssertionError("COINN-GA crossover is forbidden"),
             ),
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_replacement_mutation",
                 side_effect=(duplicate, repaired),
             ) as mutate,
@@ -945,12 +944,12 @@ class GeneticSearchTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_tournament_parent",
                 return_value=parent,
             ),
             mock.patch.object(
-                search_baselines_module,
+                coinn_ga_module,
                 "_replacement_mutation",
                 return_value=collided,
             ) as mutate,
