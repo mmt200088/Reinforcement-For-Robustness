@@ -117,6 +117,11 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         for backend in ("bo_rf", "greedy", "coinn_ga"):
             self.assertIn(f'SEARCH_BACKEND="{backend}"', source)
 
+    def test_launcher_uses_layerwise_run_lock_suffix(self):
+        source = LAUNCHER.read_text(encoding="utf-8")
+        self.assertIn('.stage2_rl.lock"', source)
+        self.assertNotIn('.stage2.lock"', source)
+
     def test_stage1_and_stage2_use_the_expected_production_routes(self):
         stage1_argv, stage1_path, stage1_meta = self._capture(
             "rl", "--run-tag", "stage1-test", mode="stage1-only"
