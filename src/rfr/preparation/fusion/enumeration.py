@@ -696,7 +696,11 @@ def prepare_block_type_context(
     baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
 
 
-    _arch_path = _os.path.join(str(rescale_optimizer_root), "configs", str(profile), f"static_skeletons_{profile}.json")
+    _arch_path = _os.path.join(
+        str(rescale_optimizer_root),
+        str(profile),
+        f"static_skeletons_{profile}.json",
+    )
     with open(_arch_path, encoding="utf-8") as _f:
         _archive = _json.load(_f)
     _action_space._ACTIVE_RESCALE_SETS_CACHE = {

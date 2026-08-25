@@ -129,7 +129,7 @@ class SkeletonStageMapTest(unittest.TestCase):
 class LoadProfileConfigsTest(unittest.TestCase):
     def test_skips_json_named_directories(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg_dir = pathlib.Path(td) / "configs" / "toy"
+            cfg_dir = pathlib.Path(td) / "toy"
             cfg_dir.mkdir(parents=True)
             (cfg_dir / "block1_toy.json").write_text('{"graph": "block1"}\n', encoding="utf-8")
             (cfg_dir / "static_skeletons_toy.json").write_text('{"ignored": true}\n', encoding="utf-8")

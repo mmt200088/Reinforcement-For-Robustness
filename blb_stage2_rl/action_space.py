@@ -16,6 +16,7 @@ import numpy as np
 
 from rfr.common.json_utils import read_json_file
 from rfr.preparation.fusion.count_map import FUSION_CONFIG_ROOT
+from rfr.preparation.rescale import RESCALE_CONFIG_ROOT
 from blb_rl_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,
@@ -1539,13 +1540,10 @@ def _load_active_rescale_sets() -> Dict[str, frozenset]:
     if _ACTIVE_RESCALE_SETS_CACHE is None:
         out: Dict[str, frozenset] = {}
         try:
-            import os
             from . import skeleton_stage_map as _ssm
-            ro_root = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "configs/preparation/rescale",
+            arch_path = (
+                RESCALE_CONFIG_ROOT / "mrpc" / "static_skeletons_mrpc.json"
             )
-            arch_path = os.path.join(ro_root, "configs", "mrpc", "static_skeletons_mrpc.json")
             archive = read_json_file(arch_path)
             for gk, plan in _ssm.build_stage_plans_from_archive(archive).items():
                 out[gk] = frozenset(plan.active_rescale_rl_fields)

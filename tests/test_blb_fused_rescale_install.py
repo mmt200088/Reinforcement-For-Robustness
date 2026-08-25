@@ -181,7 +181,13 @@ class RealReplanTest(unittest.TestCase):
         cls.inv = InProcessInvoker.from_profile(rescale_optimizer_root=root, profile="mrpc")
 
     def _boosted_slots(self, map_file):
-        m = json.loads((_REPO / "blb_stage2_rl" / "fusion_maps" / "mrpc" / map_file).read_text())
+        m = json.loads(
+            (
+                _REPO
+                / "configs/preparation/fusion/maps/mrpc"
+                / map_file
+            ).read_text()
+        )
         opt = next(o for o in m["options"] if int(o.get("fusion_count", 0)) == 1)
         self.assertTrue(opt.get("boosted") and opt.get("explicit_field_values"),
                         f"{map_file} fc=1 must be a boosted option")

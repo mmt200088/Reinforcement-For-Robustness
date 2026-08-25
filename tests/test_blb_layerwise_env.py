@@ -683,6 +683,9 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             f"{pkg_name}.block_materialization",
             REPO_ROOT / "src/rfr/preparation/rescale/block_materialization.py",
         )
+        cls.sequential.action_vector_to_cfgs = decode
+        cls.sequential.build_block_cfg_from_field_values = build
+        cls.sequential.materialize_decoded_action = materialize_optimizer
         cls._materialization_module_name = (
             "rfr.preparation.rescale.block_materialization"
         )
