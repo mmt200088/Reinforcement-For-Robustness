@@ -23,6 +23,7 @@ output.log
 ppo_step_info.txt
 noise_ppo_step_info*.txt
 pruning_search_log.txt
+/noise_std_table.csv
 /rl_results/
 /Parting Chapter/
 /Prelude Chapter/

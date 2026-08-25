@@ -31,6 +31,7 @@ FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
 
 FORBIDDEN_TRACKED_ARTIFACT_FILES = {
     "commonsense_170k.json",
+    "noise_std_table.csv",
     "pruning_search_log_eval.txt",
     "rl_agent_checkpoint_BertForSequenceClassification.pt",
 }
@@ -217,6 +218,14 @@ class ProductionSurfaceTests(unittest.TestCase):
     def test_required_compact_results_are_tracked(self):
         paths = set(tracked_paths())
         self.assertTrue(ALLOWED_RESULT_FILES.issubset(paths))
+
+    def test_local_noise_table_is_ignored(self):
+        completed = subprocess.run(
+            ["git", "check-ignore", "--quiet", "noise_std_table.csv"],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
 
     def test_representative_log_is_bounded(self):
         log_path = REPO_ROOT / "examples/representative_rl_log/stage2_mrpc_600ep.jsonl"

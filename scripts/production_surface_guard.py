@@ -35,6 +35,7 @@ FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
 
 FORBIDDEN_TRACKED_ARTIFACT_FILES = {
     "commonsense_170k.json",
+    "noise_std_table.csv",
     "pruning_search_log_eval.txt",
     "rl_agent_checkpoint_BertForSequenceClassification.pt",
 }
