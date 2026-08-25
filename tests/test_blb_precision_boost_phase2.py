@@ -69,7 +69,7 @@ class FunctionHandlerAboveTableTest(unittest.TestCase):
     only (function_handler imports torch)."""
 
     def test_get_input_noise_variance_by_N_above_max_is_zero(self):
-        import function_handler as fh
+        from rfr.search.runtime import model_handler as fh
         N = 16384
         tbl_max = max(fh.NOISE_VARIANCE_TABLE_BY_N[N])
         for sf in (tbl_max + 1, tbl_max + 3, 60):

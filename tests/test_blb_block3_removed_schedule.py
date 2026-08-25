@@ -48,7 +48,7 @@ class Block3RuntimeSourceTest(unittest.TestCase):
         self.assertNotIn("if int(block_idx) == 3:", body)
 
     def test_bridge_installs_block3_noise(self):
-        text = source_text("blb_rl_bridge.py")
+        text = source_text("src/rfr/search/runtime/blb_bridge.py")
         self.assertIn("self.handler.replace_layer_block3_noise(", text)
         self.assertIn('add("block3")', text)
 
@@ -97,7 +97,7 @@ class Block3RuntimeBehaviorTest(unittest.TestCase):
         self.assertEqual(block3_names, ["block3_exp_n6_L0", "block3_exp_n6_L1"])
 
     def test_bridge_installs_and_restores_block3_per_layer(self):
-        from blb_rl_bridge import BLBNoiseRLBridge
+        from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
 
         class Handler:
             def __init__(self):

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
+export PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
 usage() {
   cat <<'EOF'
@@ -590,7 +591,7 @@ fi
 LAUNCH_CMD=("${CMD[@]}")
 if [ "$ALGORITHM" = "rl" ] && [ "$ELASTIC_GPU_MODE" = "auto" ]; then
   LAUNCH_CMD=(
-    python3 scripts/elastic_gpu_supervisor.py
+    python3 -m rfr.search.runtime.supervisor
     --run-dir "$RUN_ROOT"
     --recovery-interval "$ELASTIC_GPU_RECOVERY_INTERVAL"
     --max-restarts "$ELASTIC_GPU_MAX_RESTARTS"

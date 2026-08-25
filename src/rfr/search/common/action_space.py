@@ -17,7 +17,7 @@ import numpy as np
 from rfr.common.json_utils import read_json_file
 from rfr.preparation.fusion.count_map import FUSION_CONFIG_ROOT
 from rfr.preparation.rescale import RESCALE_CONFIG_ROOT
-from blb_rl_bridge import (
+from rfr.search.runtime.blb_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,
     Block3ActionSpec,
@@ -29,7 +29,7 @@ from blb_rl_bridge import (
     build_block4_cfg_from_action,
     build_block5_cfg_from_action,
 )
-from function_handler import (
+from rfr.search.runtime.model_handler import (
     NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N,
     Block1NoiseConfig,
     Block2NoiseConfig,

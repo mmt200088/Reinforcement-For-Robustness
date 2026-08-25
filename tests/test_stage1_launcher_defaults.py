@@ -12,7 +12,7 @@ class Stage1LauncherDefaultTest(unittest.TestCase):
 
         self.assertIn('ELASTIC_GPU_MODE="auto"', source)
         self.assertIn("--elastic-gpu-mode", source)
-        self.assertIn("scripts/elastic_gpu_supervisor.py", source)
+        self.assertIn("rfr.search.runtime.supervisor", source)
         self.assertIn(
             '[ "$MODE" = "stage1-only" ] && [ -z "$STAGE1_RL_DEVICES" ]',
             source,

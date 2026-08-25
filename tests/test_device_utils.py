@@ -1,7 +1,7 @@
 from pathlib import Path
 import unittest
 
-from device_utils import (
+from rfr.search.runtime.device_utils import (
     normalize_logical_device_token,
     parse_device_ids,
     parse_logical_device_spec,

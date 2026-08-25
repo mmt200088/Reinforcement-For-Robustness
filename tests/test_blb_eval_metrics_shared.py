@@ -168,7 +168,7 @@ class SharedEvalMetricsTest(unittest.TestCase):
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
     def test_probe_eval_uses_the_shared_installed_inference_module(self):
-        from blb_stage2_rl.inference_eval import run_installed_probe_trial
+        from rfr.search.runtime.inference_eval import run_installed_probe_trial
 
         self.assertTrue(callable(run_installed_probe_trial))
 

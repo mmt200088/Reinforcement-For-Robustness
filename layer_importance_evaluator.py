@@ -21,12 +21,12 @@ from sklearn.metrics import accuracy_score, f1_score
 from rfr.search.common.eval_metrics import (
     summarize_eval_trials,
 )
-from blb_stage2_rl.inference_eval import (
+from rfr.search.runtime.inference_eval import (
     normalize_labels_for_metrics as shared_normalize_labels_for_metrics,
     normalize_logits_for_metrics as shared_normalize_logits_for_metrics,
     run_installed_model_on_dataloader,
 )
-from function_handler import (
+from rfr.search.runtime.model_handler import (
     ReversibleLayerHandler,
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     INPUT_NOISE_DEFAULT_SCALING_FACTOR,
@@ -43,7 +43,7 @@ from rfr.preparation.data.mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
     validate_mrpc_evaluation_setup,
 )
-from blb_stage2_rl.runtime_control import (
+from rfr.search.runtime.control import (
     PROGRESS_BOX_PPO_INTERVAL as NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
     STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
     consume_stop_flag as consume_stop_flag_file,
@@ -57,7 +57,7 @@ from blb_stage2_rl.runtime_control import (
 )
 from rfr.common.report_format_utils import format_elapsed as _fmt_elapsed
 from rfr.common.report_format_utils import progress_bar as _progress_bar
-from elastic_gpu import (
+from rfr.search.runtime.elastic_gpu import (
     ElasticGPUFailure,
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
@@ -4791,7 +4791,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
             try:
-                from blb_stage2_rl.probe_runner import (
+                from rfr.search.runtime.probe_runner import (
                     enable_cuda_reward_probe_fast_math,
                 )
                 enable_cuda_reward_probe_fast_math()

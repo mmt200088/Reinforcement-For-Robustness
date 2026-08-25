@@ -400,7 +400,7 @@ def _workspace_tempdir():
 
 class BLBInstallLogRegressionTests(unittest.TestCase):
     def test_blb_install_log_helper_defaults_quiet(self):
-        import function_handler
+        from rfr.search.runtime import model_handler
 
         previous = os.environ.pop("BLB_NOISE_INSTALL_LOGS", None)
         try:
@@ -413,7 +413,7 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
                 os.environ["BLB_NOISE_INSTALL_LOGS"] = previous
 
     def test_blb_install_log_helper_respects_quiet_env(self):
-        import function_handler
+        from rfr.search.runtime import model_handler
 
         previous = os.environ.get("BLB_NOISE_INSTALL_LOGS")
         try:

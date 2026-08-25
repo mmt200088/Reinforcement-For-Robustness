@@ -10,8 +10,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from blb_rl_bridge import BLBNoiseRLBridge
-from function_handler import reseed_noise_rng
+from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
+from rfr.search.runtime.model_handler import reseed_noise_rng
 from rfr.search.common.action_space import (
     ActionDecodeResult,
     _block_default_N,

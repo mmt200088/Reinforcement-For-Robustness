@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from blb_rl_bridge import BLBNoiseRLBridge
+from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
 from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 
 from rfr.search.common.action_space import (
@@ -29,9 +29,9 @@ from rfr.search.common.action_space import (
     validate_action_vector,
 )
 from rfr.search.common.candidate_store import action_hash
-from .inference_eval import run_installed_probe_trial
+from rfr.search.runtime.inference_eval import run_installed_probe_trial
 from rfr.preparation.rescale.optimizer_cost import materialize_action_for_model
-from .probe_runner import (
+from rfr.search.runtime.probe_runner import (
     ProbeRunner,
     _normalize_probe_trial_result,
     diagnostics_payload,
@@ -1533,7 +1533,7 @@ class BLBStage2Env:
             self,
             trial_indices: Sequence[int],
             ) -> tuple[List[Tuple[float, float, float]], List[int]]:
-        from function_handler import noise_rng_scope, reseed_noise_rng_for_device
+        from rfr.search.runtime.model_handler import noise_rng_scope, reseed_noise_rng_for_device
         from .seed_utils import derive_probe_trial_seed
 
         indices = tuple(int(trial_index) for trial_index in trial_indices)

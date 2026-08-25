@@ -177,7 +177,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("scripts/elastic_gpu_supervisor.py", result.stdout)
+            self.assertIn("rfr.search.runtime.supervisor", result.stdout)
             self.assertIn("--blb_v3_reward_devices auto", result.stdout)
 
     def test_comparator_contracts_are_fixed_and_disjoint(self):

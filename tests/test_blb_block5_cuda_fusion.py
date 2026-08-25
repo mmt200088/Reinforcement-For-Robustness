@@ -9,13 +9,13 @@ import unittest
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block5CudaFusionTest(unittest.TestCase):
     def test_degree4_fuses_piece_setup_and_selection_into_accumulation(self):
-        from blb_stage2_rl import block5_fused_cuda
+        from rfr.search.runtime.cuda import block5_fused_cuda
 
         self.assertFalse(hasattr(block5_fused_cuda, "_initialize_piece_kernel"))
         self.assertFalse(hasattr(block5_fused_cuda, "_select_piece_kernel"))
 
     def test_degree4_computes_both_polynomial_pieces_in_one_kernel(self):
-        from blb_stage2_rl import block5_fused_cuda
+        from rfr.search.runtime.cuda import block5_fused_cuda
 
         self.assertFalse(hasattr(block5_fused_cuda, "_power_kernel"))
         self.assertFalse(hasattr(block5_fused_cuda, "_powers_kernel"))
@@ -35,7 +35,7 @@ class Block5CudaFusionTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(
             hasattr(handler, "_get_block5_fused_cuda_noise_workspace")
@@ -55,7 +55,7 @@ class Block5CudaFusionTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(hasattr(handler, "_try_block5_fused_cuda"))
         original_gelu = handler.PolynomialGELU(degree=4)

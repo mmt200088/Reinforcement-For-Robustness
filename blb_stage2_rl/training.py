@@ -256,7 +256,7 @@ class BLBStage2RLRunner:
 
     def _build_train_config_from_evaluator(self, evaluator: Any) -> BLBStage2TrainConfig:
         from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_profile
-        from .probe_runner import parse_device_ids
+        from rfr.search.runtime.probe_runner import parse_device_ids
 
         config = BLBStage2TrainConfig(
             total_episodes=int(getattr(evaluator, "stage2_rl_episodes", 0)),

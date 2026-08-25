@@ -82,7 +82,7 @@ class DatasetProtocolPersistenceSourceTest(unittest.TestCase):
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
     def test_ones_mask_encode_samples_noise_without_full_shape_ones_prefill(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         regions = {
             "block2_qkt": _source_region(
                 source,
@@ -135,7 +135,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             self.assertNotIn("torch.ones_like", region)
 
     def test_gelu_piecewise_select_uses_scalar_zero_branch(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         helper_region = _source_region(
             source,
             "def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Tensor:",
@@ -150,7 +150,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("torch.zeros_like", helper_region)
 
     def test_large_cuda_gelu_pairs_piece_evaluation_behind_size_gate(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         gelu_region = _source_region(
             source,
             "class PolynomialGELU",
@@ -167,7 +167,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertIn("y1, y2 = self._poly_pair(x)", gelu_region)
 
     def test_softmax_lower_bound_zero_branch_uses_scalar_zero(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         bert_region = _source_region(
             source,
             "    def approximation_softmax(self, x: torch.Tensor) -> torch.Tensor:",
@@ -177,7 +177,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("torch.zeros_like", bert_region)
 
     def test_scalar_encode_constants_sample_noise_without_full_shape_prefill(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         block1_region = _source_region(
             source,
             "class NoisyBlock1LayerNorm",
@@ -213,7 +213,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("torch.full_like(sq, 1.0 / D)", block4_region)
 
     def test_block5_gelu_coeff_encode_reuses_input_as_noise_reference(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         block5_region = _source_region(
             source,
             "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
@@ -227,7 +227,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("torch.full_like(x_ref, coeff_value)", block5_region)
 
     def test_block5_gelu_power_builder_skips_unused_x0_tensor(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         block5_region = _source_region(
             source,
             "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
@@ -239,7 +239,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("powers[0] =", block5_region)
 
     def test_gelu_piecewise_select_avoids_low_mask_zero_fill(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         regions = [
             _source_region(
                 source,
@@ -265,7 +265,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             self.assertNotIn("torch.zeros_like(x))", region)
 
     def test_attention_forward_consumes_positional_tail_without_front_pop(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         region = _source_region(
             source,
             "    def forward(\n"
@@ -278,7 +278,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn("pop(0)", region)
 
     def test_reversible_handler_reuses_resolved_layer_sequences(self):
-        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         handler_region = source.split("class ReversibleLayerHandler:", 1)[1]
         init_region = _method_region(handler_region, "__init__")
         if "    def _resolve_layers(self, layer_name):" not in handler_region:
@@ -786,7 +786,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
         return x
 
     def test_poly_matches_stacked_reference_all_degrees_and_signs(self):
-        from function_handler import GELU_COEEF, PolynomialGELU, polynomial
+        from rfr.search.runtime.model_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()
         for degree in sorted(GELU_COEEF.keys()):
             mod = PolynomialGELU(degree=degree)
@@ -800,7 +800,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
                 )
 
     def test_paired_polys_match_independent_piece_evaluation_exactly(self):
-        from function_handler import PolynomialGELU
+        from rfr.search.runtime.model_handler import PolynomialGELU
 
         x = self._x()
         for degree in (2, 4):
@@ -819,7 +819,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
         "paired GELU size gate requires CUDA",
     )
     def test_cuda_forward_size_gate_matches_legacy_and_skips_small_tensors(self):
-        from function_handler import (
+        from rfr.search.runtime.model_handler import (
             PolynomialGELU,
             _GELU_PAIRED_POLY_MIN_NUMEL,
             _select_piecewise_gelu_output,
@@ -847,7 +847,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
             self.assertEqual(len(mod._paired_coeff_cache), 1)
 
     def test_forward_matches_reference_piecewise(self):
-        from function_handler import GELU_COEEF, PolynomialGELU, polynomial
+        from rfr.search.runtime.model_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()
         for degree in sorted(GELU_COEEF.keys()):
             mod = PolynomialGELU(degree=degree)
@@ -867,7 +867,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
             )
 
     def test_piecewise_selector_matches_legacy_boundaries_and_special_values(self):
-        from function_handler import _select_piecewise_gelu_output
+        from rfr.search.runtime.model_handler import _select_piecewise_gelu_output
 
         x = torch.tensor([
             float("-inf"),
@@ -900,7 +900,7 @@ class ExpSquaringEquivalenceTest(unittest.TestCase):
 
     @staticmethod
     def _bert_exp(degree):
-        from function_handler import BertSelfAttentionWithAproximation
+        from rfr.search.runtime.model_handler import BertSelfAttentionWithAproximation
         obj = BertSelfAttentionWithAproximation.__new__(
             BertSelfAttentionWithAproximation
         )
@@ -942,7 +942,7 @@ class ExpSquaringEquivalenceTest(unittest.TestCase):
         columns sit far below ``lower_bound`` after the row-max shift, get
         where-zeroed, and contribute exactly 0 to the normalizer.
         """
-        from function_handler import BertSelfAttentionWithAproximation
+        from rfr.search.runtime.model_handler import BertSelfAttentionWithAproximation
         torch.manual_seed(13)
         for degree in (1, 4, 6):
             obj = BertSelfAttentionWithAproximation.__new__(

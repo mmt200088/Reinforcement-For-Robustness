@@ -134,7 +134,7 @@ def _resolve_binary_truncation_fused_cuda_impl():
     if not _BINARY_TRUNCATION_FUSED_CUDA_RESOLVED:
         _BINARY_TRUNCATION_FUSED_CUDA_RESOLVED = True
         try:
-            from blb_stage2_rl.truncation_fused_cuda import (
+            from rfr.search.runtime.cuda.truncation_fused_cuda import (
                 binary_truncation_cuda,
                 is_available,
             )
@@ -1519,7 +1519,7 @@ def _resolve_block3_fused_cuda_impl(degree: int):
     if not _BLOCK3_FUSED_CUDA_RESOLVED:
         _BLOCK3_FUSED_CUDA_RESOLVED = True
         try:
-            from blb_stage2_rl.block3_fused_cuda import (
+            from rfr.search.runtime.cuda.block3_fused_cuda import (
                 block3_degree4_cuda,
                 block3_degree6_cuda,
                 is_available,
@@ -2273,7 +2273,7 @@ def _resolve_block5_fused_cuda_impl():
     if not _BLOCK5_FUSED_CUDA_RESOLVED:
         _BLOCK5_FUSED_CUDA_RESOLVED = True
         try:
-            from blb_stage2_rl.block5_fused_cuda import (
+            from rfr.search.runtime.cuda.block5_fused_cuda import (
                 block5_degree4_cuda,
                 is_available,
             )

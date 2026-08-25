@@ -23,7 +23,7 @@ import pathlib
 from typing import Dict, Tuple
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
-_FUNCTION_HANDLER = _THIS_DIR.parents[3] / "function_handler.py"
+_FUNCTION_HANDLER = _THIS_DIR.parent / "runtime" / "model_handler.py"
 
 
 def _extract_noise_std_raw() -> Dict[int, Dict[int, Tuple[float, float, float]]]:

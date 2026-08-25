@@ -1,7 +1,7 @@
 import unittest
 
 import layer_importance_evaluator as evaluator_module
-from function_handler import (
+from rfr.search.runtime.model_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
     WFFN1_NOISE_ALLOWED_SCALING_FACTORS,

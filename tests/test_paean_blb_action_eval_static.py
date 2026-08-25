@@ -41,7 +41,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("np.random.set_state(state[\"numpy\"])", text)
         self.assertIn("torch.random.set_rng_state(state[\"torch_cpu\"])", text)
         self.assertIn("torch.cuda.set_rng_state_all(state[\"torch_cuda\"])", text)
-        self.assertIn("from function_handler import reseed_noise_rng", text)
+        self.assertIn("from rfr.search.runtime.model_handler import reseed_noise_rng", text)
         self.assertIn(
             "isolate_random_seed=(final_eval_handoff is not None)",
             text,

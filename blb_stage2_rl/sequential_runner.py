@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 import numpy as np
 import torch
 
-from elastic_gpu import (
+from rfr.search.runtime.elastic_gpu import (
     ElasticGPUFailure,
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
@@ -2772,7 +2772,7 @@ def _run_layerwise_training_branch(
     status.set_phase(
         f"PPO training ({layerwise_horizon}-step layerwise robust)"
     )
-    from .runtime_control import (
+    from rfr.search.runtime.control import (
         STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
         consume_stop_flag as consume_stop_flag_file,
         graceful_stop_requested as is_graceful_stop_requested,
@@ -4513,7 +4513,7 @@ def _run_sequential_via_runner_locked(
         BLBStepDetailsWriter,
         write_training_curves,
     )
-    from .probe_runner import enable_cuda_reward_probe_fast_math
+    from rfr.search.runtime.probe_runner import enable_cuda_reward_probe_fast_math
     from .reward import ParetoCostArchive
     from .training import (
         _build_best_noise_config,
@@ -4659,7 +4659,7 @@ def _run_sequential_via_runner_locked(
 
     reward_devices = list(getattr(train_cfg, "reward_devices", []) or [])
     if reward_devices and len(reward_devices) >= 2:
-        from .probe_runner import build_probe_runner
+        from rfr.search.runtime.probe_runner import build_probe_runner
         log(f"  [multi-gpu] reward probe enabled: devices={reward_devices}")
         shared_probe_runner_owner = build_probe_runner(
             primary_model=ev.model,

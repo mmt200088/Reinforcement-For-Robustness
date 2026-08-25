@@ -1156,7 +1156,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         runner = types.SimpleNamespace()
 
         with mock.patch(
-            "blb_stage2_rl.probe_runner.build_probe_runner",
+            "rfr.search.runtime.probe_runner.build_probe_runner",
             side_effect=AssertionError("F4 must not allocate a second pool"),
         ) as duplicate_builder:
             promotion_env, example_count = _build_search_gate_env(

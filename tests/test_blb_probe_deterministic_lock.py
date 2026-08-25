@@ -15,8 +15,8 @@ except ModuleNotFoundError:  # pragma: no cover - local macOS env may be torch-f
 class DeterministicProbeLockTests(unittest.TestCase):
     @staticmethod
     def _make_probe_worker():
-        from blb_stage2_rl.probe_runner import ProbeWorker
-        from function_handler import _sample_independent_gaussian
+        from rfr.search.runtime.probe_runner import ProbeWorker
+        from rfr.search.runtime.model_handler import _sample_independent_gaussian
 
         class FakeNoisyModel(torch.nn.Module):
             def forward(
@@ -71,8 +71,8 @@ class DeterministicProbeLockTests(unittest.TestCase):
 
     def test_mrpc_metric2_is_weighted_f1_not_accuracy(self):
         from rfr.search.common.eval_metrics import finalize_probe_trial_metrics
-        from blb_stage2_rl.inference_eval import run_installed_probe_trial
-        import blb_stage2_rl.probe_runner as probe_mod
+        from rfr.search.runtime.inference_eval import run_installed_probe_trial
+        import rfr.search.runtime.probe_runner as probe_mod
 
         kwargs = dict(
             losses=[0.2, 0.4],
@@ -106,7 +106,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
 
     def _make_env(self, *, seed: int, lock, scope=None, device=None, use_stream=False):
         import blb_stage2_rl.env as env_mod
-        from function_handler import _sample_independent_gaussian
+        from rfr.search.runtime.model_handler import _sample_independent_gaussian
 
         class FakeNoisyModel(torch.nn.Module):
             def forward(self, input_ids, attention_mask=None, labels=None, token_type_ids=None):
@@ -159,7 +159,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         )
 
     def test_probe_metrics_are_computed_outside_device_lock(self):
-        import blb_stage2_rl.inference_eval as inference_eval
+        import rfr.search.runtime.inference_eval as inference_eval
 
         lock = threading.Lock()
         probe_env = self._make_env(seed=123, lock=lock)
@@ -238,7 +238,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         np.testing.assert_array_equal(actual_numpy, expected_numpy)
 
     def test_noise_rng_scope_isolates_and_restores_thread_local_generator(self):
-        from function_handler import (
+        from rfr.search.runtime.model_handler import (
             _noise_generator_key,
             _sample_independent_gaussian,
             noise_rng_scope,
@@ -279,7 +279,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertTrue(torch.equal(a1, unscoped))
 
     def test_global_noise_reseed_reaches_scoped_generators(self):
-        from function_handler import (
+        from rfr.search.runtime.model_handler import (
             _sample_independent_gaussian,
             noise_rng_scope,
             reseed_noise_rng,
@@ -452,7 +452,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         probe_env._device = torch.device("cuda:0")
 
         with (
-            mock.patch("function_handler.reseed_noise_rng_for_device"),
+            mock.patch("rfr.search.runtime.model_handler.reseed_noise_rng_for_device"),
             mock.patch("torch.cuda.synchronize") as sync_mock,
         ):
             probe_env.probe_device_lock_requires_sync = False

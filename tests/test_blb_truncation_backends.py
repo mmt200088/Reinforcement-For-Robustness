@@ -7,8 +7,8 @@ import unittest
 
 try:
     import torch
-    from blb_rl_bridge import BLBNoiseRLBridge
-    from function_handler import (
+    from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
+    from rfr.search.runtime.model_handler import (
         _apply_truncation,
         _make_block3_approximation_exponential,
         _make_block5_gelu_forward,
@@ -46,7 +46,7 @@ except Exception as exc:  # pragma: no cover - local macOS may be torch-free.
 @unittest.skipUnless(_IMPORT_ERROR is None, f"torch runtime unavailable: {_IMPORT_ERROR!r}")
 class TruncationBackendTests(unittest.TestCase):
     def _without_gaussian_noise(self, callback):
-        import function_handler as fh
+        from rfr.search.runtime import model_handler as fh
 
         original_sampler = fh._sample_gaussian_for_point
         fh._sample_gaussian_for_point = (
@@ -73,7 +73,7 @@ class TruncationBackendTests(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(
             hasattr(handler, "_try_binary_truncation_fused_cuda")
@@ -99,7 +99,7 @@ class TruncationBackendTests(unittest.TestCase):
             self.assertTrue(torch.equal(actual, expected), k)
 
     def test_rotation_repeat_count_executes_independent_noise_for_every_rotation(self):
-        import function_handler as fh
+        from rfr.search.runtime import model_handler as fh
 
         source = make_block1_default_config().gelu_out_fresh
         original_sampler = fh._sample_gaussian_for_point
@@ -169,7 +169,7 @@ class TruncationBackendTests(unittest.TestCase):
         self.assertTrue(torch.equal(actual, expected.expand_as(actual)))
 
     def test_block1_truncation_only_executes_k_without_sampling_gaussian_noise(self):
-        import function_handler as fh
+        from rfr.search.runtime import model_handler as fh
 
         original_ln = torch.nn.LayerNorm(4, eps=1e-5, dtype=torch.float64)
         cfg = make_block1_default_config(

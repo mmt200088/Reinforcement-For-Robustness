@@ -449,7 +449,7 @@ def _runtime_modules():
     torch_stub.Tensor = object
     torch_stub.device = object
     torch_stub.long = object()
-    blb_bridge = types.ModuleType("blb_rl_bridge")
+    blb_bridge = types.ModuleType("rfr.search.runtime.blb_bridge")
     blb_bridge.BLBNoiseRLBridge = type("BLBNoiseRLBridge", (), {})
     rescale_bridge = types.ModuleType("rfr.preparation.rescale.bridge")
     rescale_bridge.RescaleOptimizerBridge = type("RescaleOptimizerBridge", (), {})
@@ -474,7 +474,7 @@ def _runtime_modules():
     with mock.patch.dict(sys.modules, {
         **relative_modules,
         "torch": torch_stub,
-        "blb_rl_bridge": blb_bridge,
+        "rfr.search.runtime.blb_bridge": blb_bridge,
         "rfr.preparation.rescale.bridge": rescale_bridge,
     }):
         env_module = load(f"{package_name}.env", _BLB_DIR / "env.py")

@@ -9,12 +9,12 @@ import types
 import unittest
 from unittest import mock
 
-from elastic_gpu import ElasticGPUFailure
+from rfr.search.runtime.elastic_gpu import ElasticGPUFailure
 
 try:
     import torch
 
-    from blb_stage2_rl import probe_runner as _probe_runner
+    from rfr.search.runtime import probe_runner as _probe_runner
 
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - dependency-light local checkout

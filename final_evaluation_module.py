@@ -180,7 +180,7 @@ class UnifiedFinalEvaluationModule:
         self.allowed_gelu_random = [1, 2, 4]
         self.allowed_softmax = [2, 3, 4, 5, 6]
 
-        from function_handler import (
+        from rfr.search.runtime.model_handler import (
             INPUT_NOISE_ALLOWED_SCALING_FACTORS,
             WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
             WFFN1_NOISE_ALLOWED_SCALING_FACTORS,

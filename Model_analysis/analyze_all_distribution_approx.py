@@ -117,7 +117,7 @@ from transformers import (
 )
 
 
-from function_handler import Exp_bound, GELU_COEEF, polynomial
+from rfr.search.runtime.model_handler import Exp_bound, GELU_COEEF, polynomial
 
 
 _SOFTMAX_EXP_SQ_MAX = 6

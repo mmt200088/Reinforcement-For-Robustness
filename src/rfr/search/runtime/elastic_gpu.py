@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Mapping, Optional
 
-from device_utils import split_device_spec_tokens
+from rfr.search.runtime.device_utils import split_device_spec_tokens
 
 
 ELASTIC_GPU_RESTART_EXIT_CODE = 75

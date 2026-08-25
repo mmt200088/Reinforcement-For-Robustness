@@ -23,7 +23,7 @@ import unittest
 try:
     import torch
     from transformers import BertConfig, BertForSequenceClassification
-    from function_handler import ReversibleLayerHandler
+    from rfr.search.runtime.model_handler import ReversibleLayerHandler
     _HAVE_TORCH = True
 except Exception as _exc:  # pragma: no cover - env-dependent
     _HAVE_TORCH = False

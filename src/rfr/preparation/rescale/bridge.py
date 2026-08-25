@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
 
-from function_handler import (
+from rfr.search.runtime.model_handler import (
     Block1NoiseConfig,
     Block2NoiseConfig,
     Block3NoiseConfig,
@@ -1264,7 +1264,7 @@ def _set_noise_point_tuple_sf(
         if old_point is None:
 
             return (old_sf, None)
-        from function_handler import NoisePoint
+        from rfr.search.runtime.model_handler import NoisePoint
         items[idx] = NoisePoint(
             distribution=str(old_point.distribution),
             scaling_factor=int(new_sf),

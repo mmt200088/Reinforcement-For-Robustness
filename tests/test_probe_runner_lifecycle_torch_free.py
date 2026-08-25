@@ -129,19 +129,19 @@ class ProbeRunnerDeterministicTorchFreeTest(unittest.TestCase):
         package.__path__ = [str(source_root / "blb_stage2_rl")]
         cls._install_module(package_name, package)
 
-        action_space = types.ModuleType(f"{package_name}.action_space")
+        action_space = types.ModuleType("rfr.search.common.action_space")
         action_space.ActionDecodeResult = object
-        cls._install_module(f"{package_name}.action_space", action_space)
+        cls._install_module("rfr.search.common.action_space", action_space)
 
         inference_eval = types.ModuleType(f"{package_name}.inference_eval")
         inference_eval.run_installed_probe_trial = lambda *args, **kwargs: None
         cls._install_module(f"{package_name}.inference_eval", inference_eval)
 
-        seed_utils = types.ModuleType(f"{package_name}.seed_utils")
+        seed_utils = types.ModuleType("blb_stage2_rl.seed_utils")
         seed_utils.derive_probe_trial_seed = lambda base_seed, trial_index: (
             int(base_seed) ^ (int(trial_index) * 2654435761)
         )
-        cls._install_module(f"{package_name}.seed_utils", seed_utils)
+        cls._install_module("blb_stage2_rl.seed_utils", seed_utils)
 
         if "torch" not in sys.modules:
             torch = types.ModuleType("torch")
@@ -154,15 +154,15 @@ class ProbeRunnerDeterministicTorchFreeTest(unittest.TestCase):
             torch_nn.Module = object
             cls._install_module("torch.nn", torch_nn)
 
-        function_handler = types.ModuleType("function_handler")
+        function_handler = types.ModuleType("rfr.search.runtime.model_handler")
         function_handler.ReversibleLayerHandler = object
         function_handler.reseed_noise_rng_for_device = lambda *args, **kwargs: None
-        cls._install_module("function_handler", function_handler)
+        cls._install_module("rfr.search.runtime.model_handler", function_handler)
 
         module_name = f"{package_name}.probe_runner"
         spec = importlib.util.spec_from_file_location(
             module_name,
-            source_root / "blb_stage2_rl" / "probe_runner.py",
+            source_root / "src/rfr/search/runtime/probe_runner.py",
         )
         if spec is None or spec.loader is None:
             raise RuntimeError("unable to load probe_runner.py")

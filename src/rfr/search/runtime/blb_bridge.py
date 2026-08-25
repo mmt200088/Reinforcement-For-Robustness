@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, Tuple, Dict, Mapping, Any
 
-from function_handler import (
+from rfr.search.runtime.model_handler import (
     NoisePoint,
     Block1NoiseConfig,
     Block2NoiseConfig,

@@ -6,8 +6,8 @@ import sys
 import tempfile
 import unittest
 
-from elastic_gpu import ELASTIC_GPU_RESTART_EXIT_CODE
-from scripts.elastic_gpu_supervisor import (
+from rfr.search.runtime.elastic_gpu import ELASTIC_GPU_RESTART_EXIT_CODE
+from rfr.search.runtime.supervisor import (
     RecoveryMonitor,
     build_child_command,
     parse_nvidia_smi_csv,
@@ -134,10 +134,15 @@ class ChildCommandTest(unittest.TestCase):
         completed = subprocess.run(
             [
                 sys.executable,
-                str(repo_root / "scripts" / "elastic_gpu_supervisor.py"),
+                "-m",
+                "rfr.search.runtime.supervisor",
                 "--help",
             ],
             cwd="/",
+            env={
+                **os.environ,
+                "PYTHONPATH": str(repo_root / "src"),
+            },
             check=False,
             capture_output=True,
             text=True,

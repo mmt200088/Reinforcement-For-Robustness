@@ -8,7 +8,7 @@ from collections import deque
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
 
-from elastic_gpu import (
+from rfr.search.runtime.elastic_gpu import (
     ELASTIC_GPU_RESTART_EXIT_CODE,
     ElasticGPUFailure,
     ElasticGPURestartRequested,

@@ -27,7 +27,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         action_space = (
             repo / "src/rfr/search/common/action_space.py"
         ).read_text(encoding="utf-8")
-        bridge = (repo / "blb_rl_bridge.py").read_text(encoding="utf-8")
+        bridge = (repo / "src/rfr/search/runtime/blb_bridge.py").read_text(encoding="utf-8")
         paean = (
             repo / "Paean" / "blb_action_eval.py"
         ).read_text(encoding="utf-8")
@@ -72,7 +72,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_all_five_blocks_use_the_shared_configured_truncation_executor(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+        handler = (repo / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
 
         self.assertIn("def _apply_configured_truncation(", handler)
         self.assertEqual(
@@ -83,7 +83,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_block2_hook_receives_the_materialized_config_it_executes(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+        handler = (repo / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         start = handler.index("def _make_block2_qkt_merge_hook(")
         end = handler.index("):", start)
         signature = handler[start:end]
@@ -94,7 +94,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_block2_config_builder_exposes_k_and_backend_fields(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+        handler = (repo / "src/rfr/search/runtime/model_handler.py").read_text(encoding="utf-8")
         start = handler.index("def make_block2_default_config(")
         end = handler.index(") -> \"Block2NoiseConfig\":", start)
         signature = handler[start:end]
@@ -158,7 +158,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         layer_eval = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
-        probe = (repo / "blb_stage2_rl" / "probe_runner.py").read_text(encoding="utf-8")
+        probe = (repo / "src/rfr/search/runtime/probe_runner.py").read_text(encoding="utf-8")
 
         self.assertIn("run_installed_model_on_dataloader", layer_eval)
         self.assertIn("run_installed_probe_trial", env)
@@ -184,7 +184,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_probe_runner_diagnostics_payload_uses_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
-        probe = (repo / "blb_stage2_rl" / "probe_runner.py").read_text(encoding="utf-8")
+        probe = (repo / "src/rfr/search/runtime/probe_runner.py").read_text(encoding="utf-8")
 
         self.assertIn("def diagnostics_payload(", probe)
         self.assertIn("diagnostics_payload", env)

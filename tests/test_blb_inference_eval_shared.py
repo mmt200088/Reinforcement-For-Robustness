@@ -64,7 +64,7 @@ def _function_region_from_source(source: str, name: str) -> str:
 class InstalledInferenceEvalSourceTest(unittest.TestCase):
     def test_full_eval_defers_per_batch_tensor_cpu_syncs(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+        source = (repo / "src/rfr/search/runtime/inference_eval.py").read_text(
             encoding="utf-8"
         )
         region = _function_region_from_source(
@@ -81,7 +81,7 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
 
     def test_full_eval_concatenates_tensor_batches_before_cpu_transfer(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+        source = (repo / "src/rfr/search/runtime/inference_eval.py").read_text(
             encoding="utf-8"
         )
         logits_region = _function_region_from_source(
@@ -102,7 +102,7 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
 
     def test_probe_trial_defers_per_batch_tensor_cpu_syncs(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+        source = (repo / "src/rfr/search/runtime/inference_eval.py").read_text(
             encoding="utf-8"
         )
         region = _function_region_from_source(source, "run_installed_probe_trial")
@@ -118,7 +118,7 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
 
     def test_probe_trial_batches_scalar_metric_cpu_sync_once(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+        source = (repo / "src/rfr/search/runtime/inference_eval.py").read_text(
             encoding="utf-8"
         )
         region = _function_region_from_source(source, "run_installed_probe_trial")
@@ -146,7 +146,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
     def test_probe_forward_omits_labels_to_avoid_unused_model_loss(self):
         import torch
 
-        from blb_stage2_rl.inference_eval import run_installed_probe_trial
+        from rfr.search.runtime.inference_eval import run_installed_probe_trial
 
         seen_labels = []
 
@@ -178,7 +178,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         import torch.nn.functional as F
 
         from rfr.search.common.eval_metrics import metric_pair_for_dataset, sample_weighted_mean
-        from blb_stage2_rl.inference_eval import (
+        from rfr.search.runtime.inference_eval import (
             run_installed_model_on_dataloader,
             run_installed_probe_trial,
         )
@@ -259,7 +259,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         import torch
         import torch.nn.functional as F
 
-        from blb_stage2_rl.inference_eval import run_installed_model_on_dataloader
+        from rfr.search.runtime.inference_eval import run_installed_model_on_dataloader
 
         class SingleLogitModel(torch.nn.Module):
             def forward(self, input_ids, attention_mask=None, labels=None):
@@ -298,7 +298,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         import torch
         import torch.nn.functional as F
 
-        import blb_stage2_rl.inference_eval as inference_eval
+        import rfr.search.runtime.inference_eval as inference_eval
 
         class LogitEchoModel(torch.nn.Module):
             def forward(self, input_ids, attention_mask=None, labels=None):
@@ -339,7 +339,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         import torch
         import torch.nn.functional as F
 
-        import blb_stage2_rl.inference_eval as inference_eval
+        import rfr.search.runtime.inference_eval as inference_eval
 
         class LogitEchoModel(torch.nn.Module):
             def forward(self, input_ids, attention_mask=None, labels=None, token_type_ids=None):
@@ -385,7 +385,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
     def test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors(self):
         import torch
 
-        from blb_stage2_rl.inference_eval import tensor_values_to_numpy_arrays
+        from rfr.search.runtime.inference_eval import tensor_values_to_numpy_arrays
 
         arrays = tensor_values_to_numpy_arrays(
             [

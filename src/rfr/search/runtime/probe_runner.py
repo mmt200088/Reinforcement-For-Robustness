@@ -46,15 +46,15 @@ from uuid import uuid4
 import torch
 import torch.nn as nn
 
-from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
-from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
+from rfr.search.runtime.elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
+from rfr.search.runtime.model_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
 from rfr.search.common.action_space import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
 
 
 try:
-    from blb_rl_bridge import BLBNoiseRLBridge
+    from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
 except Exception:  # pragma: no cover — torch-free import path
     BLBNoiseRLBridge = None  # type: ignore
 
@@ -154,7 +154,7 @@ def _trial_seed(base_seed: int, trial_idx: int) -> int:
     values get truly independent noise streams (and reruns of the same
     (base_seed, trial_idx) reproduce the same noise — useful for diagnosis).
     """
-    from .seed_utils import derive_probe_trial_seed
+    from blb_stage2_rl.seed_utils import derive_probe_trial_seed
 
     return derive_probe_trial_seed(base_seed, trial_idx)
 

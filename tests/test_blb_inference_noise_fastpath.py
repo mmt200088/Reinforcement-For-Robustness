@@ -11,7 +11,7 @@ class BLBInferenceNoiseFastPathTest(unittest.TestCase):
     def test_inference_add_reuses_sample_storage_but_training_path_does_not(self):
         import torch
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(
             hasattr(handler, "_sample_and_add_gaussian_for_point"),
@@ -72,7 +72,7 @@ class BLBInferenceNoiseFastPathTest(unittest.TestCase):
         )
 
     def test_cached_noise_std_preserves_value_and_skips_repeated_lookup(self):
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(hasattr(handler, "_noise_std_for_values"))
         helper = handler._noise_std_for_values
@@ -99,7 +99,7 @@ class BLBInferenceNoiseFastPathTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(
             hasattr(handler, "_sample_and_add_gaussian_for_point"),

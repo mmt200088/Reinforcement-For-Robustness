@@ -114,7 +114,7 @@ class Stage1ElasticParallelRunnerTests(unittest.TestCase):
         self.assertIsNone(runner.pop_deferred_gpu_failure())
 
     def test_primary_failure_requests_checkpoint_restart(self):
-        from elastic_gpu import ElasticGPUFailure
+        from rfr.search.runtime.elastic_gpu import ElasticGPUFailure
         from stage1_rl.parallel_runner import Stage1ParallelRunner
 
         def collect_episode(**_kwargs):

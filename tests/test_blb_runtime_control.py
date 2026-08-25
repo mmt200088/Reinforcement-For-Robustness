@@ -7,7 +7,7 @@ import unittest
 
 class RuntimeControlTests(unittest.TestCase):
     def test_stop_file_is_consumed_and_state_resets(self):
-        from blb_stage2_rl.runtime_control import (
+        from rfr.search.runtime.control import (
             STOP_FLAG_FILENAME,
             consume_stop_flag,
             graceful_stop_requested,

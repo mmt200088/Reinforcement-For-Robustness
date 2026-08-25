@@ -24,12 +24,8 @@ import threading
 import time
 from typing import Callable, Iterable, Mapping, Optional, Sequence
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from device_utils import split_device_spec_tokens
-from elastic_gpu import (
+from rfr.search.runtime.device_utils import split_device_spec_tokens
+from rfr.search.runtime.elastic_gpu import (
     ELASTIC_GPU_FAILURE_FILENAME,
     ELASTIC_GPU_RESTART_EXIT_CODE,
     ELASTIC_GPU_RESTART_REQUEST_ENV,

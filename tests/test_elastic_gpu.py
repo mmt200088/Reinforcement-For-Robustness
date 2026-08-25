@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from elastic_gpu import (
+from rfr.search.runtime.elastic_gpu import (
     ELASTIC_GPU_RESTART_EXIT_CODE,
     ElasticGPUFailure,
     ElasticGPURestartRequested,

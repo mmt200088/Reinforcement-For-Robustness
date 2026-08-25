@@ -12,7 +12,7 @@ import unittest
 from types import SimpleNamespace
 
 try:
-    from function_handler import make_block3_default_config
+    from rfr.search.runtime.model_handler import make_block3_default_config
     from rfr.preparation.rescale.optimizer_cost import (
         configure_truncation_backend,
         materialize_decoded_action,
@@ -98,11 +98,12 @@ def _reject_invalid_raw_action(action_vec, *_args, **_kwargs):
 @contextmanager
 def _stubbed_action_space():
     package = importlib.import_module("rfr.search.common")
+    runtime_package = importlib.import_module("rfr.search.runtime")
     module_name = "rfr.search.common.action_space"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_space", _MISSING)
 
-    bridge = types.ModuleType("blb_rl_bridge")
+    bridge = types.ModuleType("rfr.search.runtime.blb_bridge")
     for name in (
         "Block1ActionSpec",
         "Block2ActionSpec",
@@ -116,7 +117,7 @@ def _stubbed_action_space():
         "build_block5_cfg_from_action",
     ):
         setattr(bridge, name, type(name, (), {}))
-    handler = types.ModuleType("function_handler")
+    handler = types.ModuleType("rfr.search.runtime.model_handler")
     handler.NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N = {}
     for name in (
         "Block1NoiseConfig",
@@ -127,13 +128,17 @@ def _stubbed_action_space():
     ):
         setattr(handler, name, type(name, (), {}))
 
-    dependency_names = ("blb_rl_bridge", "function_handler")
+    dependency_names = ("rfr.search.runtime.blb_bridge", "rfr.search.runtime.model_handler")
     dependencies_before = {
         name: sys.modules.get(name, _MISSING)
         for name in dependency_names
     }
-    sys.modules["blb_rl_bridge"] = bridge
-    sys.modules["function_handler"] = handler
+    dependency_attributes_before = {
+        name: runtime_package.__dict__.get(name, _MISSING)
+        for name in ("blb_bridge", "model_handler")
+    }
+    sys.modules["rfr.search.runtime.blb_bridge"] = bridge
+    sys.modules["rfr.search.runtime.model_handler"] = handler
     sys.modules.pop(module_name, None)
     package.__dict__.pop("action_space", None)
     try:
@@ -152,6 +157,11 @@ def _stubbed_action_space():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+        for name, module in dependency_attributes_before.items():
+            if module is _MISSING:
+                runtime_package.__dict__.pop(name, None)
+            else:
+                runtime_package.__dict__[name] = module
 
 
 @contextmanager

@@ -22,7 +22,7 @@ import unittest
 
 try:
     import torch
-    from function_handler import (
+    from rfr.search.runtime.model_handler import (
         NoisePoint,
         _make_block3_approximation_exponential,
         _sample_gaussian_for_point,
@@ -40,7 +40,7 @@ try:
         BLBStage2SequentialPolicy,
         SequentialPolicyConfig,
     )
-    from blb_stage2_rl.probe_runner import (
+    from rfr.search.runtime.probe_runner import (
         _split_round_robin,
         _trial_seed,
         parse_device_ids,
@@ -512,7 +512,7 @@ class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
         self.assertEqual(cfg.q_mask2_encode.scaling_factor, 24)
 
     def test_shared_helper_applies_block4_v_mask_binding(self):
-        from function_handler import make_block4_default_config
+        from rfr.search.runtime.model_handler import make_block4_default_config
 
         cfg = make_block4_default_config(
             N=16384,
@@ -540,7 +540,7 @@ class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
         self.assertEqual(cfg.v_mask_encode.scaling_factor, 27)
 
     def test_shared_helper_applies_block5_aux_fresh_binding(self):
-        from function_handler import make_block5_default_config
+        from rfr.search.runtime.model_handler import make_block5_default_config
 
         cfg = make_block5_default_config(
             gelu_degree=4,
@@ -602,7 +602,7 @@ class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class Block3TruncationExecutionTest(unittest.TestCase):
     def test_block3_k_changes_post_polynomial_output(self):
-        import function_handler as fh
+        from rfr.search.runtime import model_handler as fh
 
         common = dict(
             degree=2,
@@ -846,7 +846,7 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
     def _make_stub_setup(self, num_layers: int = 2):
 
 
-        from blb_stage2_rl.probe_runner import ProbeRunner, ProbeWorker
+        from rfr.search.runtime.probe_runner import ProbeRunner, ProbeWorker
 
         class _StubBatch:
             def __init__(self, device):

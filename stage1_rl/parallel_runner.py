@@ -44,13 +44,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from device_utils import parse_device_ids
-from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
+from rfr.search.runtime.device_utils import parse_device_ids
+from rfr.search.runtime.elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
 from .seed_utils import assign_global_episodes, derive_episode_seed
 
 
 try:
-    from function_handler import ReversibleLayerHandler  # noqa: F401  (worker uses it via factory)
+    from rfr.search.runtime.model_handler import ReversibleLayerHandler  # noqa: F401  (worker uses it via factory)
     _HANDLER_IMPORT_ERROR: Optional[BaseException] = None
 except Exception as _exc:  # pragma: no cover — only matters on import-broken envs
     ReversibleLayerHandler = None  # type: ignore[assignment]

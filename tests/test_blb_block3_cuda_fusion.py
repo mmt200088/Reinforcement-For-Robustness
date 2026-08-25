@@ -14,7 +14,7 @@ class Block3CudaFusionTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(
             hasattr(handler, "_get_block3_fused_cuda_noise_workspace")
@@ -38,7 +38,7 @@ class Block3CudaFusionTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         self.assertTrue(hasattr(handler, "_try_block3_fused_cuda"))
         cfg = handler.make_block3_default_config(
@@ -116,7 +116,7 @@ class Block3CudaFusionTest(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA unavailable")
 
-        import function_handler as handler
+        from rfr.search.runtime import model_handler as handler
 
         cfg = handler.make_block3_default_config(
             degree=6,
