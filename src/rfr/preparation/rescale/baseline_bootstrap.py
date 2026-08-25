@@ -115,10 +115,7 @@ def static_skeletons_archive_path(rescale_optimizer_root: str, dataset: str) -> 
 
 
 def load_static_skeletons_archive(path: str) -> Dict[str, Dict[str, Any]]:
-    """读 ``static_skeletons_<dataset>.json``，返回 ``{config_name: entry}`` 索引。
-
-    只保留 ``success=True`` 的 entry。
-    """
+    """Index successful entries from ``static_skeletons_<dataset>.json`` by name."""
     with open(str(path), "r", encoding="utf-8") as f:
         archive = json.load(f)
     out: Dict[str, Dict[str, Any]] = {}
@@ -137,7 +134,7 @@ def static_skeletons_graph_key(
         gelu_degree: int,
         softmax_degree: int,
         ) -> str:
-    """对照 ``action_space.make_config_name`` 的命名规则给 (block, dataset, deg) → graph_key。"""
+    """Map ``(block, dataset, degree)`` to the action-space graph key."""
     block_idx = int(block_idx)
     if block_idx == 1:
         return f"block1_{dataset}"
@@ -160,7 +157,7 @@ _RO_X2_AUX_FRESH_FIELD: Dict[int, Dict[str, str]] = {
 
 @dataclass
 class StaticSkeletonsLayerBlock:
-    """单个 (block, layer) 的 RO baseline 抽取结果。"""
+    """Rescale baseline extracted for one block and layer."""
     block_idx: int
     layer_idx: int
     graph_key: str
@@ -181,7 +178,7 @@ class StaticSkeletonsLayerBlock:
 
 @dataclass
 class StaticSkeletonsBaseline:
-    """整个模型按 Stage-1 配置抽出的 BLB baseline。"""
+    """Model-wide BLB baseline derived from a Stage 1 configuration."""
     dataset: str
     num_layers: int
     gelu_per_layer: List[int]
@@ -216,7 +213,7 @@ def _extract_one_block_layer(
         *,
         gelu_degree: int,
         ) -> StaticSkeletonsLayerBlock:
-    """从一条 archive entry 抽出该 (block, layer) 的 RL 字段 baseline。"""
+    """Extract the RL baseline fields for one block and layer."""
     out = StaticSkeletonsLayerBlock(
         block_idx=int(block_idx),
         layer_idx=int(layer_idx),
@@ -328,24 +325,24 @@ def load_static_skeletons_baseline(
         *,
         archive_path: Optional[str] = None,
         ) -> StaticSkeletonsBaseline:
-    """从 ``static_skeletons_<dataset>.json`` 抽出 BLB Stage-2 RL baseline。
+    """Build the BLB Stage 2 RL baseline from a static-skeleton archive.
 
     Args:
         rescale_optimizer_root: Rescale configuration root
         dataset:                supported GLUE task name
-        num_layers:             模型 encoder 层数
-        gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}
-        softmax_per_layer:      长度 num_layers，元素 ∈ {2, 3, 4, 5, 6}
-        archive_path:           手动指定 archive 路径；缺省自动拼
+        num_layers:             Number of encoder layers
+        gelu_per_layer:         Per-layer GELU degrees from {1, 2, 4}
+        softmax_per_layer:      Per-layer Softmax degrees from {2, 3, 4, 5, 6}
+        archive_path:           Optional explicit archive path
 
     Returns:
-        ``StaticSkeletonsBaseline``。``per_block_layer`` 不包含 (1, 0)
-        —— layer-0 Block1 没有 SF/fusion baseline；其 K-only model cfg 由
-        action decoder 独立物化。
+        A ``StaticSkeletonsBaseline``. ``per_block_layer`` omits ``(1, 0)``
+        because layer-zero Block 1 has no SF or fusion baseline; the action
+        decoder materializes its K-only model configuration separately.
 
     Raises:
-        FileNotFoundError: archive 路径不存在
-        BaselineHandoverError: archive schema 不对，或某层的 graph_key 不在 archive
+        FileNotFoundError: The archive does not exist.
+        BaselineHandoverError: The schema is invalid or a graph key is missing.
     """
     _validate_stage1(gelu_per_layer, softmax_per_layer, int(num_layers))
     path = archive_path or static_skeletons_archive_path(rescale_optimizer_root, dataset)
@@ -409,22 +406,21 @@ def static_skeletons_baseline_to_action(
         base_max_sfs: Optional["MaxSFsTable"] = None,
         snap_sf_to_noise_table: bool = True,
         ) -> Tuple[np.ndarray, "MaxSFsTable", BaselineCostStats, Dict[str, Any]]:
-    """把 ``StaticSkeletonsBaseline`` 转换成 RL 可直接消费的三元组：
+    """Convert a ``StaticSkeletonsBaseline`` into RL-ready values.
 
-      * ``action_vec``: ``np.ndarray[int]``，长度 ``sum(action_dims_for_config(num_layers))``。
-                         所有 slot 都取 max idx；对于 baseline 里有 JSON SF 的 slot，
-                         max_sf 被校准为 baseline SF —— 即 max-idx ↔ baseline。
-      * ``max_sfs``:    校准过的 ``MaxSFsTable``。可直接喂给 ``BLBStage2Env``/``action_vector_to_cfgs``。
-      * ``cost_stats``: ``BaselineCostStats``（total_bits / fusion / avg_k）。
-      * ``diagnostics``: 报告每层每 block 的 active / inactive slot、unmapped 节点等。
+      * ``action_vec``: Integer action vector with every slot at its maximum
+        index. For slots with archived SF values, that maximum maps exactly to
+        the baseline SF.
+      * ``max_sfs``: Calibrated ``MaxSFsTable`` for ``BLBStage2Env`` and
+        ``action_vector_to_cfgs``.
+      * ``cost_stats``: Baseline total bits, fusion count, and average K.
+      * ``diagnostics``: Active, inactive, and unmapped entries by block/layer.
 
     Args:
-        baseline:                  ``load_static_skeletons_baseline`` 输出
-        base_max_sfs:              基础 max_sfs（缺省时用 ``load_max_sfs(dataset)``）。
-                                   未被 JSON 覆盖的 slot 保留 base_max_sfs 取值。
-        snap_sf_to_noise_table:    True ⇒ 把每个 calibrated max_sf 钳到 noise table
-                                   允许的最近合法值（保证 RL 动作落到 noise table 里）。
-                                   False ⇒ 原样使用 JSON SF。
+        baseline: Output from ``load_static_skeletons_baseline``.
+        base_max_sfs: Base table used for slots absent from the archive.
+        snap_sf_to_noise_table: Clamp calibrated values to the nearest legal
+            noise-table SF when true; preserve archived values when false.
     """
 
     from rfr.search.common.action_space import (

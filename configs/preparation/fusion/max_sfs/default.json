@@ -1,5 +1,5 @@
 {
-  "_comment": "默认 max-SF 表，用于 BLB Stage 2 RL 的动作空间反推。当外部 Rescale_optimizer 子项目不可用、或 max_sfs/<profile>.json 缺失时由 load_max_sfs 自动 fallback 到本文件。所有节点名与 blb_stage2_rl/action_space.py:_BLOCK_NODE_NAME_BY_FIELD 保持一致。",
+  "_comment": "Default maximum-SF table for BLB Stage 2 action decoding. load_max_sfs uses this file when a profile-specific table is unavailable. Node names match rfr.search.common.action_space._BLOCK_NODE_NAME_BY_FIELD.",
   "block1": {
     "ctpt_gelu_out": 30,
     "ctpt_ffn2": 22,

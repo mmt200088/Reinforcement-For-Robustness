@@ -90,7 +90,7 @@ BLB_TRACE_FIELDNAMES = (
 
 
 def _atomic_json_dump(path: str, obj: Any) -> None:
-    """原子写：``path.tmp`` → ``os.replace(path)``。失败抛 IOError。"""
+    """Write JSON through a temporary file and atomically replace the destination."""
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=".blb_status_", suffix=".tmp", dir=parent)
@@ -568,23 +568,7 @@ def write_action_description_files(
 
 
 class BLBStatusBoard:
-    """训练状态板。
-
-    写出文件：
-      * ``<persistence_dir>/blb_stage2_status.json``
-        训练期间持续覆盖；包含训练阶段、episode/PPO 进度、最近 N 步统计、
-        最优 reward / breakdown、baseline 信息。
-
-    用法：
-        board = BLBStatusBoard(persistence_dir, total_episodes=2000, profile="mrpc")
-        board.set_phase("校准 baseline")
-        board.set_baseline(baseline_dict)
-        board.update_after_episode(ep, reward, breakdown_dict)
-        board.update_after_ppo_update(update_count, ppo_metrics)
-        board.set_best(best_reward, best_action_vec, best_breakdown_dict)
-        board.set_phase("训练结束")
-        board.flush()                # 显式 flush（最终落盘）
-    """
+    """Persist the compact status snapshot for a Stage 2 run."""
 
     def __init__(
             self,
@@ -877,31 +861,7 @@ def write_training_curves(
         log_fn=None,
         render_plots: Optional[bool] = None,
         ) -> Dict[str, str]:
-    """把训练曲线写成 PNG（matplotlib 可用时）+ NPZ（无脑兜底）。
-
-    Emits (when the matching data is provided):
-      * ``blb_stage2_training_curve.png`` — Stage-1 风格多联图：Reward / Loss /
-        metric1 / metric2，每联 raw + Moving Avg + Baseline 参考线。只给
-        ``episode_returns`` 时退化为单联 reward。
-      * ``blb_stage2_entropy_curve.png`` — 独立熵曲线（镜像 Stage-1
-        ``ppo_entropy_curve.png``），需提供 ``entropy_series``。
-      * ``blb_stage2_reward_paper.png`` (+ ``.pdf``) — 单联 paper-ready reward。
-
-    Args:
-        episode_losses / episode_metric1s / episode_metric2s: 每回合序列（与
-            ``episode_returns`` 等长），主训练曲线按 Stage-1 版式绘制这些核心联。
-        episode_fusion_counts / episode_avg_ks: 仍写入 NPZ，供诊断/离线报告使用，
-            但不进入 ``blb_stage2_training_curve.png``。
-        baselines: ``{"loss":..,"metric1":..,"metric2":..,"avg_k":..}`` 各联的
-            baseline 参考线（fusion 的 baseline 恒为 0）。
-        entropy_series / entropy_episodes: 每次 PPO 更新的策略熵 + 对应的
-            completed-episode x 轴。
-        ma_window: Moving Avg 窗口（None → 按总回合数自适应）。
-        substage_boundaries / substage_labels / ema_window: paper 图用。
-
-    Returns:
-        ``{"png", "npz", "paper_png", "paper_pdf", "entropy_png"}``（缺省为 ""）。
-    """
+    """Write training curves as PNG when available and always preserve NPZ data."""
     log = log_fn or (lambda _msg: None)
     out = {"png": "", "npz": "", "paper_png": "", "paper_pdf": "", "entropy_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
@@ -1097,19 +1057,7 @@ def write_diagnostic_curves(
         log_fn=None,
         render_plots: Optional[bool] = None,
         ) -> Dict[str, str]:
-    """Stage-2 崩溃诊断多联图（``blb_stage2_diagnostics_curve.png``）。
-
-    把「为什么崩」做成一眼可读的图，而不是从最终结果猜（4th-60k 痛点）：
-
-      1. Priority mix (rolling) —— P1/P2/P3 占比。P3→0 = 崩溃。
-      2. Fusion (rolling)      —— 总 fusion + per-block b2/b4/b5。失控时单调冲顶。
-      3. Accuracy margin mu    —— ``worst_signed_margin`` raw + MA + 0 线。越界 = mu<0。
-      4. Reward components      —— barrier_sat / barrier_vio / cost_score / p3_margin。
-      5. Probe noise vs margin —— metric1_std vs |mu|。σ>余量 = barrier 失效根因。
-
-    panels 1+2+3 一起读就是 smoking gun：fusion↑ → mu↓ → P3→0。所有入参可选，
-    给哪条画哪条。``rolling_window`` 用于 priority/fusion 的滚动均值。
-    """
+    """Write the multi-panel Stage 2 diagnostic plot."""
     log = log_fn or (lambda _msg: None)
     out = {"diagnostics_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
@@ -1268,7 +1216,7 @@ def write_blb_final_report(
         best_action_full_md_path: str = "",
         best_action_full_json_path: str = "",
         ) -> str:
-    """落盘 ``blb_stage2_report.md``，返回路径。失败抛 IOError。"""
+    """Write the final Stage 2 Markdown report and return its path."""
     log = log_fn or (lambda _msg: None)
     os.makedirs(persistence_dir, exist_ok=True)
     path = os.path.join(persistence_dir, BLB_FINAL_REPORT_MD)
@@ -1463,7 +1411,7 @@ def dump_crash_report(
         last_state: Optional[Mapping[str, Any]] = None,
         log_fn=None,
         ) -> str:
-    """异常时把 traceback + 最后状态写到 ``blb_stage2_error.txt``。返回路径。"""
+    """Persist the traceback and last known state after a training failure."""
     log = log_fn or (lambda _msg: None)
     os.makedirs(persistence_dir, exist_ok=True)
     path = os.path.join(persistence_dir, BLB_ERROR_TXT)

@@ -136,7 +136,7 @@ def require_final_evaluation_protocol(
 
 
 class UnifiedFinalEvaluationModule:
-    """统一 final-eval：一次评估覆盖 stage1 + stage2 所有组别。"""
+    """Run one final evaluation across all Stage 1 and Stage 2 groups."""
 
     def __init__(
         self,
@@ -591,10 +591,10 @@ class UnifiedFinalEvaluationModule:
 
 
     def resolve_stage1_only(self, search_best_stage1, total_layers):
-        """解析 stage-1 (gelu/softmax) 配置，用于 stage-2 RL 把 stage-1 固定下来。
+        """Resolve the Stage 1 GELU and Softmax configuration for Stage 2.
 
-        返回 ``(gelu, softmax, source)``。与 ``_resolve_selected_config`` 不同的是
-        不要求 stage-2 search 结果存在。
+        Returns ``(gelu, softmax, source)`` without requiring a Stage 2 search
+        result.
         """
         if self.config_source == "search":
             if search_best_stage1 is not None:

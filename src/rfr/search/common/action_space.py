@@ -72,14 +72,7 @@ NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {
 
 @dataclass(frozen=True)
 class _BlockFieldSpec:
-    """单层中一个 block 的离散动作字段表。
-
-    每个 entry 形如 ``(field_name, kind, default_max_sf)``：
-      * ``field_name``：``Block{N}ActionSpec`` 的字段名（用于 setattr）
-      * ``kind``：``F/W/M/S/R/K`` 之一（决定挡位数）
-      * ``default_max_sf``：用于 max_sfs JSON 缺失节点时的兜底值
-                          （来自 ``make_block{N}_default_config`` 的默认 SF）
-    """
+    """Discrete action fields for one BLB block in one encoder layer."""
     fields: Tuple[Tuple[str, str, int], ...]
 
 
@@ -271,11 +264,7 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
 
 
 def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4) -> int:
-    """噪声表 N（决定 noise variance 查表 + snap 范围）。
-
-    All production action slots use the N=16384 noise table. Rescale graph N
-    remains owned by the optimizer.
-    """
+    """Choose the default ring degree for a block and approximation degree."""
     return 16384
 
 
@@ -312,11 +301,7 @@ def _optional_int(value: object) -> Optional[int]:
 
 
 def _snap_to_table(sf: int, N: int) -> int:
-    """把 SF 钳到 ``NOISE_VARIANCE_TABLE_BY_N[N]`` 实际存在的 key 上。
-
-    这样即便 max_sf JSON 配错或 sf_from 反推出表外的值，仍能找到最接近的合法 SF
-    （取小于等于的最大值，找不到就回退到表里最小值）。
-    """
+    """Clamp an SF to the nearest supported noise-table key at or below it."""
     sf = int(sf)
     allowed = list(NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N.get(int(N), ()))
     if not allowed:
@@ -331,11 +316,7 @@ def _snap_to_table(sf: int, N: int) -> int:
 
 @dataclass
 class MaxSFsTable:
-    """每个 (block_idx, node_name) 的 max scaling factor 缓存。
-
-    构造 RL 动作时按 ``sf_from(action_idx, max_sf, levels)`` 反推；
-    JSON 缺失节点时 fallback 到 ``_BlockFieldSpec.fields`` 里的 default_max_sf。
-    """
+    """Cached maximum scaling factors by block and node name."""
     by_block_node: Dict[Tuple[int, str], int] = field(default_factory=dict)
     by_layer_block_node: Dict[Tuple[int, int, str], int] = field(default_factory=dict)
 
@@ -370,21 +351,7 @@ class MaxSFsTable:
 
 
 def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> MaxSFsTable:
-    """从 ``configs/preparation/fusion/max_sfs/<profile>.json`` 加载 max SF 表。
-
-    JSON 结构（完全可选；缺字段或文件不存在都允许）：
-
-        {
-            "block1": {"ctpt_ffn2": 30, "ctpt_inv_d_1": 22, ...},
-            "block2": {...},
-            "block3": {...},
-            "block4": {...},
-            "block5": {...}
-        }
-
-    若想从 ``configs/preparation/rescale/<profile>/static_skeletons_<profile>.json``
-    自动生成，参见 ``docs/BLB_stage2_rl_spec.md`` §4.4。
-    """
+    """Load a profile-specific maximum-SF table with safe defaults."""
     profile = str(profile or "default")
     table = MaxSFsTable(by_block_node={})
 
@@ -426,13 +393,13 @@ def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> 
 
 
 def block_dims(block_idx: int) -> List[int]:
-    """返回单层一个 block 的离散维度数列表（顺序 = ``_BLOCK_SPECS`` 顺序）。"""
+    """Return discrete dimension sizes for one block."""
     spec = _BLOCK_SPECS[int(block_idx)]
     return [NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind] for _name, kind, _max in spec.fields]
 
 
 def layer_dims() -> List[int]:
-    """返回单层全部 5 个 block 的离散维度数列表。"""
+    """Return discrete dimension sizes for all five blocks in one layer."""
     out: List[int] = []
     for b in (1, 2, 3, 4, 5):
         out.extend(block_dims(b))
@@ -440,7 +407,7 @@ def layer_dims() -> List[int]:
 
 
 def action_dims_for_config(num_layers: int) -> List[int]:
-    """返回完整动作向量的 ``MultiDiscrete`` 维度数（含尾部 first_input）。"""
+    """Return the full MultiDiscrete shape for a model."""
     layer_dim = layer_dims()
     out: List[int] = []
     for _ in range(int(num_layers)):
@@ -513,7 +480,7 @@ def validate_action_vector(
 
 
 def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
-    """返回单层动作向量内每个分量的 ``(block_idx, field_name, kind)`` 三元组。"""
+    """Return each per-layer action component and its block field."""
     out: List[Tuple[int, str, str]] = []
     for b in (1, 2, 3, 4, 5):
         for fname, kind, _max in _BLOCK_SPECS[b].fields:
@@ -875,7 +842,7 @@ def splice_fusion_step_into_full_vec(
 
 @dataclass
 class ActionDecodeResult:
-    """``action_vector_to_cfgs`` 的返回值。"""
+    """Materialized block configurations and first-input scale for one action."""
     block1_cfgs: Dict[int, Block1NoiseConfig]
     block2_cfgs: Dict[int, Block2NoiseConfig]
     block3_cfgs: Dict[int, Block3NoiseConfig]
@@ -886,7 +853,7 @@ class ActionDecodeResult:
     per_layer_field_values: List[Dict[str, object]] = field(default_factory=list)
 
     def cfgs_dict(self) -> Dict[str, Dict[int, object]]:
-        """``aggregate_*_signals`` 风格的字典视图。"""
+        """Return block configurations in optimizer signal-map form."""
         return {
             "block1": dict(self.block1_cfgs),
             "block2": dict(self.block2_cfgs),
@@ -901,16 +868,7 @@ def _build_block1_action(
         layer_field_values: Dict[str, object],
         is_first_layer: bool,
         ) -> Block1ActionSpec:
-    """从单层 block1 字段值构建 ``Block1ActionSpec``。
-
-    ``is_first_layer`` 仅保留为调用兼容参数；所有层的 truncation K 都生效。
-    layer 0 是否注入 Block 1 噪声由最终 cfg 的 ``noise_enabled`` 独立控制。
-
-    精简后只保留 6 个 RL 槽：``gelu_out_sf / wffn2_sf / mean_inv_d_sf /
-    var_inv_d_sf / mean_rescale_sf / var_rescale_sf``，外加每层都生效的
-    ``output_truncation_k``。被删除的 ``wffn2_rescale_sf`` 和
-    ``square_rescale_sf`` 对应 cfg 字段固定为 None（不安装该处 rescale 噪声）。
-    """
+    """Build a Block 1 action while keeping K active in every layer."""
     del layer_idx, is_first_layer
     return Block1ActionSpec(
         gelu_out_sf=int(layer_field_values["gelu_out_sf"]),
@@ -928,25 +886,7 @@ def _build_block2_action(
         layer_field_values: Dict[str, object],
         profile: str = "mrpc",
         ) -> Block2ActionSpec:
-    """精简后的 Block 2 动作构造。
-
-    Q 侧动作（wq / q_mask1 / q_mask2）被删，cfg 上 Q 侧三个 encode 字段由 K 侧
-    的同名动作绑定填入（K 侧选什么 SF，Q 侧用同一个 SF）。
-
-    Wv 不是 RL 动作：Rescale_optimizer 的 block2
-    计算图里没有 ``ctpt_wv`` 节点，wv 选什么 SF 都不影响 modulus chain；模型噪声
-    侧用一个固定的 SF（``_BLOCK2_FIXED_WV_SF``）安装 Wv 噪声即可。
-
-    ``x_centered_fresh_sf`` 绑定到 ``inv_std_fresh_sf``。
-    Rescale_optimizer 的 ``ctct_x_mean_over_std`` 是 "x2" 旁节点，语义要求
-    x_centered 和 inv_std 两个 fresh ciphertext 的 SF 严格相等；二者拆成
-    两个独立动作只会让 optimizer 的 "x2" 假设在某些组合下失效。所以
-    ``x_centered_fresh_sf`` 进 ``_COMPAT_EXTRA_FIELDS[2]``，cfg 上由
-    ``inv_std_fresh_sf`` 一同填入。
-
-    slot 留在 action vector 里但 ``_COMPAT_EXTRA_FIELDS[2]`` 已经把它们标记成
-    effective=False。其余 8 个被删的 rescale 字段在 cfg 上保留为 None。
-    """
+    """Build a Block 2 action with the required Q/K and fresh-scale bindings."""
     inv_std_fresh_sf = int(layer_field_values["inv_std_fresh_sf"])
     wk_sf = int(layer_field_values["wk_sf"])
     kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
@@ -1026,17 +966,7 @@ def _build_block4_action(
         layer_field_values: Dict[str, object],
         profile: str = "mrpc",
         ) -> Block4ActionSpec:
-    """精简后的 Block 4 动作构造。
-
-    ``softmax_out_mask_sf`` 和 ``v_mask_sf`` 在 RO 计算
-    图里对应同一个 ``ctpt_mask2`` 节点（softmax_out × mask 与 v × mask 共享
-    mask2 输入）。RL 只用 ``softmax_out_mask_sf`` 一个 slot 表达 mask2 的 SF；
-    ``v_mask_sf`` 仍然在 action vector 里（compat-extra），cfg 上直接绑定到
-    softmax_out_mask 的 SF。这样模型在 V × mask 这一步安装的噪声 SF 与
-    softmax_out × mask 一致，optimizer 算的 ctct_rot_softmax_mul_v.delta
-    （由 ``default_block4_cfg_to_delta`` 动态计算成 ``SF(v_fresh) + SF(v_mask)``）
-    也对得上 baseline。``_COMPAT_EXTRA_FIELDS[4]`` 把 ``v_mask_sf`` 标成 inactive。
-    """
+    """Build a Block 4 action with its shared mask scale."""
     shared_mask2_sf = int(layer_field_values["softmax_out_mask_sf"])
 
 
@@ -1069,19 +999,7 @@ def _build_block5_action(
         gelu_degree: int,
         profile: str = "mrpc",
         ) -> Block5ActionSpec:
-    """Block 5 动作构造。
-
-    当前映射约束：
-    * ``inv_std_fresh_sf`` 绑定到 ``x_centered_fresh_sf``（mrpc graph 的
-      ``ctct_xmean_over_std`` 是 "x2" 旁节点，两个 fresh 必须 SF 相同）。
-      二者合并成一个动作（由 x_centered_fresh_sf 主导）。
-    * ``gelu_coeff_mul_rescale_sf_0`` 升级为 active，驱动
-      ``cfg.gelu_coeff_mul_rescales[-1]``（DEFAULT_CFG_TO_T_NEW_MAP 里所有
-      block5_n* 的最后一个 entry 都读 [-1]）。slot 名带 "_0"，因为
-      cfg 的 ``gelu_coeff_mul_rescales`` 是 length=deg 的 tuple，但 mrpc
-      graph 实际把整条 coeff·x^k rescale 合并成一个 ``ctpt_gelu_coeff`` 节点，
-      所以只有 [-1] 位置真正进 optimizer。
-    """
+    """Build a Block 5 action with bound normalization scales and active GELU output scale."""
     deg = int(gelu_degree)
 
 
@@ -1134,10 +1052,7 @@ def _decode_block_field_values(
         attn_degree: int,
         gelu_degree: int,
         ) -> Dict[str, object]:
-    """把单 block 的 action 子段 ↦ ``{field_name: value}`` 字典。
-
-    SF 字段：``sf_from(idx, max_sf, levels)`` 反推；K 字段：``K_LEVELS[idx]``。
-    """
+    """Decode one block action segment into field values."""
     spec = _BLOCK_SPECS[int(block_idx)]
     out: Dict[str, object] = {}
     if action_slice.shape[0] != len(spec.fields):
@@ -1166,7 +1081,7 @@ def _decode_first_input_sf(
         action_value: int,
         max_sfs: MaxSFsTable,
         ) -> int:
-    """first_input fresh SF：与 fresh 同语义（5 挡）。"""
+    """Decode the five-level first-input fresh scale."""
 
     max_sf = 30
     sf = sf_from(int(action_value), max_sf, LEVELS_FIRST_INPUT)
@@ -1208,23 +1123,7 @@ def action_vector_to_cfgs(
         attn_degree: object = 4,
         only: Optional[Tuple[int, int]] = None,
         ) -> ActionDecodeResult:
-    """``MultiDiscrete`` 风格动作向量 → 每层 5 个 BLB block cfg + first_input SF。
-
-    Args:
-        action_vec:    1D ndarray，长度 == ``sum(action_dims_for_config(num_layers))``
-        max_sfs:       ``load_max_sfs(profile)`` 加载的 max SF 表
-        num_layers:    模型层数 L
-        only:          可选 ``(layer_idx, block_idx)``。给定时只解码/构造该层该
-                       block 的 cfg（每个 (layer, block) 的解码彼此独立，结果与
-                       全量解码中的同一项逐位一致）——sequential per-block replan
-                       与 fusion 图枚举的热路径只消费一个 cfg，全量解码（12 层 ×
-                       全 block）是它们的主要耗时。None = 原全量行为，逐位不变。
-        gelu_degree:   Block 5 GELU 多项式 degree (1/2/4)；首层并不影响（每层独立）
-        attn_degree:   Block 3 softmax 多项式 degree (1..6)
-
-    Returns:
-        ``ActionDecodeResult``
-    """
+    """Materialize a full or single-block action vector into BLB configurations."""
     arr = validate_action_vector(action_vec, num_layers)
 
     layer_dim_list = layer_dims()
@@ -1345,17 +1244,7 @@ def build_block_cfg_from_field_values(
         gelu_degree: int = 4,
         attn_degree: int = 4,
         ) -> object:
-    """SF-direct block-cfg builder (bypasses the down-sweep grid).
-
-    ``action_vector_to_cfgs`` decodes action *indices* → field_values (via the
-    baseline-anchored grid, which cannot represent above-baseline SF) → cfg. The
-    precision-boost ("加大精度") produces *above-baseline* explicit SFs, so its
-    boosted options are stored as explicit ``field_values`` and built here,
-    reusing the SAME ``_build_block{N}_action`` + ``build_block{N}_cfg_from_action``
-    as the index path (so an in-grid field_values yields a byte-identical cfg —
-    asserted server-side). ``field_values`` must carry every key the block's
-    ``_build_block{N}_action`` reads (i.e. a full per-block decoded field_values).
-    """
+    """Materialize one block directly from explicit field values."""
     fv = dict(field_values)
     b = int(block_idx)
     if b == 1:
@@ -1778,16 +1667,7 @@ def describe_action_vector(
 
 
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
-    """生成 baseline 动作向量：SF 字段取最高档，K 取该 block 的 baseline K 值。
-
-    Per-block baseline K：
-        Block 1 → K=13    Block 2 → K=10    Block 3 → K=13
-        Block 4 → K=10    Block 5 → K=13
-
-    用于 §6.3 的 baseline + §11 验证清单中"action 全 max → reward = 0"。
-    注：函数名仍叫 ``all_max``（语义上"每个 slot 取其各自的 baseline 最大档"）；
-    truncation K 的"最大"含义已按 BASELINE_K_BY_BLOCK 差异化。
-    """
+    """Build the all-maximum baseline action, including compatibility slots."""
     dims = action_dims_for_config(int(num_layers))
     arr = np.array(dims, dtype=int) - 1
     fields = per_layer_field_offsets()
@@ -1800,7 +1680,7 @@ def make_all_max_action_vector(num_layers: int) -> np.ndarray:
 
 
 def make_all_min_action_vector(num_layers: int) -> np.ndarray:
-    """生成"全 min" 动作向量：每个分量取 0。"""
+    """Build the all-minimum action vector."""
     dims = action_dims_for_config(int(num_layers))
     return np.zeros(len(dims), dtype=int)
 
@@ -1857,10 +1737,7 @@ def avg_truncation_k_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> float:
-    """从 action 向量里抽出每个 block 的 K 选择，返回平均 k。
-
-    用于 reward 中的 ``k_drop = baseline.avg_k - avg_k``。
-    """
+    """Return the mean simulated truncation K across active layer blocks."""
     total, count = _sum_count_effective_k_values_in_action(action_vec, num_layers)
     if count <= 0:
         return 0.0
@@ -1930,12 +1807,7 @@ def build_optimizer_requests(
         profile: str,
         cfgs_dict: Mapping[str, Mapping[int, object]],
         ) -> Dict[str, Tuple[str, object]]:
-    """``cfgs_dict["block1"][i]`` → ``{config_name: (block_name, cfg)}``。
-
-    NOTE: 不会发送 ``(block=1, layer=0)`` 给 Rescale_optimizer，因为该位置
-    没有可调 SF/fusion replan。它仍会出现在 ``block1_cfgs`` 中并由 bridge
-    安装为 K-only cfg；truncation K 不依赖 Rescale_optimizer。
-    """
+    """Build per-block Rescale optimizer requests from decoded configurations."""
     out: Dict[str, Tuple[str, object]] = {}
     for block_name, layer_cfgs in cfgs_dict.items():
         if not str(block_name).startswith("block"):

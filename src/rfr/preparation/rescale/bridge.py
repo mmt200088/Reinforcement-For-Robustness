@@ -24,19 +24,7 @@ from rfr.search.runtime.model_handler import (
 
 @dataclass
 class RescaleOptimizerOutput:
-    """Rescale_optimizer 单个 block 的解析输出（RL reward 侧用）。
-
-    三个核心字段直接来自原始 JSON：
-      * ``fusion_count``   = raw["fusion_count"]
-      * ``total_bits``     = raw["result"]["chain"]["total_bits"]（链合法时；
-                             链不合法时取 raw["result"].get("invalid_chain",{}).get("total_bits", 0)
-                             或 0，由 ``_parse`` 决定）
-      * ``invalid_chain``  = raw["result"]["invalid_chain"]
-                             None ⇒ 链合法；dict ⇒ 不合法 + 原因
-      * ``valid``          = (invalid_chain is None) and raw.get("valid", True)
-
-    ``raw`` 保留完整 JSON，便于业务侧拿其它字段做更复杂 reward。
-    """
+    """Parsed Rescale optimizer output for one block."""
     config_name: str
     fusion_count: int
     total_bits: int
@@ -45,7 +33,7 @@ class RescaleOptimizerOutput:
     raw: dict
 
     def to_signal_dict(self) -> dict:
-        """打包成"基础奖励信号 dict"，让业务侧组合成最终 reward。"""
+        """Return the optimizer fields consumed by reward computation."""
         return {
             "config_name": self.config_name,
             "valid": self.valid,
@@ -126,13 +114,7 @@ def _clone_baseline_archive(
 
 
 def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
-    """读 ``static_skeletons_<profile>.json`` → ``{config_name: (skeleton, t_baseline, q_bits_baseline)}``。
-
-    schema v2 (``cut_point_sf`` / ``modulus_chain.drop_order``)：
-      * skeleton: ``entry["skeleton"]``
-      * t_baseline: 按 skeleton 取 cut_point_sf 的 ``sf_post`` (rescale 点) 或 ``sf`` (source/普通点)
-      * q_bits_baseline: ``modulus_chain.drop_order[1:-1]``（去掉首尾 head/tail prime）
-    """
+    """Load successful skeleton, scale, and modulus baselines by configuration name."""
     abs_path = os.path.abspath(str(path))
     stat = os.stat(abs_path)
     cache_key = (abs_path, int(stat.st_mtime_ns), int(stat.st_size))
@@ -301,14 +283,7 @@ def build_rescale_invoker(
 
 
 def default_block1_cfg_to_delta(cfg: Block1NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 1 默认映射 —— 与 ``configs/<profile>/block1_<profile>.json`` 节点对齐。
-
-    实际节点（schema v2）：
-      * ctpt_ffn2 (CTPT_MUL)        ← Wffn2·X
-      * ctpt_inv_d_1 (CTPT_MUL)     ← μ 的 1/D
-      * ctct_ext_square (CTCT_MUL)  ← (X−μ)²，固定 "x2"
-      * ctpt_inv_d_2 (CTPT_MUL)     ← var 的 1/D
-    """
+    """Map Block 1 noise settings to optimizer node deltas."""
     return {
         "ctpt_ffn2":      int(cfg.wffn2_encode.scaling_factor),
         "ctpt_inv_d_1":   int(cfg.mean_inv_d_encode.scaling_factor),
@@ -318,23 +293,7 @@ def default_block1_cfg_to_delta(cfg: Block1NoiseConfig) -> Dict[str, Union[int, 
 
 
 def default_block2_cfg_to_delta(cfg: Block2NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 2 默认映射 —— 与 ``block2_<profile>.json`` 节点对齐。
-
-    实际节点：
-      * ctct_x_mean_over_std (CTCT_MUL) ← (X−μ)·(1/std)，固定 "x2"
-      * ctpt_gama1 (CTPT_MUL)           ← γ
-      * ctpt_wq_wk (CTPT_MUL)           ← **Q/K 共享**一个节点
-      * ctpt_rotKT_mask1 (CTPT_MUL)     ← K^T BSGS mask 1
-      * ctpt_rotKT_mask2 (CTPT_MUL)     ← K^T BSGS mask 2
-      * ctct_preprocess_qkt (CTCT_MUL)  ← Q·K^T，固定 "x2"
-      * ctpt_mask (CTPT_MUL)            ← 合并 Q,K mask
-
-    BLB Stage-2 RL 的 Q 侧动作（wq_sf / q_mask1_sf / q_mask2_sf）
-    与 K 侧绑定 —— ``_build_block2_action`` 用 K 侧的 SF 同时填 cfg 的 Q/K 字段，
-    所以这里 ``ctpt_wq_wk`` 直接读 ``cfg.wk_encode.scaling_factor``（语义上"由 K
-    侧控制"）。``wk_encode == wq_encode`` 始终成立。BLB cfg 的 ``wv_encode``
-    在该 graph 没有对应节点，被丢弃（仅影响模型噪声）。
-    """
+    """Map Block 2 noise settings to optimizer node deltas with shared Q/K scales."""
     return {
         "ctct_x_mean_over_std": "x2",
         "ctpt_gama1":          int(cfg.gamma_encode.scaling_factor),
@@ -347,12 +306,7 @@ def default_block2_cfg_to_delta(cfg: Block2NoiseConfig) -> Dict[str, Union[int, 
 
 
 def default_block3_cfg_to_delta(cfg: Block3NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 3 默认映射 —— 与 ``block3_exp_n<degree>.json`` 节点对齐。
-
-    实际节点：
-      * ctpt_inv_2n (CTPT_MUL)             ← 1/2^n
-      * ctct_square_1 .. ctct_square_<n> (CTCT_MUL) ← 迭代平方，固定 "x2"
-    """
+    """Map Block 3 exponential-approximation settings to optimizer node deltas."""
     deltas: Dict[str, Union[int, str]] = {
         "ctpt_inv_2n": int(cfg.inv_2n_encode.scaling_factor),
     }
@@ -362,27 +316,7 @@ def default_block3_cfg_to_delta(cfg: Block3NoiseConfig) -> Dict[str, Union[int, 
 
 
 def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 4 默认映射 —— 与 ``block4.json`` 节点对齐。
-
-    实际节点（注意只有 2 个 mask 节点；BLB cfg 的 3 个 mask encode 中
-    ``softmax_out_mask`` / ``v_mask`` 被 graph 合成一个 ``ctpt_mask2``，
-    我们取 ``softmax_out_mask`` 的 SF）：
-      * ctpt_mask2 (CTPT_MUL)               ← softmax 输出 / V 路径上的 mask
-      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，delta = SF(v) + SF(mask2)
-      * ctpt_mask (CTPT_MUL)                ← 合并 softmax×V 后的 mask
-      * ctpt_wo_attnout (CTPT_MUL)          ← Wo
-      * ctpt_inv_d_1 (CTPT_MUL)             ← post-attn LN μ 的 1/D
-      * ctct_square (CTCT_MUL)              ← post-attn LN (X−μ)²，固定 "x2"
-      * ctpt_inv_d_2 (CTPT_MUL)             ← post-attn LN var 的 1/D
-
-    ``ctct_rot_softmax_mul_v`` 的 delta 根据 cfg 动态计算成
-    ``SF(v_fresh) + SF(v_mask_encode)``。CKKS 里两个密文相乘的累积 SF 是各自
-    SF 之和，所以 v * mask2 这一步的 SF 就是 SF(v) + SF(mask2)。``v_mask_encode``
-    已经被 ``_build_block4_action`` 绑定到 ``softmax_out_mask_encode``（同一个
-    mask2），所以无论用哪个读出来 SF 都一样；为了和 baseline_bootstrap 里
-    ``v_fresh.sf = ctct_rot_softmax_mul_v.delta - ctpt_mask2.delta`` 的反推公式
-    精确对称，我们在这里用 ``v_mask_encode`` 来对应 baseline 里的 mask2。
-    """
+    """Map Block 4 settings to optimizer deltas, including the shared mask scale."""
     return {
         "ctpt_mask2":             int(cfg.softmax_out_mask_encode.scaling_factor),
         "ctct_rot_softmax_mul_v": (
@@ -398,18 +332,7 @@ def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, 
 
 
 def default_block5_cfg_to_delta(cfg: Block5NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 5 默认映射 —— 与 ``block5_n<degree>.json`` 节点对齐。
-
-    实际节点（按 GELU degree 不同，graph 含的 ctct_gelu_* 也不同）：
-      * ctct_xmean_over_std (CTCT_MUL) ← post-attn (X−μ)·(1/std)
-      * ctpt_gamal (CTPT_MUL)          ← γ
-      * ctpt_wffn1 (CTPT_MUL)          ← W_ffn1·X
-      * (degree==1：无 ctct_gelu_*)
-      * (degree==2：ctct_gelu_x2)
-      * (degree==4：ctct_gelu_x2 + ctct_gelu_x4；**不含 ctct_gelu_x3**，
-        因为 graph 把 x^3 直接折进 x^4)
-      * ctpt_gelu_coeff (CTPT_MUL)     ← 多项式系数
-    """
+    """Map Block 5 LayerNorm, FFN, and GELU settings to optimizer deltas."""
     deltas: Dict[str, Union[int, str]] = {
         "ctct_xmean_over_std": "x2",
         "ctpt_gamal":          int(cfg.gamma_encode.scaling_factor),
@@ -469,14 +392,7 @@ _DEFAULT_BLOCK_MAPPERS: Dict[str, CfgToDeltaFn] = {
 
 @dataclass(frozen=True)
 class _SkelEntry:
-    """skeleton 上某个 stage 对应到 cfg 哪个字段。
-
-    Args:
-        cfg_field:   cfg 上的属性名（必须是 NoisePoint 或 Optional[NoisePoint]
-                     或 Tuple[Optional[NoisePoint]]）
-        tuple_index: 若 cfg_field 是 tuple，取第 N 项；None=该字段是单一 NoisePoint。
-                     支持负索引（如 -1 表示 last 项）。
-    """
+    """Reference a scalar or tuple-valued noise point for one skeleton stage."""
     cfg_field: str
     tuple_index: Optional[int] = None
 
@@ -572,11 +488,7 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
 
 
 def _strip_layer_suffix(config_name: str) -> Tuple[str, Optional[int]]:
-    """``"block1_mrpc_L0"`` → ``("block1_mrpc", 0)``；``"block1_mrpc"`` → ``("block1_mrpc", None)``。
-
-    BLB Stage 2 RL 的 env 端会把每层独立编号成 ``"<graph_key>_L<i>"``；invoker
-    端只关心 graph_key（每个 (block, profile) 共享一份 graph + baseline）。
-    """
+    """Split an optional ``_L<index>`` suffix from a shared graph key."""
     name = str(config_name)
     if "_L" in name:
         head, _, tail = name.rpartition("_L")
@@ -588,10 +500,7 @@ def _strip_layer_suffix(config_name: str) -> Tuple[str, Optional[int]]:
 
 
 def _extract_sf_from_cfg(cfg: Any, entry: _SkelEntry) -> Optional[int]:
-    """按 ``_SkelEntry`` 从 cfg 里抽出 NoisePoint 的 ``scaling_factor``。
-
-    None ⇒ 字段不存在 / 值为 None / tuple 越界。
-    """
+    """Read a scaling factor from a configuration entry, returning ``None`` if absent."""
     attr = getattr(cfg, entry.cfg_field, None)
     if attr is None:
         return None
@@ -618,20 +527,7 @@ def cfg_to_t_new_from_table(
         baseline_t_new: Optional[Sequence[int]] = None,
         table: Optional[Mapping[str, Sequence[_SkelEntry]]] = None,
         ) -> Optional[List[int]]:
-    """从 cfg 自动派生 ``t_new``。
-
-    返回 None ⇒ 当前 ``graph_key`` 在表里没有映射（caller 应让 invoker fallback
-    到 baseline）。
-
-    返回 list[int] ⇒ 全部 stage 都成功取到 SF（或 baseline_t_new 提供了缺位的
-    fallback）。
-
-    规则：
-      * 如果某 stage 的 cfg 字段是 None（RL 没启用该 rescale）且 baseline_t_new
-        里有对应位置 ⇒ 用 baseline_t_new[r] 填位。
-      * 如果某 stage 的 cfg 字段是 None 且没有 baseline ⇒ 整体放弃，返回 None
-        （让 invoker 用 baseline）。
-    """
+    """Derive per-stage output scales from a materialized block configuration."""
     tbl = table or DEFAULT_CFG_TO_T_NEW_MAP
     entries = tbl.get(str(graph_key))
     if not entries:
@@ -699,23 +595,7 @@ class RescaleOptimizerBridge:
             auto_t_new_from_cfg: bool = True,
             cache_max_entries: int = 50000,
             ):
-        """构造 bridge。
-
-        Args:
-            invoker:                    in-process ``RescaleOptimizerInvoker``
-            cfg_to_delta_overrides:     ``{block_name: fn(cfg) -> delta_overrides_dict}``，
-                                        覆盖默认 ``default_block{1..5}_cfg_to_delta``
-            cfg_to_t_new_overrides:     ``{graph_key: tuple[_SkelEntry, ...]}``，扩展或覆盖
-                                        ``DEFAULT_CFG_TO_T_NEW_MAP``。可用于支持 mrpc 之外的
-                                        profile key.
-            auto_t_new_from_cfg:        默认 ``True`` ⇒ 当 ``evaluate(t_new=None)`` 时
-                                        自动从 cfg 派生 t_new；False ⇒ 不派生
-                                        （t_new=None ⇒ invoker fallback 到 baseline）。
-            cache_max_entries:          LRU cache size for deterministic optimizer
-                                        calls. Sequential RL repeats many per-block
-                                        action tuples; caching avoids recomputing the
-                                        same ReplanSession result dozens of times.
-        """
+        """Initialize mappings and the bounded cache for deterministic replans."""
         self.invoker = invoker
 
         self._cfg_mappers: Dict[str, CfgToDeltaFn] = dict(_DEFAULT_BLOCK_MAPPERS)
@@ -739,16 +619,15 @@ class RescaleOptimizerBridge:
         self.cache_misses = 0
 
     def register_cfg_to_delta_overrides(self, block_name: str, fn: CfgToDeltaFn) -> None:
-        """业务侧动态注册 / 覆盖某个 block 的 cfg → delta 转换函数。"""
+        """Register or replace a block configuration-to-delta mapper."""
         self._cfg_mappers[str(block_name)] = fn
 
     def register_cfg_to_t_new(self, graph_key: str, entries: Sequence[_SkelEntry]) -> None:
-        """业务侧动态注册 / 覆盖某个 ``graph_key`` 的 skeleton→cfg 字段映射。"""
+        """Register or replace a graph skeleton-to-configuration mapping."""
         self._cfg_to_t_new_table[str(graph_key)] = tuple(entries)
 
     def _lookup_baseline_t_new(self, graph_key: str) -> Optional[List[int]]:
-        """如果 invoker 暴露 ``baselines`` 属性（``InProcessInvoker`` 有），就读
-        baseline t_new 用于 cfg-derived t_new 的 fallback；否则返回 None。"""
+        """Read baseline stage scales from invokers that expose them."""
         baselines = getattr(self.invoker, "baselines", None)
         if not isinstance(baselines, Mapping):
             return None
@@ -762,7 +641,7 @@ class RescaleOptimizerBridge:
             return None
 
     def cfg_to_delta_overrides(self, block_name: str, cfg: Any) -> Dict[str, Union[int, str]]:
-        """单独把 cfg 翻译成 delta_overrides；不调用优化器，仅做翻译。"""
+        """Translate one block configuration into optimizer delta overrides."""
         block_name = str(block_name)
         if block_name not in self._cfg_mappers:
             raise KeyError(
@@ -798,25 +677,7 @@ class RescaleOptimizerBridge:
             extra_overrides: Optional[Mapping[str, Union[int, str]]] = None,
             _borrow_cached_payload: bool = False,
             ) -> RescaleOptimizerOutput:
-        """对单个 (config, block, cfg) 三元组跑一次优化器。
-
-        Args:
-            config_name: 配置名。可以是 baseline 的原始名（``"block1_mrpc"``、
-                         ``"block3_exp_n4"``）或 RL 端按层加 ``_L<i>`` 后缀的形式
-                         （``"block1_mrpc_L0"``）。后缀会被自动剥掉用作 graph key。
-            block_name:  ``"block1"`` … ``"block5"``，决定 cfg→delta 用哪个 mapper。
-            cfg:         ``Block{N}NoiseConfig`` 实例。
-            t_new:       per-stage 新 SF（length = R+1，与 baseline skeleton 对齐）。
-                         * **None + auto_t_new_from_cfg=True**（默认）⇒ 从 cfg 自动
-                           派生 t_new（按 ``DEFAULT_CFG_TO_T_NEW_MAP``）。
-                         * **None + auto_t_new_from_cfg=False** 或表里没有该 graph_key
-                           ⇒ invoker 内部用 baseline ``t_baseline``。
-            extra_overrides: 在默认 cfg→delta 翻译之上叠加 / 覆盖的节点 deltas。
-
-        Returns:
-            ``RescaleOptimizerOutput``（``config_name`` 字段保留 RL 端的原始值，
-            含 ``_L<i>`` 后缀）。
-        """
+        """Evaluate one materialized block configuration through the Rescale optimizer."""
 
         graph_key, _layer_idx = _strip_layer_suffix(config_name)
 
@@ -959,18 +820,7 @@ class RescaleOptimizerBridge:
             t_new_per_config: Optional[Mapping[str, List[int]]] = None,
             extra_overrides: Optional[Mapping[str, Mapping[str, Union[int, str]]]] = None,
             ) -> Dict[str, RescaleOptimizerOutput]:
-        """一次跑多个 config。
-
-        Args:
-            requests: ``{config_name: (block_name, cfg)}``，比如
-                      ``{"block1_mrpc": ("block1", block1_cfg), ...}``
-            t_new_per_config: ``{config_name: [int, ...]}``，可选；不传则对应
-                              config 走 baseline t_new。
-            extra_overrides: ``{config_name: {node: delta, ...}}``，可选
-
-        Returns:
-            ``{config_name: RescaleOptimizerOutput}``
-        """
+        """Evaluate a mapping of materialized block configurations."""
         outputs: Dict[str, RescaleOptimizerOutput] = {}
         for config_name, (block_name, cfg) in requests.items():
             xtra = (extra_overrides or {}).get(config_name)
@@ -1019,17 +869,7 @@ class OptimizerRewardSignals:
 
 
 def apply_rotation_flags_to_cfg(cfg: Any, rotation_flag_names) -> None:
-    """把"开启的 rotation 候选点列表"应用到 cfg 上。
-
-    cfg 上所有 ``rotation_after_*`` bool 字段：在 ``rotation_flag_names`` 里出现
-    的置 True，其余统一置 False。这是和 Rescale_optimizer 输出对接的最小钩子 ──
-    上层 canonical materialization 先用本模块的 per-block 权威名字表，把优化器
-    输出的 ``effective_rotations`` 转换成 BLB 命名空间的 flag 名。
-
-    Args:
-        cfg:                Block*NoiseConfig 实例（任意 block）
-        rotation_flag_names: iterable[str]，要置 True 的 ``rotation_after_*`` 字段名
-    """
+    """Set every rotation flag from the selected optimizer rotation names."""
     enable = {str(n) for n in rotation_flag_names}
     for name in vars(cfg).keys():
         if name.startswith("rotation_after_"):
@@ -1502,7 +1342,7 @@ def apply_optimizer_output_to_cfg(
 def aggregate_optimizer_signals(
         outputs: Mapping[str, RescaleOptimizerOutput],
         ) -> OptimizerRewardSignals:
-    """跨 block 聚合 fusion_count / total_bits / invalid_chain。"""
+    """Aggregate fusion count, total bits, and validity across blocks."""
     fusion_total = 0
     bits_total = 0
     valid_n = 0

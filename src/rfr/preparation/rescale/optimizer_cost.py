@@ -513,7 +513,7 @@ def evaluate_action_for_cost(
     Optimizer-native empty-payload baselines remain diagnostic-only because
     they may use a different Rescale_optimizer convention.
 
-    ``boosted_overrides`` (加大精度): ``{(block_idx, layer_idx): {field: sf}}`` of
+    ``boosted_overrides``: ``{(block_idx, layer_idx): {field: sf}}`` of
     explicit boosted SFs (above-baseline, no action index). After the grid decode,
     the listed (block, layer) cfgs are rebuilt SF-direct so the ENTIRE downstream
     path — replan cost signals, optimizer override, AND the model noise install —

@@ -1,5 +1,5 @@
 """
-rescale_optimizer — HE 计算图 rescale 位置优化器
+Rescale placement optimizer for homomorphic-encryption computation graphs.
 
 Four-stage pipeline:
 

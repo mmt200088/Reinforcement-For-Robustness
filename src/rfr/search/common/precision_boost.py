@@ -1,4 +1,4 @@
-"""Fusion-option precision boost ("加大精度") — torch-free core.
+"""Torch-free precision boosting for fusion options.
 
 After the fusion-count enumeration keeps the minimum-noise config per
 ``fusion_count`` (``fusion_enum.group_min_noise_options``), a non-zero-fusion

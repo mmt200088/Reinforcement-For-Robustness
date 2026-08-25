@@ -33,37 +33,34 @@ def detect_rl_local_optimum(
     best_stuck_window=None,
     action_kl_threshold=0.5,
 ):
-    """检测 RL 是否陷入局部最优；返回包含逐项判据 + 综合结论的 dict。
+    """Detect likely local convergence and return signals, metrics, and a verdict.
 
     Parameters
     ----------
     episode_returns : Sequence[float]
-        每回合的 return / reward。必填。
+        Return or reward for each episode.
     episode_entropies : Sequence[float], optional
-        每回合（或每次 PPO 更新）的策略熵。强烈建议提供。
+        Policy entropy by episode or PPO update.
     best_score_history : Sequence[float], optional
-        全局最优分数随回合的演进序列；若为 None，则用 cummax(episode_returns) 近似。
+        Global-best history. The cumulative maximum of returns is used when omitted.
     action_history : Sequence[Sequence[int]], optional
-        每回合的动作序列；若提供则计算多样性塌缩信号。
+        Per-episode actions used to measure diversity collapse.
     window : int
-        判定使用的滑窗大小（episode）。
+        Sliding-window size in episodes.
     entropy_collapse_threshold : float
-        熵塌缩阈值。低于该值视作熵塌缩。
+        Values below this threshold indicate entropy collapse.
     plateau_cv_threshold : float
-        变异系数 (std/|mean|) 阈值；越小说明 reward 越平。
+        Coefficient-of-variation threshold for a flat reward window.
     best_stuck_window : int, optional
-        best 不更新的窗口；默认 = 2 * window。
+        Window without a new best, defaulting to ``2 * window``.
     action_kl_threshold : float
-        动作分布 KL 阈值。
+        KL-divergence threshold for the action distribution.
 
     Returns
     -------
     dict
-        包含 keys:
-          - signals: 各判据 bool
-          - metrics: 各判据数值指标
-          - likely_local_optimum: 综合判定
-          - summary: 一行人类可读总结
+        Contains boolean ``signals``, numeric ``metrics``, the combined
+        ``likely_local_optimum`` verdict, and a one-line ``summary``.
     """
     returns = _float_array(episode_returns)
     n = returns.size
@@ -170,8 +167,7 @@ def format_local_optimum_report(
     completed_episodes: Optional[int] = None,
     extra_lines: Optional[Sequence[str]] = None,
 ) -> str:
-    """把 ``detect_rl_local_optimum`` 的 dict 渲染成 Stage-1 ``pruning_search_log.txt``
-    同款文本版式（标题可换 Stage-1 / Stage-2）。"""
+    """Render a local-optimum result in the Stage 1 pruning-log format."""
     lines = []
     lines.append(f"=== {title} 局部最优检测报告 ===")
     if completed_episodes is not None:
@@ -268,10 +264,10 @@ def write_local_optimum_report(
     worst_signed_margin: Optional[Sequence[float]] = None,
     log_fn=None,
 ) -> str:
-    """计算检测判据并写出 Stage-1 同款检测报告文件。返回写出的路径（失败返回 ""）。
+    """Compute and write a local-optimum report, returning its path on success.
 
-    若提供 ``priority`` (+ 可选 ``fusion_count`` / ``worst_signed_margin``)，追加一段
-    崩溃归因（起点 + HOT/COLD 判定）。best-effort：任何异常只记日志，不抛出。
+    Optional priority, fusion-count, and margin fields add collapse attribution.
+    Reporting is best effort: failures are logged and return an empty path.
     """
     log = log_fn or (lambda _msg: None)
     try:

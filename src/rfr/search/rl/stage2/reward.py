@@ -998,29 +998,22 @@ def compute_reward(
     """v3 reward with loss/m1/m2 precision gates and std stability gates.
 
     Args:
-        metrics:           本步 K trials 评估指标（v3 期望 metric1_std / metric2_std
-                           已填；旧 caller 不填 default=0 等价于"trial 间无差异"）
-        opt_signals:       ``rescale_optimizer_bridge.aggregate_optimizer_signals`` 输出
-        action_avg_k:      本步动作的平均 truncation k（小 = 更激进 = 通讯更少 = 好）
-        baseline:          ``BaselineCostStats`` (全 max baseline)
-        weights:           ``RewardWeights``；None ⇒ v3 默认值
-        acc_threshold:     m1 硬阈值；None ⇒ 由 baseline.metric1_mean * (1-tol) 派生
-        acc_threshold_m2:  m2 硬阈值；None ⇒ 由 baseline.metric2_mean * (1-tol) 派生
-        stab_threshold:    loss_std 阈值；v3 中 m1_std/m2_std/loss_std 各自有阈值
-                           （baseline.X_std*(1+stab_tol)+stab_floor），传入的
-                           ``stab_threshold`` 仅 override loss 那一项以兼容老 caller
-        any_invalid:       优化器 invalid_chain 显式覆盖；None=直接读 signals
-        pareto_archive:    可选 P3 cost archive。传入后仍只收 P3 候选，用于
-                           frontier 诊断/探索统计；默认不再决定 PPO scalar。
-        action_hash:       Pareto archive 的候选身份；与 pareto_archive 同时传入
-                           才记录 P3 frontier 诊断事件。
-        external_cost_score: fusion-count 路径专用。调用方（env + fusion map）算好的
-                           per-block 加权 cost 节省（已是 [0, p3_cost_budget] 量级的有界
-                           标量），非 None 时直接替掉聚合 fusion/K/bits cost_score；
-                           仅在 P3（metric_ok 且 stab_ok）生效，total_bits 不参与。
-        external_cost_rank: 对应的无界排序值（候选/前沿排序用，永不进 PPO 标量）。
-        external_resource_objective: layerwise 双资源目标的显式诊断字段；其
-                           ``ppo_resource_score`` 必须与 external_cost_score 一致。
+        metrics: K-trial metrics. Missing legacy standard deviations default
+            to zero, meaning no observed variation between trials.
+        opt_signals: Output from ``aggregate_optimizer_signals``.
+        action_avg_k: Mean truncation K; smaller values use less communication.
+        baseline: All-maximum ``BaselineCostStats``.
+        weights: Reward weights, or the v3 defaults when omitted.
+        acc_threshold: Hard metric-1 threshold, derived from the baseline when omitted.
+        acc_threshold_m2: Hard metric-2 threshold, derived from the baseline when omitted.
+        stab_threshold: Optional override for the loss standard-deviation threshold.
+        any_invalid: Explicit invalid-chain override, otherwise read from signals.
+        pareto_archive: Optional archive for P3 frontier diagnostics.
+        action_hash: Candidate identity used with ``pareto_archive``.
+        external_cost_score: Bounded fusion-map resource score for the P3 branch.
+        external_cost_rank: Unbounded ranking value, never included in the PPO scalar.
+        external_resource_objective: Layerwise resource diagnostics whose
+            ``ppo_resource_score`` must match ``external_cost_score``.
 
     Returns:
         ``RewardBreakdown``

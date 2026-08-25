@@ -51,21 +51,19 @@ def find_min_sf(
     op_type: str = "rescale",
 ) -> int:
     """
-    返回最小的 sf_bits 使得 noise(sf_bits) / a ≤ max_relative_error。
+    Return the smallest ``sf_bits`` satisfying the relative-error bound.
 
-    语义（"保护 p 比例的数据"）::
+    To protect a fraction ``p`` of the data::
 
-        p           = snr.percentile                 # 想保护的数据比例
-        a_threshold = amplitude.get_value_at(1 − p)  # 该比例下 worst-case 的
-                                                      #   *最小* 量级（CDF 的
-                                                      #   (1−p) 分位）
-        要求  noise(sf) / a_threshold ≤ max_relative_error
+        p           = snr.percentile
+        a_threshold = amplitude.get_value_at(1 - p)
+        noise(sf) / a_threshold <= max_relative_error
 
-    直觉：大量级的相对误差自动满足，难点在小量级；所以把 (1−p) 分位当作
-    我们愿意保护的最小量级下界：|x| ≥ a_threshold 的那部分数据（占比 p）
-    其相对误差都会 ≤ max_relative_error。
+    The ``(1-p)`` quantile is the smallest protected magnitude. Every value
+    with ``|x| >= a_threshold`` then satisfies ``max_relative_error``.
 
-    若噪声表为空或所有 sf 都不满足，返回最大可用 sf_bits（并发出警告）。
+    If the table is empty or no entry satisfies the bound, return the largest
+    available ``sf_bits`` and emit a warning.
     """
 
 
@@ -97,14 +95,13 @@ def find_min_sf(
 
 def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
     """
-    填充 graph 的 baseline_scale_bits / target_scale_bits / stage_edges /
-    tail_edges。
+    Populate baseline scales, target scales, stage edges, and tail edges.
 
-    入口前提：
-        graph.nodes           已按 topo_order 升序排好
-        graph.cut_points      包含 c_0..c_M 以及虚拟 c_{M+1} (DUMMY_SINK)
-        每个 ComputeNode 已填好 stage_anchor / scale_delta_bits / count / cost
-        graph.noise_table / h_sf / q_legal_min / q_legal_max 已配置
+    Preconditions:
+        ``graph.nodes`` is sorted by ``topo_order``.
+        ``graph.cut_points`` contains ``c_0..c_M`` and a dummy ``c_{M+1}``.
+        Every node has its anchor, scale delta, count, and cost fields set.
+        The noise table, headroom, and legal modulus range are configured.
     """
     M = graph.M
     nt = graph.noise_table

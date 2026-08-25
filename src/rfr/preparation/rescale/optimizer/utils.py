@@ -56,7 +56,7 @@ def setup_logging(
 
 
 def bits_for_value(value: float) -> float:
-    """返回表示 |value| 所需的 bit 数 = ceil(log2(|value| + 1))。"""
+    """Return ``ceil(log2(|value| + 1))``, the bits needed for ``|value|``."""
     if value <= 0:
         return 0.0
     return math.ceil(math.log2(abs(value) + 1))
@@ -80,23 +80,23 @@ def is_prime(n: int) -> bool:
 def find_ntt_friendly_prime(bit_size: int, ring_degree: int = 1 << 15,
                             direction: str = "up") -> int:
     """
-    寻找一个 NTT 友好的素数 q，满足:
-      - q ≡ 1 (mod 2·ring_degree)
-      - bit_length(q) == bit_size
+    Find an NTT-friendly prime ``q`` such that:
+      - ``q == 1 (mod 2 * ring_degree)``
+      - ``bit_length(q) == bit_size``
 
     Parameters
     ----------
     bit_size : int
-        目标素数的 bit 宽度。
+        Target bit width.
     ring_degree : int
-        多项式环度数 N（默认 2^15 = 32768）。
+        Polynomial ring degree, defaulting to ``2^15``.
     direction : str
-        "up" 从下界向上搜索, "down" 从上界向下搜索。
+        Search upward from the lower bound or downward from the upper bound.
 
     Returns
     -------
     int
-        满足条件的素数; 若找不到则返回 0。
+        A matching prime, or zero when no prime is found.
     """
     m = 2 * ring_degree
     lower = 1 << (bit_size - 1)
@@ -124,14 +124,14 @@ def find_ntt_friendly_prime(bit_size: int, ring_degree: int = 1 << 15,
 def format_skeleton(skeleton: List[int],
                     drop_bits: Optional[List[float]] = None) -> str:
     """
-    格式化打印一个 rescale skeleton。
+    Format a rescale skeleton for display.
 
     Parameters
     ----------
     skeleton : list of int
-        cut point index 序列, e.g. [0, 3, 7, 12]。
+        Cut-point indices, such as ``[0, 3, 7, 12]``.
     drop_bits : list of float, optional
-        各 stage 的 drop bit 数, 长度 = len(skeleton)-1。
+        Per-stage drop bits with length ``len(skeleton) - 1``.
     """
     lines = [f"Skeleton: {skeleton}  (length = {len(skeleton)}, "
              f"rescales = {len(skeleton) - 1})"]
@@ -143,7 +143,7 @@ def format_skeleton(skeleton: List[int],
 
 def format_modulus_chain(primes_bits: List[float],
                          labels: Optional[List[str]] = None) -> str:
-    """格式化打印模数链。"""
+    """Format a modulus chain for display."""
     if labels and len(labels) == len(primes_bits):
         parts = [f"{lbl}={b:.0f}" for lbl, b in zip(labels, primes_bits)]
     else:

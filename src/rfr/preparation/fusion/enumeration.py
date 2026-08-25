@@ -489,7 +489,7 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
 
 
 def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Apply the precision boost ("加大精度") to each non-zero-fusion option.
+    """Apply the precision boost to each non-zero-fusion option.
 
     Two stages, chained, for every option with ``fusion_count != 0`` whose
     block-type has a registered ``ChainTopology``:

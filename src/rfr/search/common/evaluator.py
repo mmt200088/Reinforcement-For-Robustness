@@ -323,13 +323,7 @@ def update_persistent_metadata_stage(
         status: str,
         extra_fields: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """更新持久化目录中 metadata.json 的阶段完成状态。
-
-    stage_key: 'stage1_search', 'stage2_search', 'final_eval'
-    status:    'converged', 'budget_exhausted', 'completed', 'skipped',
-               'in_progress', 'not_started'
-    extra_fields: dict of additional fields to merge (optional)
-    """
+    """Update stage-completion fields in a persistent run metadata file."""
     import json as _json
     import datetime as _dt
     meta_path = os.path.join(run_output_dir, "metadata.json")
@@ -570,13 +564,13 @@ class RunningMeanStd:
         return np.sqrt(self.var + 1e-8)
 
     def normalize(self, x):
-        """归一化数据"""
+        """Normalize values with the running mean and variance."""
         if isinstance(x, torch.Tensor):
             return (x - self.mean) / (self.std + 1e-8)
         return (x - self.mean) / (self.std + 1e-8)
 
     def denormalize(self, x):
-        """反归一化数据"""
+        """Restore values from running normalization."""
         return x * self.std + self.mean
 
 
@@ -908,7 +902,7 @@ class RecurrentRolloutBuffer:
         self._current = None
 
     def start_episode(self):
-        """开始记录新的Episode"""
+        """Start recording a recurrent rollout episode."""
         self._current = {
             'cont_features': [],
             'layer_indices': [],
@@ -923,7 +917,7 @@ class RecurrentRolloutBuffer:
 
     def add_step(self, cont_feat, layer_idx, prev_g,
                  action_g, logprob, reward, value, done, gelu_mask=None):
-        """添加一步数据到当前Episode（gelu-only）"""
+        """Append one Stage 1 decision to the current episode."""
         self._current['cont_features'].append(cont_feat)
         self._current['layer_indices'].append(layer_idx)
         self._current['prev_g_actions'].append(prev_g)
@@ -936,12 +930,12 @@ class RecurrentRolloutBuffer:
             self._current['gelu_masks'].append(gelu_mask)
 
     def end_episode(self):
-        """结束当前Episode，加入存储"""
+        """Finalize and store the current episode."""
         self.episodes.append(self._current)
         self._current = None
 
     def clear(self):
-        """清空所有存储"""
+        """Discard all stored rollout episodes."""
         self.episodes.clear()
 
     @property
@@ -1033,7 +1027,7 @@ class TransformerOptEnv:
         self.reset()
 
     def reset(self):
-        """重置环境"""
+        """Reset the Stage 1 search state."""
         self.current_layer = 0
         self.accumulated_cost = 0.0
         self.gelu_config = []
@@ -1050,33 +1044,12 @@ class TransformerOptEnv:
         return self._get_state()
 
     def get_gelu_action_mask(self, layer_idx=None):
-        """
-        返回指定层的 GELU 动作掩码 (4-dim bool)。
-        True = 该动作可选, False = 被禁止。
-        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0(ReLU)。
-        Stage-1 RL 当前禁用 degree 0；idx 3 保留给历史配置与手工 eval。
-
-        如果 layer_idx 为 None，使用 self.current_layer。
-        """
+        """Return the current GELU action mask without mutating the environment."""
         del layer_idx
         return STAGE1_GELU_ACTION_MASK.copy()
 
     def _get_state(self):
-        """
-        构造31维状态向量（gelu-only：softmax 通道已移除）。
-
-        Softmax 每层固定为 degree 6，不占动作或状态通道。活动的
-        GTrXL 策略只消费 get_policy_cont_features() 暴露的 6 个连续特征，所以这个扁平
-        向量的布局不再承载任何 softmax 通道。
-
-        - 12维: 位置编码 (One-Hot)
-        - 1维: 成本偏差 (Cost Deviation)
-        - 1维: 上一步GELU动作编码
-        - 1维: 累积复杂度债务 (Complexity Debt)
-        - 1维: 进度指示 (Progress Indicator)
-        - 12维: GELU动作历史（归一化，未访问层为0）
-        - 3维: 预算感知 (loss/metric1/metric2 剩余预算)
-        """
+        """Build the state vector from selected degrees and the current layer."""
 
 
         position = np.zeros(self.total_layers)
@@ -1153,12 +1126,7 @@ class TransformerOptEnv:
         return self._policy_cont_features.copy()
 
     def _compute_dense_step_reward(self, gelu_degree):
-        """
-        策略一（3.1）：计算稠密化中间奖励（gelu-only）。
-
-        Softmax 固定为 degree 6（成本为常数），因此每层成本奖励完全由 GELU degree
-        驱动。Dense reward 仍对每层成本节约单调（无 expected-cost-track 偏置）。
-        """
+        """Compute a progress reward from the selected approximation degrees."""
         step_cost = GELU_COST[gelu_degree] + SOFTMAX_COST[FIXED_SOFTMAX_DEGREE]
 
 
@@ -1167,11 +1135,7 @@ class TransformerOptEnv:
         return cost_reward
 
     def step(self, gelu_action_idx):
-        """执行动作（gelu-only），返回(next_state, reward, done, info)。
-
-        softmax 不再是动作：每层固定 degree 6（FIXED_SOFTMAX_DEGREE），其成本为常数。
-        softmax_config 仍按层填入该固定 degree，供下游（stage1_evaluate / 报告）使用。
-        """
+        """Apply one layer decision and return the next transition."""
 
         gelu_degree = GELU_MAP[gelu_action_idx]
         softmax_degree = FIXED_SOFTMAX_DEGREE
@@ -1237,14 +1201,7 @@ class TransformerOptEnv:
         }
 
         def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
-            """
-            对数障碍函数：当接近约束边界时梯度急剧增大
-
-            Args:
-                curr_value: 当前指标值
-                limit_value: 约束阈值
-                is_upper_bound: True表示约束为 curr < limit，False表示 curr > limit
-            """
+            """Apply a smooth log barrier to a constraint margin."""
             if is_upper_bound:
 
                 margin = limit_value - curr_value
@@ -2248,11 +2205,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         episode_metric1s, episode_metric2s, episode_losses,
         best_reward, best_cost, completed_episodes,
     ):
-        """解耦 stage1-only 完成时：归档 config + 基础指标 + 曲线进 stage1/record/，并打 COMPLETED。
-
-        全程 best-effort：任何异常只记日志，绝不让训练在收尾处崩溃。基础指标来自
-        训练中固定的 train_probe；重型同-cost 51 组对比是独立工具。
-        """
+        """Archive a completed Stage 1 run when decoupled records are enabled."""
         try:
             import datetime as _dt
             from rfr.common.config import run_layout as _rl
@@ -2359,11 +2312,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log(f"  [解耦][警告] Stage-1 record 归档失败（不影响训练结果）：{_e}")
 
     def _resolve_stage1_degrees_from_record(self):
-        """解耦 stage2-only：从 sibling 的 stage1/record/ 读前置 Stage-1 的 gelu/softmax。
-
-        combo 直接来自 ``run_output_dir`` 的 basename（``<root>/stage2/<combo>``），
-        stage1 record 根目录为 ``<root>/stage1/record``。返回 ``(gelu, softmax, source)``。
-        """
+        """Resolve Stage 1 degrees from a completed record directory."""
         import json as _json
         from rfr.common.config import run_layout as _rl
 
@@ -2450,28 +2399,25 @@ class LayerImportanceEvaluator(TrainerCallback):
         return False
 
     def _log_task_type(self):
-        """记录任务类型信息"""
+        """Log whether the task is classification or regression."""
         full_names = self.dataset_config['metric_full_names']
         task_type = 'REGRESSION' if self.is_regression else 'CLASSIFICATION'
         print(f"[信息] 数据集（Dataset）'{self.data_path}' 检测为 {task_type} 任务")
         print(f"[信息] 使用指标（Using metrics）: {', '.join(full_names)}")
 
     def get_metric_names(self) -> Tuple[str, ...]:
-        """
-        获取当前数据集的完整指标名称（用于日志显示）
-        单指标数据集返回 (name,)，双指标返回 (name1, name2)
-        """
+        """Return metric names for the active GLUE task."""
         full_names = self.dataset_config['metric_full_names']
         if len(full_names) == 1:
             return (full_names[0],)
         return (full_names[0], full_names[1])
 
     def get_metric_short_names(self) -> Tuple[str, ...]:
-        """获取当前数据集的短指标名称（用于表格）"""
+        """Return abbreviated metric names for logs and reports."""
         return self.dataset_config['metric_names']
 
     def get_num_metrics(self) -> int:
-        """返回当前数据集的评估指标数量 (1 或 2)"""
+        """Return the number of task metrics."""
         return len(self.dataset_config['metrics'])
 
     def _make_dataloader(self, dataset, *, batch_size=None):
@@ -2631,7 +2577,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         }, False
 
     def _fmt_metrics(self, loss, m1, m2, prefix=""):
-        """格式化指标字符串，单指标数据集只显示一个指标"""
+        """Format the current metrics for a progress line."""
         names = self.get_metric_names()
         p = f"{prefix}" if prefix else ""
         if self.get_num_metrics() == 1:
@@ -2639,14 +2585,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         return f"{p}损失（Loss）: {loss:.6f}, {names[0]}: {m1:.6f}, {names[1]}: {m2:.6f}"
 
     def _fmt_constraints(self, limit_loss, limit_p, limit_s):
-        """格式化约束字符串"""
+        """Format constraint values for a progress line."""
         names = self.get_metric_names()
         if self.get_num_metrics() == 1:
             return f"损失（Loss）<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}"
         return f"损失（Loss）<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}, {names[1]}>={limit_s:.4f}"
 
     def _write_step_info(self, step_info, f):
-        """将单步 StepInfo 写入文件"""
+        """Write one Stage 1 search step to the log."""
         f.write(f"  全局步数（step_global）: {step_info['step_global']}\n")
         f.write(f"  回合编号（episode_id）: {step_info['episode_id']}\n")
         f.write(f"  层索引（layer_index）: {step_info['layer_index']}\n")
@@ -2699,14 +2645,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.reward_history_sumsq = float(sum(float(value) * float(value) for value in self.reward_history))
 
     def get_current_entropy_coef(self):
-        """获取当前熵系数（供ppo_update使用）"""
+        """Return the current entropy coefficient."""
         return self.current_entropy_coef
 
     def update_reward_statistics(self, episode_reward):
-        """
-        PPO 7.1: 更新运行时回报统计量
-        维护滑动窗口的均值和标准差，用于回报归一化
-        """
+        """Update online reward normalization statistics."""
         episode_reward = float(episode_reward)
         if len(self.reward_history) == self.reward_history.maxlen:
             old_reward = float(self.reward_history[0])
@@ -3613,7 +3556,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.return_normalizer = RunningMeanStd()
 
     def _get_stage1_resume_checkpoint_path(self):
-        """如果设置了 resume_run_dir，返回 Stage-1 checkpoint 路径；否则返回 None。"""
+        """Resolve the checkpoint path used for Stage 1 resume."""
         from rfr.search.rl.stage1.checkpoint import STAGE1_CHECKPOINT_FILENAME
         if not self.resume_run_dir:
             return None
@@ -3825,17 +3768,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         return handoff or None
 
     def _load_prior_rl_search_results(self):
-        """final_eval_only=True 时，从 resume_run_dir 或 run_output_dir 读取之前 RL 搜索得到的最优配置。
-
-        - Stage-1：从 ``{dir}/stage1/stage1_rl_checkpoint.pt`` 读取 ``best_config``（含 gelu/softmax）。
-        - Stage-2: read checkpoints from ``{dir}/stage2/progress/``.
-          ``best_noise_config``（含各 *_scaling_factors）。
-
-        仅读取文件、不写入；不调用任何 graceful-stop 接口；不修改 checkpoint 内容。
-        因此与续训和优雅停止完全互斥（续训路径只在执行 stage1/stage2 RL 时被触发，
-        而 final_eval_only 已强制跳过这两个阶段）。
-        返回 ``(stage1_best_dict_or_None, stage2_best_dict_or_None)``。
-        """
+        """Load prior search observations and recover candidate state."""
         from rfr.search.rl.stage1.checkpoint import STAGE1_CHECKPOINT_FILENAME
 
         candidate_dirs = []
@@ -4086,7 +4019,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
 
     def save_best_policies_snapshot(self):
-        """将搜索到的最佳 policy 汇总到 best_policy/ 目录，便于通用 RL 等下游使用。"""
+        """Persist the current best policies without changing training state."""
         import shutil
         bp_dir = os.path.join(self.run_output_dir, "best_policy")
         os.makedirs(bp_dir, exist_ok=True)
@@ -4123,12 +4056,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                                baseline_stage1_gelu=None, baseline_stage1_softmax=None,
                                baseline_noise_tot_c=None,
                                limit_loss=None, limit_p=None, limit_s=None):
-        """统一 final-eval 入口：合并 stage1 + stage2 的最终评估。
-
-        ``stage1_search_best`` 形如 ``{'gelu': [...], 'softmax': [...]}``，由 Stage-1 RL/GA 输出。
-        ``stage2_search_best`` 为 dict，键为 ``*_scaling_factors``，由 Stage-2 噪声 RL/GA 输出。
-        在 ``config_source`` 为 json / manual 时两者可为 None。
-        """
+        """Run the shared final evaluator for selected Stage 1 and Stage 2 configurations."""
         import numpy as np
 
         if baseline_stage1_gelu is None or baseline_stage1_softmax is None:
@@ -4228,21 +4156,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None, *,
                         model=None, device=None):
-        """在指定模型上运行评估循环（不修改配置），用于无近似对照组等。
-
-        性能优化（不改变任何数值结果）:
-          - 每次 forward 前重新确认 model.eval()；model.to(device) 只在首次调用时执行
-          - 移除每批次 cuda.synchronize() (仅用于计时, 不影响计算)
-          - 移除每次调用的 dummy warmup forward pass (CUDA kernels 已 warmup)
-          - 使用 torch.inference_mode() 替代 no_grad() (禁用版本计数, 更快)
-          - 在 GPU 传输前提取 labels, 避免 GPU→CPU 往返
-          - non_blocking=True + pin_memory 实现异步 CPU→GPU DMA
-
-        ``model`` / ``device`` overrides let the Stage-1 multi-GPU rollout
-        runner invoke the same forward loop against a per-worker replica
-        without touching ``self.model`` / ``self.device``. Default
-        single-GPU behavior is preserved when both are ``None``.
-        """
+        """Evaluate the current model configuration and return task metrics."""
 
 
         _model = self.model if model is None else model
@@ -4283,16 +4197,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             use_train: bool = True,
             split: Optional[str] = None,
     ) -> Tuple[float, float, float, float]:
-        """评估模型，use_train=True时使用训练集，否则使用验证集
-
-        性能优化: 评估结果缓存。由于 model 在 eval 模式冻结参数、dataloader shuffle=False、
-        无任何随机性源, 相同 (gelu, softmax, resolved_split) 评估结果必然 bit-identical。
-        直接从缓存返回可节省一次完整数据集前向推理, 不改变任何数值结果。
-
-        Returns:
-            ``(loss, metric1, metric2, time_ms)`` — metric2 is 0 for
-            single-metric datasets.
-        """
+        """Evaluate the active model on the configured data loader."""
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
         cache_key = self._eval_cache.make_key(
             gelu_degrees,
@@ -4321,7 +4226,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     @staticmethod
     def _logits_to_classes(all_preds):
-        """将 logits 转换为预测类别"""
+        """Convert logits to task predictions."""
         preds_arr = np.array(all_preds)
         if len(preds_arr.shape) == 1:
             return (preds_arr > 0.5).astype(int)
@@ -4349,7 +4254,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
-        """计算广义优势估计 (GAE)"""
+        """Compute generalized advantage estimates for one rollout."""
         advantages = []
         gae = 0
 

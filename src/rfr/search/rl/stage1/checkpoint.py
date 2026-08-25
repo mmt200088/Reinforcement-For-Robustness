@@ -15,7 +15,7 @@ STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
 
 
 def _serialize_numpy(obj):
-    """递归将 numpy 数组转为 list，方便 torch.save 序列化。"""
+    """Recursively convert NumPy arrays to lists for checkpoint serialization."""
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, dict):
@@ -27,7 +27,7 @@ def _serialize_numpy(obj):
 
 
 def _deserialize_numpy_keys(obj, keys_to_convert):
-    """将指定 key 下的 list 恢复为 numpy int 数组。"""
+    """Restore selected list values as integer NumPy arrays."""
     if not isinstance(obj, dict):
         return obj
     for key in keys_to_convert:
@@ -220,7 +220,7 @@ def save_stage1_rl_checkpoint(
     detail_file_sizes=None,
     cuda_rng_role_registry=None,
 ):
-    """保存 Stage-1 RL 的完整训练状态（checkpoint）。"""
+    """Save a complete Stage 1 RL training checkpoint."""
     if not str(dataset_protocol_hash or ""):
         raise ValueError("Stage-1 checkpoint requires dataset_protocol_hash")
     active_cuda_rng_states = (
@@ -298,7 +298,7 @@ def load_stage1_rl_checkpoint(
     *,
     expected_dataset_protocol_hash,
 ):
-    """加载 Stage-1 RL checkpoint，恢复训练状态。返回 checkpoint dict。"""
+    """Load a Stage 1 RL checkpoint and return the restored state."""
     checkpoint = torch.load(path, map_location=device, weights_only=False)
     validate_dataset_protocol_binding(
         checkpoint,

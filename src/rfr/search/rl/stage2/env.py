@@ -1,7 +1,4 @@
-"""BLB Stage 2 RL ``Env`` 包装。
-
-不强依赖 ``gymnasium`` —— 我们只用最小化的 ``reset/step`` 接口，避免新增依赖。
-"""
+"""Stage 2 environment for layerwise BLB configuration search."""
 from __future__ import annotations
 
 import copy
@@ -51,7 +48,7 @@ _NULL_CTX = contextlib.nullcontext()
 
 @dataclass
 class ProbeBatch:
-    """一个评估 mini-batch 的 (input_ids, attention_mask, labels, token_type_ids?)。"""
+    """One evaluation batch with model inputs and labels."""
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
     labels: torch.Tensor
@@ -101,7 +98,7 @@ def summarize_optimizer_invalid_outputs(
 
 @dataclass
 class BLBStage2EnvConfig:
-    """``BLBStage2Env`` 的运行参数。"""
+    """Runtime configuration for the Stage 2 environment."""
     profile: str = "mrpc"
     num_trials_per_step: int = 3
 
@@ -125,26 +122,7 @@ class BLBStage2EnvConfig:
 
 
 class BLBStage2Env:
-    """把"action → install BLB → forward → metrics → reward"封装成单步 env。
-
-    单步 episode（horizon=1），每次 ``step(action)`` 返回 (state, reward, done=True, info)。
-
-    依赖：
-      * ``handler``：``ReversibleLayerHandler`` 实例（已经替换好 GELU/Softmax 近似）
-      * ``model``：HF 模型（用于 forward）
-      * ``probe_batches``：评估用的 mini-batches list（每条是 ProbeBatch）
-      * ``rescale_bridge``：``RescaleOptimizerBridge``（必须 InProcessInvoker；
-        训练路径强制 in-process real，初始化失败即中止）
-      * ``baseline``：``BaselineCostStats``（训练前算好）
-      * ``reward_weights``：``RewardWeights``
-      * ``acc_threshold / stab_threshold``：硬约束阈值
-      * ``max_sfs``：``MaxSFsTable``（从 JSON 加载或默认）
-
-    Args:
-        gelu_degree:    模型每层的 GELU 多项式 degree（block5 用，spec §3.2）
-        attn_degree:    模型每层的 softmax 多项式 degree（block3 用）
-        layers_attribute: BLB bridge 用的 attribute 路径（含 "model." 前缀）
-    """
+    """Evaluate materialized actions through BLB installation, inference, metrics, and reward."""
 
     def __init__(
             self,
@@ -406,7 +384,7 @@ class BLBStage2Env:
             *,
             seed: Optional[int] = None,
             ) -> np.ndarray:
-        """清掉单表噪声和 BLB 残留，回到干净状态；返回 obs。"""
+        """Clear installed noise state and return the initial observation."""
 
         try:
             self.handler.restore_layer_input_noise(layer_indices=list(range(self.num_layers)))
@@ -1073,19 +1051,7 @@ class BLBStage2Env:
             external_resource_objective: Optional[Mapping[str, Any]] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
-        """单步 episode：装噪声 → forward → 计算 reward → 还原噪声。
-
-        ``external_cost_score`` / ``external_cost_rank``：fusion-count 路径专用。
-        sequential_env 终局把 per-block 加权 cost 节省算好传进来，只在最终 valid
-        reward（P3）里替掉聚合 fusion/K/bits cost。非 fusion 调用保持 None。
-        invalid 分支必为 P1，compute_reward 不读 cost，故无需透传。
-
-        ``boosted_overrides``：加大精度专用。``{(block_idx, layer_idx): {field: sf}}``
-        —— 选中的 boosted fusion option 的显式 SF（含选定 K）。因为 ``action_vec`` 只能
-        携带网格动作索引、表达不了高于 baseline 的 boosted SF，这里把对应 (block, layer)
-        的 cfg 用 SF-direct 重建，使 **本次 forward 真正安装的噪声是加大精度之后的动作组**
-        （cost replan / optimizer override / 装噪声 全部基于 boosted cfg）。
-        """
+        """Evaluate one layer-block action and return the environment transition."""
         action_vec = validate_action_vector(action_vec, self.num_layers)
         is_optimizer_baseline_action = bool(
             np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
@@ -1425,12 +1391,7 @@ class BLBStage2Env:
         return retest_metrics
 
     def _eval_on_probe(self, k_trials: int) -> EpisodeMetrics:
-        """在 ``self.probe_batches`` 上跑 k_trials 次（独立 RNG），返回 EpisodeMetrics。
-
-        If ``self.probe_runner`` is set (multi-GPU), trials are split round-robin
-        across workers and run in parallel threads (one per GPU). Otherwise the
-        original sequential single-GPU path runs unchanged.
-        """
+        """Run deterministic repeated trials on the fixed probe subset."""
         k = max(1, int(k_trials))
 
 
@@ -1681,14 +1642,7 @@ class BLBStage2Env:
 
 
     def _build_state(self) -> np.ndarray:
-        """spec §5.1 最小 state（带 per-layer indicator 占位）。
-
-        组成：
-          [softmax_degree, gelu_degree, num_layers,
-           profile_id_hash_0..1, last_total_bits_norm, last_fusion_count_norm,
-           last_invalid_rate, step_idx_norm,
-           per_layer_step_indicator_0..L-1]
-        """
+        """Build the observation vector for the current layer and block."""
         static = [
             float(self.attn_degree_state),
             float(self.gelu_degree_state),
@@ -1724,20 +1678,7 @@ def estimate_baseline_cost_stats(
         *,
         precomputed_baseline_signals: Optional[Mapping[str, Any]] = None,
         ) -> BaselineCostStats:
-    """基于 static_skeletons baseline 校准 reward 权重。
-
-    baseline cost 必须由 Rescale_optimizer 的 static_skeletons archive 提供；
-    本函数只跑若干 random action 估计典型 ``bits_drop`` / ``fusion_count`` /
-    ``k_drop``，用于反推 reward 权重。
-
-    Args:
-        env:                          ``BLBStage2Env`` 实例。
-        sample_count:                 估计 typical drop 的随机采样次数。
-        precomputed_baseline_signals: 必填。必须来自 ``load_static_skeletons_baseline``
-                                       / ``static_skeletons_baseline_to_action``；
-                                       本函数只补 random-sample 部分来估计
-                                       typical_*_drop。
-    """
+    """Calibrate reward cost statistics from the static-skeleton baseline."""
     env.sync_degree_vectors_from_model()
 
     if precomputed_baseline_signals is None:

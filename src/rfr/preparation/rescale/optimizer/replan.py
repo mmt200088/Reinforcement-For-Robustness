@@ -1,7 +1,7 @@
 """
 rescale_optimizer/replan.py
 
-What-if re-planning with **user-supplied scaling factors** + a new
+What-if re-planning with **caller-supplied scaling factors** and a
 *fusion-tolerant* feasibility check.
 
 Workflow
@@ -14,7 +14,7 @@ Given:
 * the baseline ``t`` vector  (post-rescale scale at each stage anchor,
   i.e. ``t[r] = s_r``'s working scale after rescale; ``t[0]`` is the
   source scale),
-* a **new** ``t'`` vector (one entry per skeleton stage) that the user
+* a **new** ``t'`` vector (one entry per skeleton stage) that the caller
   pre-selects,
 
 we re-run scale propagation along the same skeleton with the new
@@ -43,7 +43,7 @@ Modified rule (this module):
                 step at s_r** from the skeleton; the surviving
                 neighbour absorbs the bits:
 
-                    q1''  =  q'_r + q1'                 (其位置不变)
+                    q1''  =  q'_r + q1'                 (position unchanged)
                     skeleton:  ..., s_{r-1}, s_r, s_{r+1}, ...
                                  ↓  remove s_r
                                ..., s_{r-1}, s_{r+1}, ...

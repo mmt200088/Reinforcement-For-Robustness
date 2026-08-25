@@ -1,50 +1,40 @@
 """
-BERT 前向中所有"乘法操作"的噪声注入候选注册表（仅梳理；不做注入）。
+Registry of multiplication-related noise targets in the BERT forward pass.
 
-设计目的
---------
-1. **梳理**：把 BertForSequenceClassification 前向路径里所有 **乘法相关运算**
-   及其每一个 **参与操作数** 都登记在 ``NOISE_TARGETS`` 中。
-2. **可维护 / 可扩展**：要新增噪声候选，直接在 ``NOISE_TARGETS`` 末尾追加 dict。
-3. **可选择**：``select(...)`` 支持按 id / stage / op_type / blb_block / blb_N /
-   degrees / has_noise 筛选。
+The registry describes targets but does not inject noise. Each entry covers a
+multiplication and its operands in ``BertForSequenceClassification``. New
+targets can be appended to ``NOISE_TARGETS`` and selected by identifier, stage,
+operation type, BLB block, ring degree, approximation degree, or noise state.
 
-字段 schema
------------
-每个 entry 是一个 dict：
+Entry schema
+------------
 
-    id              str    全局唯一稳定 id；命名 ``"{stage}.{component}.{op}"``
+    id              str    Stable global identifier: ``"{stage}.{component}.{op}"``
     stage           str    "embeddings" | "encoder.attn" | "encoder.ffn"
                            | "pooler" | "head"
-    per_layer       bool   True = 每个 transformer block 重复一次
+    per_layer       bool   True when repeated in every transformer block
     blb_block       int|str|None
-                           1, 2, 3, 4, 5 = BLB Figure 10 的 5 个 fused block；
-                           "embeddings" / "pooler" / "head" = 不在 5-block 循环内；
-                           None = 跨 block 或位置待定。
+                           1..5 for the fused blocks in BLB Figure 10;
+                           "embeddings", "pooler", or "head" outside the loop;
+                           None for cross-block or unresolved placement
     blb_N           int|None
-                           BLB 该 block 用的 CKKS 多项式阶（8192 或 16384），
-                           对应 NOISE_VARIANCE_TABLE_BY_N 里的 key。None = 不固定
-                           或不在 BLB 5-block 循环里。
+                           CKKS polynomial degree for the block, keyed in
+                           NOISE_VARIANCE_TABLE_BY_N; None when not fixed
     degrees         tuple|None
-                           softmax/GELU 这种 degree 相关的 op：列出该 id 在
-                           哪些 degree 下生效；None = 与 degree 无关。
-    shared_with     list   该 id 必须与表里其它哪些 id 用 **相同** scaling factor
-                           / 噪声选择（BLB 协议约束，比如 Q/K 共享）。
-    module_path     str    PyTorch 中该乘法所在模块路径（per_layer=True 时相对
-                           于一个 BertLayer）。
-    op_type         str    乘法分类，见 OP_TYPES。
-    blb_op          str    BLB Figure 10 / Table 2 里对应的 CKKS 算子名
-                           （matmulcc / matmulcp / smulcp / ewmulcp / ewmulcc / sum 等）。
-    operands        list   {"name", "role", "shape"} × N；role ∈ OPERAND_ROLES。
+                           Approximation degrees where the target is active;
+                           None when degree-independent
+    shared_with     list   Targets constrained to the same scale/noise choice
+    module_path     str    PyTorch module path, relative to BertLayer when per-layer
+    op_type         str    Multiplication class from OP_TYPES
+    blb_op          str    Corresponding CKKS operation from BLB Figure 10/Table 2
+    operands        list   ``{"name", "role", "shape"}`` entries
     current_noise   None|str
-                           当前是否已加噪声；如已加，给出现行 NOISE_KEYS 中的键
-                           （"x", "wq", "wk", "wv", "wo", "wffn1", "wffn2",
-                           "softmax_probs", "value_after_softmax"）。
-    notes           str    人话说明。
+                           Active key from NOISE_KEYS, or None when uninstrumented
+    notes           str    Short description
 
 
-常量速查
---------
+Dimension symbols
+-----------------
     H   = config.hidden_size            (bert-base = 768)
     I   = config.intermediate_size      (bert-base = 3072)
     A   = config.num_attention_heads    (bert-base = 12)
@@ -1017,13 +1007,13 @@ def select(
     blb_N: Optional[int] = None,
     degree: Optional[int] = None,
 ):
-    """按条件筛选注册表条目。所有参数互相 AND。
+    """Select registry entries; all supplied filters are combined with AND.
 
-    例子：
-        select(blb_block=2)                          # Block 2 全部
-        select(blb_block=3, degree=4)                # softmax degree=4 时 Block 3 激活的所有 id
-        select(blb_block=5, degree=4)                # gelu4 时 Block 5 激活的所有 id
-        select(has_noise=False, op_type="linear_mm") # 还没加噪的所有 Linear
+    Examples:
+        select(blb_block=2)
+        select(blb_block=3, degree=4)
+        select(blb_block=5, degree=4)
+        select(has_noise=False, op_type="linear_mm")
         select(operand_role="activation", per_layer=True)
         select(ids=["attn.qk_matmul", "attn.probs_v_matmul"])
     """
@@ -1068,7 +1058,7 @@ def list_ids() -> list:
 
 
 def shared_groups() -> list:
-    """返回所有"必须共享 scaling factor"的 id 组（去重）。"""
+    """Return deduplicated target groups that must share a scaling factor."""
     visited = set()
     groups = []
     for t in NOISE_TARGETS:

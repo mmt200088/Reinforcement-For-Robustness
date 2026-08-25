@@ -55,10 +55,7 @@ def discrete_action_to_optional_sf(
         allowed_sfs: Sequence[int],
         off_token: int = -1,
         ) -> Optional[int]:
-    """与 ``discrete_action_to_sf`` 同，但允许"关闭"动作。
-
-    ``action_idx == off_token`` 时返回 ``None``（用于 rescale 关闭的语义）。
-    """
+    """Decode a scaling-factor action with an explicit disabled level."""
     if int(action_idx) == int(off_token):
         return None
     return discrete_action_to_sf(action_idx, allowed_sfs)
@@ -88,19 +85,7 @@ class BLBNoiseRLBridge:
             block4_cfgs: Optional[Dict[int, Block4NoiseConfig]] = None,
             block5_cfgs: Optional[Dict[int, Block5NoiseConfig]] = None,
             ) -> None:
-        """安装一次 RL 动作对应的所有 BLB 噪声。
-
-        Args:
-            block1_cfgs:       {layer_idx: Block1NoiseConfig}。layer 0 使用
-                               ``noise_enabled=False`` 的 K-only 配置：不注入
-                               Block 1 Gaussian/rotation 噪声，但会在 variance
-                               进入 rsqrt 前执行与其它层相同的 truncation K。
-            block2_cfgs..block5_cfgs 同上 layer 0 全部生效（block 2 完整存在）。
-
-        每个 cfg 直接调用 ``handler.replace_layer_block*_noise`` 完成实际安装；
-        Block 3 / Block 5 走 ``cfg_per_layer`` 路径以支持每层不同 degree。
-        BLB 与单表噪声的互斥校验由 handler 完成。
-        """
+        """Install decoded BLB noise configurations on the selected layers."""
 
 
         for block_name, cfgs, install_method in (
@@ -147,12 +132,7 @@ class BLBNoiseRLBridge:
 
 
     def clear(self) -> None:
-        """还原本次 RL 步骤装的所有 BLB 噪声，恢复到 apply 之前的状态。
-
-        还原顺序按 BLB 数据流的"反向"做：
-          block5 → block4 → block3 → block2 → block1 → first_input
-        这样 LN 替身（NoisyBlock1/4LayerNorm）能被正确剥到原 LN。
-        """
+        """Restore every BLB hook installed by this bridge."""
         if not self._installed:
             return
 
@@ -195,7 +175,7 @@ class BLBNoiseRLBridge:
 
 
     def installed_layers(self) -> Dict[int, set]:
-        """返回当前桥接器装上去的 (layer_idx → {block_name, ...}) 拷贝。"""
+        """Return installed layer indices by BLB block."""
         return {li: set(blks) for li, blks in self._installed.items()}
 
 
@@ -216,15 +196,7 @@ class BLBNoiseRLBridge:
 
 @dataclass
 class Block1ActionSpec:
-    """RL 动作 → Block 1 cfg 的字段映射。
-
-    MRPC 的 optimizer skeleton 不使用 WFFN2 或 square rescale，因此对应 cfg
-    字段固定为 None。
-
-    ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断。
-    所有层（包括 layer 0）都可由 RL 选择；layer 0 通过 cfg 的
-    ``noise_enabled=False`` 只执行截断而不注入 Block 1 噪声。
-    """
+    """Discrete Block 1 action values."""
     gelu_out_sf: int
     wffn2_sf: int
     mean_inv_d_sf: int
@@ -269,11 +241,7 @@ def build_block1_cfg_from_action(
 
 @dataclass
 class Block2ActionSpec:
-    """RL 动作 → Block 2 cfg。
-
-    Q-side encode values mirror K-side values. Only the rescale fields that
-    enter optimizer cost are active; Wv remains a model-noise setting.
-    """
+    """Discrete Block 2 action values."""
     inv_std_fresh_sf: int
     x_centered_fresh_sf: int
     gamma_sf: int
@@ -308,17 +276,7 @@ def build_block2_cfg_from_action(
         action: Block2ActionSpec,
         N: int = 16384,
         ) -> Block2NoiseConfig:
-    """``Block2ActionSpec`` → ``Block2NoiseConfig``。
-
-    Q/K 共享段绑定：
-      * 三个 Q 侧 encode（wq / q_mask1 / q_mask2）已由 ``_build_block2_action``
-        写为 K 侧同值。
-      * ``q_mask2_r`` 也绑到 ``kt_mask2_r`` —— mrpc baseline 里
-        ctpt_rotKT_mask2 sf_post 同时是 kt_mask2_r 和 q_mask2_r 的 baseline，
-        model 必须在 V 侧装同样的 rescale 噪声才能和 optimizer 的链假设对齐。
-        其它没有 baseline 的 rescale 槽（normalize / wk / wq / wv /
-        kt_mask1 / q_mask1 / qkt_matmul）继续保持 None。
-    """
+    """Materialize a Block 2 noise configuration from its action values."""
     return make_block2_default_config(
         N=int(N),
         inv_std_fresh_sf=int(action.inv_std_fresh_sf),
@@ -363,11 +321,7 @@ def build_block2_cfg_from_action(
 
 @dataclass
 class Block3ActionSpec:
-    """RL 动作 → Block 3 cfg。degree 决定 N 默认值与 square_rescales 长度。
-
-    MRPC 的 optimizer skeleton 不使用 ``ctct_x_inv_2n_rescale``，因此对应
-    cfg 字段固定为 None。
-    """
+    """Discrete Block 3 action values."""
     degree: int
     x_fresh_sf: int
     inv_2n_sf: int
@@ -381,10 +335,7 @@ def build_block3_cfg_from_action(
         action: Block3ActionSpec,
         N: Optional[int] = None,
         ) -> Block3NoiseConfig:
-    """``Block3ActionSpec`` → ``Block3NoiseConfig`` (N 默认按 degree 自动选)。
-
-    被删的 ``x_inv_2n_rescale_sf`` 槽在 cfg 上固定为 None。
-    """
+    """Materialize a Block 3 noise configuration from its action values."""
     return make_block3_default_config(
         degree=int(action.degree),
         N=N,
@@ -399,11 +350,7 @@ def build_block3_cfg_from_action(
 
 @dataclass
 class Block4ActionSpec:
-    """RL 动作 → Block 4 cfg。
-
-    Rescale fields absent from the optimizer graph remain None. V-side fresh
-    and mask values still control model noise without entering optimizer cost.
-    """
+    """Discrete Block 4 action values."""
     softmax_out_fresh_sf: int
     softmax_out_mask_sf: int
     v_fresh_sf: int
@@ -427,10 +374,7 @@ def build_block4_cfg_from_action(
         action: Block4ActionSpec,
         N: int = 16384,
         ) -> Block4NoiseConfig:
-    """``Block4ActionSpec`` → ``Block4NoiseConfig``。
-
-    被删的 5 个 rescale 槽 + 5 个 rotation flag 在 cfg 上固定 None / False。
-    """
+    """Materialize a Block 4 noise configuration from its action values."""
     return make_block4_default_config(
         N=int(N),
         softmax_out_fresh_sf=int(action.softmax_out_fresh_sf),
@@ -462,11 +406,7 @@ def build_block4_cfg_from_action(
 
 @dataclass
 class Block5ActionSpec:
-    """RL 动作 → Block 5 cfg。GELU degree 决定 N 默认与 power/coeff_mul rescales 长度。
-
-    The optimizer graph exposes only x² power rescale. Higher powers remain
-    None, and the coefficient products are represented by one merged node.
-    """
+    """Discrete Block 5 action values."""
     gelu_degree: int
     inv_std_fresh_sf: int
     x_centered_fresh_sf: int
@@ -491,7 +431,7 @@ def build_block5_cfg_from_action(
         action: Block5ActionSpec,
         N: Optional[int] = None,
         ) -> Block5NoiseConfig:
-    """``Block5ActionSpec`` → ``Block5NoiseConfig`` (N 默认按 GELU degree 自动选)。"""
+    """Materialize a Block 5 noise configuration from its action values."""
     return make_block5_default_config(
         gelu_degree=int(action.gelu_degree),
         N=N,
@@ -514,13 +454,7 @@ def build_block5_cfg_from_action(
 
 @dataclass
 class TruncationRewardSignals:
-    """跨 (block, layer) 聚合的 PPTI truncation reward 原料。
-
-    truncation k 是 RL 动作的一部分；reward 侧需要把 "整体上选了多大的 k /
-    多少个 block 跳过 truncation / 平均 k 多少" 这类信号暴露给 reward 计算。
-    本 dataclass 不规定 reward 公式 —— 业务侧用 ``per_block_total_k`` /
-    ``avg_k_when_set`` 等字段自行组合。
-    """
+    """Communication-facing statistics for simulated truncation choices."""
     total_k: int
     count_with_k: int
     count_skip: int
@@ -533,21 +467,7 @@ class TruncationRewardSignals:
 def aggregate_truncation_signals(
         cfg_dicts: Mapping[str, Mapping[int, Any]],
         ) -> TruncationRewardSignals:
-    """跨 (block_name, layer_idx) 聚合每个 cfg 的 ``output_truncation_k``。
-
-    Args:
-        cfg_dicts: ``{block_name: {layer_idx: Block*NoiseConfig}}``，
-                   block_name ∈ ``{"block1","block2","block3","block4","block5"}``
-                   或自定义命名。
-
-    Returns:
-        ``TruncationRewardSignals``：
-          * ``total_k``:           所有非 None k 的求和
-          * ``count_with_k``:      非 None k 的 cfg 计数
-          * ``count_skip``:        ``output_truncation_k=None`` 的 cfg 计数
-          * ``avg_k_when_set``:    总 k / 非 None 计数（无非 None 时为 0）
-          * ``per_block_*``:       每个 block 的对应分量
-    """
+    """Aggregate truncation statistics across materialized block configurations."""
     total_k = 0
     count_with_k = 0
     count_skip = 0
@@ -586,10 +506,7 @@ def aggregate_truncation_signals(
 
 @dataclass
 class RotationRewardSignals:
-    """跨 (block, layer) 聚合的 KS / rotation reward 原料。
-
-    业务侧用 ``total_active`` / ``per_block_active`` 等字段自行组合 reward。
-    """
+    """Rotation counts derived from materialized block configurations."""
     total_active: int
     total_slots: int
     per_block_active: Dict[str, int] = field(default_factory=dict)
@@ -597,7 +514,7 @@ class RotationRewardSignals:
 
 
 def _count_rotations_on_cfg(cfg: Any) -> Tuple[int, int]:
-    """返回 (active, total)：cfg 上以 rotation_after_ 开头的 bool 字段中开了多少个，总共多少个。"""
+    """Count enabled rotation flags on one block configuration."""
     fields = [name for name in vars(cfg).keys() if name.startswith("rotation_after_")]
     total = len(fields)
     active = sum(1 for name in fields if bool(getattr(cfg, name)))
@@ -607,18 +524,7 @@ def _count_rotations_on_cfg(cfg: Any) -> Tuple[int, int]:
 def aggregate_rotation_signals(
         cfg_dicts: Mapping[str, Mapping[int, Any]],
         ) -> RotationRewardSignals:
-    """跨 (block_name, layer_idx) 聚合 cfg 上 ``rotation_after_*`` 的开启计数。
-
-    Args:
-        cfg_dicts: ``{block_name: {layer_idx: Block*NoiseConfig}}``
-
-    Returns:
-        ``RotationRewardSignals``：
-          * ``total_active``     所有 block / layer 上 True 的 rotation slot 总数
-          * ``total_slots``      候选 slot 总数（用于计算激活率）
-          * ``per_block_active`` 每 block 激活数
-          * ``per_block_slots``  每 block 候选 slot 数
-    """
+    """Aggregate enabled rotations across block configurations."""
     total_active = 0
     total_slots = 0
     per_block_active: Dict[str, int] = {}

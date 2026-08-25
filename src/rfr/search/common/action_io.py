@@ -1,87 +1,4 @@
-"""Human-readable action ↔ action_vec converters.
-
-The RL policy outputs an integer ``action_vec`` (877 dims for L=12) where each
-slot's value is an *action index* into per-slot level table. That's the right
-representation for the policy but is opaque for humans: index 5 in block 2's
-``wq_encode`` slot vs. block 3's ``square_rescale_sf_0`` slot mean completely
-different *scaling factors* — and humans think in scaling factors, not indices.
-
-This module converts between the two views:
-
-* :func:`action_vec_to_slots_list` — given an ``action_vec`` (RL's view),
-  produce a list of records, one per slot, each labelled with its model
-  location and carrying the *decoded* ``scaling_factor`` (or
-  ``truncation_bits`` for K slots). This is the format the diagnostics
-  recorder writes to ``best_action_vec.json``.
-
-* :func:`slots_list_to_action_vec` — inverse: given a list of slot overrides
-  (label + scaling_factor/truncation_bits), produce an ``action_vec``. Used by
-  Paean's ``load_action_grid_config`` so the user can write a JSON that says
-  ``{"label":"L05.B3.K","truncation_bits":10}`` instead of ``[3,4,5,...]``.
-
-Schema (one entry in the slots list)
-------------------------------------
-
-For SF kinds (F, W, M, S):
-::
-
-  {
-    "label":          "L05.B5.W.wffn1",       // unique, model-location-aware
-    "layer":          5,
-    "block":          5,
-    "kind":           "W",
-    "field_name":     "wffn1_sf",             // exact action_space field name
-    "operation":      "block5_wffn1_encode",  // graph-node-ish name
-    "location":       "layer5.block5.wffn1_sf",
-    "distribution":   "weight",
-    "scaling_factor": 14,                     // PRIMARY user-facing value
-    "action_index":   5,                      // replay and sanity check
-    "level_values":   [8, 10, 12, 14],        // what other choices look like
-    "max_sf":         14,
-    "N":              14,
-    "effective":      true,
-    "note":           ""
-  }
-
-For R (rescale) kind: same shape, but ``scaling_factor`` can be ``null`` →
-that rescale point is *off* at this action (action_index==0).
-
-For K kind:
-::
-
-  {
-    "label":           "L05.B3.K",
-    "layer":           5,
-    "block":           3,
-    "kind":            "K",
-    "operation":       "block3_output_truncation",
-    "truncation_bits": 13,                    // PRIMARY user-facing value
-    "action_index":    3,
-    "level_values":    [8, 9, 11, 13, 10, 12, 6, 7]
-  }
-
-The inactive ``first_input`` slot (last element of action_vec, layer 0, no block)
-may appear in persisted descriptions, but new
-slot-list overrides must not select it.
-::
-
-  {
-    "label":          "L0.first_input.F",
-    "layer":          0,
-    "block":          null,
-    "kind":           "F",
-    "scaling_factor": 26,
-    ...
-  }
-
-Robustness
-----------
-The ``_value_to_action_index`` parser is **forgiving**: if the user passes a
-scaling_factor that snapped to a different value (e.g. user wrote 13 but the
-table contains only {8,10,12,14}), we pick the *closest available* level and
-warn via ``_ValueCoerced`` in the returned tuple. This lets non-RL operators
-edit configs by approximation instead of looking up the table for every slot.
-"""
+"""Convert between policy action vectors and labeled scaling-factor records."""
 from __future__ import annotations
 
 import operator
@@ -174,12 +91,7 @@ def action_vec_to_slots_dict(
         action_vec: Sequence[int],
         **kwargs,
         ) -> Dict[str, Dict[str, Any]]:
-    """Same as :func:`action_vec_to_slots_list` but keyed by ``label``.
-
-    Convenient when the user wants ``slots["L05.B3.K"]["truncation_bits"]``
-    lookups in the JSON. Loses ordering but order is recoverable via
-    ``global_index``.
-    """
+    """Return decoded action slots keyed by their stable labels."""
     return {row["label"]: row for row in action_vec_to_slots_list(action_vec, **kwargs)}
 
 
@@ -399,28 +311,7 @@ def slots_list_to_action_vec(
         base_action_vec: Optional[Sequence[int]] = None,
         base: str = "max",
         ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
-    """Convert a user-supplied slot list to a complete ``action_vec``.
-
-    Args:
-        slots:              List of dicts. Each must have a ``label`` plus
-                            either ``scaling_factor`` (for F/W/M/S/R kinds)
-                            or ``truncation_bits`` (for K). Missing slots
-                            inherit from ``base_action_vec`` / ``base``.
-        max_sfs:            MaxSFsTable used by the RL run (must match what
-                            the policy was trained with).
-        num_layers:         Number of layers (e.g. 12 for bert-base).
-        gelu_degree, attn_degree: Polynomial degrees (per layer or scalar).
-        base_action_vec:    Pre-existing vec to layer overrides onto. Takes
-                            precedence over ``base`` if both given.
-        base:               Fallback if ``base_action_vec`` is None: one of
-                            ``"max"``, ``"min"``. Default: ``"max"``.
-
-    Returns:
-        ``(action_vec, coercion_notes)``. ``coercion_notes`` is a list of
-        dicts describing slots where the user's value didn't exactly match a
-        table level (e.g. requested SF=13 → snapped to 14). Empty if all
-        values matched exactly.
-    """
+    """Build a complete action vector from labeled overrides and report coercions."""
 
     if base_action_vec is not None:
         vec = validate_action_vector(base_action_vec, int(num_layers)).copy()
