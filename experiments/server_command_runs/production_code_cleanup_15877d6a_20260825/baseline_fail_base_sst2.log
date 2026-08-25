@@ -1,0 +1,229 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[dataset] using local GLUE dataset for task 'sst2' from /hy-tmp/rfr_cleanup_glue_local_4a16e810/sst2; audit_log=/hy-tmp/rfr_cleanup_baseline_failure_parity_ad593728_with_ist/persistent/rl/bert-base/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/logs/glue_dataset_local_route.txt
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[PPO] ppo_update_interval=1 (batch=12 steps, details chunk=3 episodes)
+Finetuning model with params:
+base_model: textattack/bert-base-uncased-SST-2
+data_path: sst2
+output_dir: /hy-tmp/rfr_cleanup_baseline_failure_parity_ad593728_with_ist/persistent/rl/bert-base/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate
+batch_size: 64
+micro_batch_size: 4
+num_epochs: 3
+learning_rate: 0.0003
+rl_lr: 0.0001
+stage1_rl_lr: 2e-05
+stage2_rl_lr: 5e-05
+cutoff_len: 256
+val_set_size: 2000
+use_gradient_checkpointing: False
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: None
+Wdecompose_target_modules: None
+bottleneck_size: 256
+non_linearity: tanh
+adapter_dropout: 0.0
+use_parallel_adapter: True
+use_adapterp: False
+train_on_inputs: True
+scaling: 1.0
+adapter_name: lora
+target_modules: None
+final_eval_config_source: search
+final_eval_config_path: glue_final_configs_best_ppo.json
+manual_stage1_gelu:
+manual_stage1_softmax:
+manual_stage2_noise:
+stage1_rl_episodes: 51000
+stage1_entropy_stop_threshold: 0.1
+stage2_rl_episodes: 1
+stage1_rl_episodes_specified: False
+stage2_rl_episodes_specified: True
+skip_noise_rl: False
+final_eval_repeat_n: 1
+final_eval_preset: default
+final_eval_output_root:
+final_eval_run_name:
+final_eval_random_enabled: False
+final_eval_action_config:
+final_eval_action_ranges:
+final_eval_action_fixed:
+final_eval_require_rescale_optimizer: False
+skip_stage1_rl: True
+skip_final_eval: True
+comparator_stage1_only: False
+final_eval_only: False
+group_by_length: False
+wandb_project:
+wandb_run_name:
+wandb_watch:
+wandb_log_model:
+resume_from_checkpoint: None
+resume_run_dir:
+stage2_rl_variant: blb_v3
+blb_v3_rescale_invoker_kind: in_process
+blb_v3_inproc_rescale_optimizer_root: Rescale_optimizer
+blb_v3_warmstart_anchor_episodes: None
+blb_v3_warmstart_neighbor_ramp_episodes: None
+blb_v3_warmstart_neighbor_max_mutations: None
+blb_v3_warmstart_neighbor_max_radius: None
+blb_v3_warmstart_neighbor_sampling: None
+blb_v3_guarded_radius2_enabled: None
+blb_v3_guarded_radius2_min_episode: None
+blb_v3_guarded_radius2_stall_window: None
+blb_v3_guarded_radius2_max_mutations: None
+blb_v3_guarded_radius2_episode_fraction: None
+blb_v3_guarded_radius2_cooldown_episodes: None
+blb_v3_static_invalid_level_mask_enabled: None
+blb_v3_warmstart_baseline_bias: None
+blb_v3_warmstart_bias_gain: None
+blb_v3_ent_coef: None
+blb_v3_ent_coef_anchor: None
+blb_v3_ent_coef_ramp_episodes: None
+blb_v3_action_mask_enabled: False
+blb_v3_action_mask_mode: none
+blb_v3_action_mask_file:
+blb_v3_action_mask_baseline_logit_bonus: 0.0
+blb_v3_action_mask_source:
+
+BertForSequenceClassification(
+  (bert): BertModel(
+    (embeddings): BertEmbeddings(
+      (word_embeddings): Embedding(30522, 768, padding_idx=0)
+      (position_embeddings): Embedding(512, 768)
+      (token_type_embeddings): Embedding(2, 768)
+      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (encoder): BertEncoder(
+      (layer): ModuleList(
+        (0-11): 12 x BertLayer(
+          (attention): BertAttention(
+            (self): BertSelfAttention(
+              (query): Linear(in_features=768, out_features=768, bias=True)
+              (key): Linear(in_features=768, out_features=768, bias=True)
+              (value): Linear(in_features=768, out_features=768, bias=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+            (output): BertSelfOutput(
+              (dense): Linear(in_features=768, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+          (intermediate): BertIntermediate(
+            (dense): Linear(in_features=768, out_features=3072, bias=True)
+            (intermediate_act_fn): GELUActivation()
+          )
+          (output): BertOutput(
+            (dense): Linear(in_features=3072, out_features=768, bias=True)
+            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+        )
+      )
+    )
+    (pooler): BertPooler(
+      (dense): Linear(in_features=768, out_features=768, bias=True)
+      (activation): Tanh()
+    )
+  )
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=768, out_features=2, bias=True)
+)
+Reinforcement Learning to evaluate layer sensitivity to approximation
+[信息] 数据集（Dataset）'sst2' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, Weighted F1
+Model compile started
+Model compile finished
+Starting evaluation...
+Round 0 of evaluation
+{'labels': tensor(1), 'input_ids': tensor([  101,  2009,  4152,  3031,  1996,  3898,  2074,  2055,  2004,  2172,
+         1997,  1996, 20674,  2004,  2028,  2071, 16286,  5987,  1010,  1998,
+         2003, 25540, 25725,  2075,  1998,  3048,  1999,  2049,  2219,  2157,
+         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1])}
+{'labels': tensor(1), 'input_ids': tensor([  101,  2009,  4152,  3031,  1996,  3898,  2074,  2055,  2004,  2172,
+         1997,  1996, 20674,  2004,  2028,  2071, 16286,  5987,  1010,  1998,
+         2003, 25540, 25725,  2075,  1998,  3048,  1999,  2049,  2219,  2157,
+         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1])}
+  0%|          | 0/14 [00:00<?, ?it/s] 36%|███▌      | 5/14 [00:00<00:00, 34.62it/s] 64%|██████▍   | 9/14 [00:00<00:00, 25.76it/s] 86%|████████▌ | 12/14 [00:00<00:00, 23.64it/s]
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。
+============================================================
+
+--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-2 all4 (softmax fixed deg6) (source=stage2_all4)
+  Stage-2 GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：stage2_all4    标签（label）：Stage-2 all4 (softmax fixed deg6)
+  * GELU 离散阶数向量:   [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='sst2'    total_episodes=1    PPO 更新间隔（rollout_size）= 1    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_cleanup_baseline_failure_parity_ad593728_with_ist/persistent/rl/bert-base/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_cleanup_baseline_failure_parity_ad593728_with_ist/persistent/rl/bert-base/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_cleanup_baseline_failure_parity_ad593728_with_ist/persistent/rl/bert-base/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  * 评估子集: batch 数 = 4
+  * Rescale_optimizer 根目录：Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr_cleanup_baseline_ad593728/Rescale_optimizer/configs/sst2/static_skeletons_sst2.json (sha256=b8a59d57d114cd6dda6e16f95bc9cb5727241b8a2edbb5b14b58a1739eb959de)
+  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/rl_tune.py", line 1613, in <module>
+    run_fire_entrypoint(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/runtime_error_reporter.py", line 163, in run_fire_entrypoint
+    fire_module.Fire(target)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/rl_tune.py", line 1579, in train
+    eval_results = trainer.evaluate(eval_dataset=val_data)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer.py", line 3035, in evaluate
+    self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 396, in on_evaluate
+    return self.call_event("on_evaluate", args, state, control, metrics=metrics)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 414, in call_event
+    result = getattr(callback, event)(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/layer_importance_evaluator.py", line 9014, in on_evaluate
+    noise_stage_result = self.run_noise_rl_stage(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/layer_importance_evaluator.py", line 6230, in run_noise_rl_stage
+    return runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/blb_stage2_rl/runner.py", line 946, in run
+    return run_sequential_via_runner(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/blb_stage2_rl/sequential_runner.py", line 8008, in run_sequential_via_runner
+    result = _run_sequential_via_runner_locked(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/blb_stage2_rl/sequential_runner.py", line 8554, in _run_sequential_via_runner_locked
+    _collect_robust_baseline_reference(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/blb_stage2_rl/sequential_runner.py", line 3704, in _collect_robust_baseline_reference
+    reference = build_baseline_reference(
+  File "/hy-tmp/rfr_cleanup_baseline_ad593728/blb_stage2_rl/statistical_constraints.py", line 362, in build_baseline_reference
+    raise DegenerateBaselineVariance(degenerate_channels)
+blb_stage2_rl.statistical_constraints.DegenerateBaselineVariance: baseline variance must be finite and nonzero for channels: metric1, metric2
+100%|██████████| 14/14 [00:18<00:00,  1.30s/it]
+exit_code=1

@@ -1,0 +1,89 @@
+label=stage2-bert-large-sst2
+run_root=/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate
+source_commit=15877d6ab94f07552da645c8d6ac916cfb0fee68
+source_tree=ed0d066e2a51678ea63fe44c4b4ff14ce76010b6
+command=python rl_tune.py --base_model yoshitomo-matsubara/bert-large-uncased-sst2 --data_path sst2 --output_dir /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate --glue_train_probe_fixture_path /hy-tmp/rfr_verify_glue_train_probe_20260825/fixtures/reproducibility/glue_train_probe_v1.json --batch_size 64 --stage1_rl_episodes 51000 --stage2_rl_episodes 1 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --stage1_entropy_stop_threshold 0.1 --ppo_update_interval 1 --skip_stage1_rl true --skip_noise_rl false --skip_final_eval true --resume_run_dir '' --decoupled_layout false --stage1_run_id '' --stage1_rl_lr 2e-5 --stage2_rl_lr 5e-5 --stage1_accuracy_tolerance 0.001 --stage2_limit_tolerance 0.001 --stage2_stability_tolerance 1.2 --stage2_stability_multiplier 2.0 --stage2_communication_importance_ratio 1.0 --stage2_k_trials 3 --stage2_probe_size 256 --stage2_inference_batch_size 64 --stage2_fixed_config_source all4 --stage2_fixed_config_path '' --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_preset default --blb_v3_rollout_size 1 --blb_v3_save_interval 1 --blb_v3_eval_interval 1 --blb_v3_calibrate_baseline_samples 8 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_seed 42 --blb_v3_online_k_trials 3 --blb_v3_terminal_eval_batch_size 4 --blb_v3_promotion_validation_trials 15 --blb_v3_final_selection_top_n 20 --blb_v3_final_selection_validation_trials 15 --blb_v3_baseline_groups 5 --blb_v3_baseline_trials_per_group 3 --blb_v3_constraint_bootstrap_samples 4096 --blb_v3_online_constraint_probability 0.50 --blb_v3_promotion_constraint_probability 0.80 --blb_v3_final_constraint_probability 0.95 --blb_v3_min_convergence_episodes 90000 --blb_v3_convergence_patience_updates 100 --blb_v3_search_backend ppo --blb_v3_search_evaluation_budget 0 --blb_v3_search_initial_design_size 64 --blb_v3_search_candidate_pool_size 2048 --blb_v3_search_population_size 64 --blb_v3_search_patience_generations 100 --blb_v3_search_mutation_max_coordinates 3 --blb_v3_search_rf_n_estimators 128 --blb_v3_search_rf_min_samples_leaf 2 --blb_v3_search_full_validation true --comparator_smoke false --comparator_stage1_only false --blb_v3_reward_devices 0
+started_at=2026-08-25T16:41:44+08:00
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[dataset] using local GLUE dataset for task 'sst2' from /hy-tmp/rfr_cleanup_glue_local_4a16e810/sst2; audit_log=/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/logs/glue_dataset_local_route.txt
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[PPO] ppo_update_interval=1 (batch=12 steps, details chunk=3 episodes)
+Running approximation search with parameters:
+base_model: yoshitomo-matsubara/bert-large-uncased-sst2
+data_path: sst2
+output_dir: /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate
+batch_size: 64
+stage1_rl_episodes: 51000
+stage2_rl_episodes: 1
+search_backend: ppo
+resume_run_dir:
+[信息] 数据集（Dataset）'sst2' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, Weighted F1
+Starting evaluation...
+  0%|          | 0/14 [00:00<?, ?it/s] 14%|█▍        | 2/14 [00:00<00:00, 14.16it/s] 29%|██▊       | 4/14 [00:00<00:00, 13.63it/s] 43%|████▎     | 6/14 [00:00<00:00,  9.58it/s] 57%|█████▋    | 8/14 [00:00<00:00,  8.42it/s] 64%|██████▍   | 9/14 [00:01<00:00,  8.04it/s] 71%|███████▏  | 10/14 [00:01<00:00,  7.75it/s] 79%|███████▊  | 11/14 [00:01<00:00,  7.53it/s] 86%|████████▌ | 12/14 [00:01<00:00,  7.37it/s] 93%|█████████▎| 13/14 [00:01<00:00,  7.31it/s]100%|██████████| 14/14 [00:01<00:00,  7.30it/s]
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。
+============================================================
+
+--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-2 all4 (softmax fixed deg6) (source=stage2_all4)
+  Stage-2 GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 24-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=24 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：stage2_all4    标签（label）：Stage-2 all4 (softmax fixed deg6)
+  * GELU 离散阶数向量:   [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='sst2_large'    total_episodes=1    PPO 更新间隔（rollout_size）= 1    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+已替换 24 层的GELU函数（GELU function）
+已替换 24 层的Softmax函数（Softmax function）
+  * 评估子集: batch 数 = 4
+  * Rescale_optimizer root: Rescale_optimizer
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr_verify_glue_train_probe_20260825/Rescale_optimizer/configs/sst2_large/static_skeletons_sst2_large.json (sha256=03a457372d80ecff6f3bf45336868489857eb28e6cf0c9cfac16c95470de9f6b)
+  * reward_design=robust_constrained
+  * strict search gate: split=train_probe examples=256 batches=4 devices=[0]
+  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.9776  m2(noisy)=0.9776  loss_mean(noisy)=0.0917  std(loss/m1/m2)=0.0021/0.0035/0.0034
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.9766  m2_threshold=0.9767  loss_threshold=0.0918  std_thresholds(loss/m1/m2)=0.0042/0.0069/0.0069  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=32664, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.0917, m1=0.9776, m2=0.9776
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.9776
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.9766, m2_threshold=0.9767, loss_threshold=0.0918, std_thresholds(loss/m1/m2)=0.0042/0.0069/0.0069
+  · static_skeletons archive：/hy-tmp/rfr_verify_glue_train_probe_20260825/Rescale_optimizer/configs/sst2_large/static_skeletons_sst2_large.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action: graphs=5, max_options=2
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,999, shared=676,032, actor_only=8,646, critic_only=8,321)
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr_verify_glue_train_probe_20260825/rl_training_data_points/stage2/bert-large/sst2_large/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825_persistent_rl_bert-large_sst2_s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate__20260825T084327539107Z__pid2451997
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__cleanup_gpu_gate/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+  [BLB曲线][信息] PNG/PDF 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+100%|██████████| 14/14 [01:45<00:00,  7.51s/it]
+Final evaluation loss: 0.22841082513332367
+finished_at=2026-08-25T16:43:33+08:00
+exit_code=0
+accepted_status=passed

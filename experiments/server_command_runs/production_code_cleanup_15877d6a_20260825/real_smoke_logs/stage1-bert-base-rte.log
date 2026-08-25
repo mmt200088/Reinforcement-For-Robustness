@@ -1,0 +1,109 @@
+label=stage1-bert-base-rte
+run_root=/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte
+source_commit=15877d6ab94f07552da645c8d6ac916cfb0fee68
+source_tree=ed0d066e2a51678ea63fe44c4b4ff14ce76010b6
+command=python rl_tune.py --base_model textattack/bert-base-uncased-RTE --data_path rte --output_dir /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert\ base\ rte --glue_train_probe_fixture_path /hy-tmp/rfr_verify_glue_train_probe_20260825/fixtures/reproducibility/glue_train_probe_v1.json --batch_size 512 --stage1_rl_episodes 1 --stage2_rl_episodes 0 --stage1_rl_episodes_specified true --stage2_rl_episodes_specified false --stage1_entropy_stop_threshold 0.1 --ppo_update_interval 1 --skip_stage1_rl false --skip_noise_rl true --skip_final_eval true --resume_run_dir '' --decoupled_layout true --stage1_run_id '' --stage1_rl_lr 2e-5 --stage2_rl_lr 5e-5 --stage1_accuracy_tolerance 0.0 --stage2_limit_tolerance 0.001 --stage2_stability_tolerance 1.2 --stage2_stability_multiplier 2.0 --stage2_communication_importance_ratio 1.0 --stage2_k_trials 3 --stage2_probe_size 256 --stage2_inference_batch_size 64 --stage2_fixed_config_source all4 --stage2_fixed_config_path '' --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_preset default --blb_v3_rollout_size 120 --blb_v3_save_interval 200 --blb_v3_eval_interval 100 --blb_v3_calibrate_baseline_samples 8 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_seed 42 --blb_v3_online_k_trials 3 --blb_v3_terminal_eval_batch_size 4 --blb_v3_promotion_validation_trials 15 --blb_v3_final_selection_top_n 20 --blb_v3_final_selection_validation_trials 15 --blb_v3_baseline_groups 5 --blb_v3_baseline_trials_per_group 3 --blb_v3_constraint_bootstrap_samples 4096 --blb_v3_online_constraint_probability 0.50 --blb_v3_promotion_constraint_probability 0.80 --blb_v3_final_constraint_probability 0.95 --blb_v3_min_convergence_episodes 90000 --blb_v3_convergence_patience_updates 100 --blb_v3_search_backend ppo --blb_v3_search_evaluation_budget 0 --blb_v3_search_initial_design_size 64 --blb_v3_search_candidate_pool_size 2048 --blb_v3_search_population_size 64 --blb_v3_search_patience_generations 100 --blb_v3_search_mutation_max_coordinates 3 --blb_v3_search_rf_n_estimators 128 --blb_v3_search_rf_min_samples_leaf 2 --blb_v3_search_full_validation true --comparator_smoke false --comparator_stage1_only false --stage1_rl_devices 0
+started_at=2026-08-25T16:31:12+08:00
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[dataset] using local GLUE dataset for task 'rte' from /hy-tmp/rfr_cleanup_glue_local_4a16e810/rte; audit_log=/hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/logs/glue_dataset_local_route.txt
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[PPO] ppo_update_interval=1 (batch=12 steps, details chunk=3 episodes)
+Running approximation search with parameters:
+base_model: textattack/bert-base-uncased-RTE
+data_path: rte
+output_dir: /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte
+batch_size: 512
+stage1_rl_episodes: 1
+stage2_rl_episodes: 0
+search_backend: ppo
+resume_run_dir:
+[信息] 数据集（Dataset）'rte' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, Weighted F1
+Starting evaluation...
+  0%|          | 0/1 [00:00<?, ?it/s]
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+============================================================
+
+--- 阶段1（Phase 1）: 建立基线 (Establishing Baseline on train_probe) ---
+  [stage1-eval] TF32 fast matmul enabled（与 Stage-2 reward probe 同一设置）
+已恢复 12 层的原始GELU函数（original GELU function）
+基线指标（Baseline Metrics）（train_probe）：
+  损失（Loss）: 0.113221, Accuracy: 0.968750, Weighted F1: 0.968750
+  基线配置（Baseline config）: 原始明文 GELU/Softmax（未安装多项式替换）
+  成本参考（Cost reference）: GELU=4 / Softmax=6, 仿真成本（Sim Cost）=72.00 (GELU成本G=36.00, Softmax成本S=36.00)
+约束条件（Constraints）（基于 train_probe）：
+  损失（Loss）<=0.1132, Accuracy>=0.9688, Weighted F1>=0.9688
+
+--- 阶段2（Phase 2）: PPO强化学习训练（PPO Reinforcement Learning Training） ---
+[信息] 使用 train_probe 进行在线奖励计算 （约束保持在 train_probe 上）
+  [data-points] Stage-1 structured RL data → rl_training_data_points/stage1/bert-base/rte/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825_stage1_bert_base_rte__20260825T083115416969Z__pid2449703
+[stage1-rollout] worker 0: cuda:0 (primary, reusing evaluator.model)
+  [multi-gpu] Stage-1 rollout enabled: workers=1 devices=['cuda:0'] episodes_per_worker=1
+  [优雅停止] 训练期间可按 Ctrl+C 或创建 /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/STOP_RL 触发安全停止（在下一回合边界保存 checkpoint 后退出）。
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+[stage1-rollout] window=0 episodes=1 rollout_sig=1d107960652d19b5
+  [stage1-rollout] window=0 eps_per_worker=1  devices=[cuda:0] counts=[1]  wall=0.606s worker_seconds=[0.606]  speedup=1.00x model_forward=0.392s forward_calls=1
+  [stage1-rollout] window=0 collected 1 episodes across 1 workers
+  [stage1-rollout] window=0 eval_cache hits=0 misses=1 distinct=1 hit_rate=0.0%
+  回合（Episode） 1: 新最优！（New Best!） 奖励（Reward）=-0.0148, 成本（Cost）=64.50
+    GELU配置: [4, 1, 4, 4, 2, 1, 4, 4, 1, 2, 4, 2]
+    Softmax配置: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  [stage1-rollout-total] window=0 episodes=1 total=0.713s collect=0.610s model_forward=0.392s replay=0.000s detail=0.001s report_write=0.001s ppo_update=0.102s other=0.000s throughput=5047.5ep/h
+  ╭────────────────────────────────────────────────────────────╮
+  │ 回合（Episode） 1                                            │
+  │ 平均奖励: -0.0148, 策略损失: -0.0000, 价值损失: 4.8577, 熵: 1.0986    │
+  │ [GTrXL调度] LR: 0.000000, 熵系数: 0.050000, 更新次数: #1 (warmup) │
+  ╰────────────────────────────────────────────────────────────╯
+  ╭───────────────────────────────────────────────────────────────────╮
+  │ Stage-1 RL 进度 · 回合 1 / 1                                        │
+  │ [██████████████████████████████] 100.0%                         │
+  │ Reward-Best: -0.0148  成本: 64.50                                 │
+  │   GELU:    [4, 1, 4, 4, 2, 1, 4, 4, 1, 2, 4, 2]                 │
+  │   Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]                 │
+  │ 已用时: 0m00s  预计剩余: 0m00s  预计完成: 2026-08-25 16:31:16  PPO 更新: 1 次 │
+  ╰───────────────────────────────────────────────────────────────────╯
+  [完成] Stage-1 最终 checkpoint 已保存 → /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/stage1_rl_checkpoint.pt
+  Stage-1 policy saved to /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/stage1_policy.pt
+  [检测] 局部最优检测报告 → /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/pruning_search_log.txt
+  [检测] 样本不足（n=1），无法判定。
+
+[Stage-1] 最终配置使用原始 PPO reward-best；GELU/Softmax 为确定性替换，不再按 window 二次评估重排。
+
+--- PPO训练完成（PPO Training Completed） ---
+已找到最优配置（通过RL）（Best Configuration Found by RL）：
+  GELU配置: [4, 1, 4, 4, 2, 1, 4, 4, 1, 2, 4, 2]
+  Softmax配置: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  成本（Cost）: 64.50, 奖励（Reward）: -0.0148
+PPO训练曲线已保存至（PPO training curves saved to）: /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/ppo_training_curve.png
+PPO熵曲线已保存至（PPO entropy curve saved to）: /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/ppo_entropy_curve.png
+  [解耦] Stage-1 已归档进 record → /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/record/bert base rte 1 20260825（COMPLETED 已标记）
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/stage1_policy.pt → /hy-tmp/rfr_cleanup_real_profile_smoke_15877d6a_accepted_20260825/stage1/bert base rte/best_policy/stage1_policy.pt
+100%|██████████| 1/1 [00:01<00:00,  1.49s/it]
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+Final evaluation loss: 0.7333006858825684
+finished_at=2026-08-25T16:31:17+08:00
+exit_code=0
+accepted_status=passed

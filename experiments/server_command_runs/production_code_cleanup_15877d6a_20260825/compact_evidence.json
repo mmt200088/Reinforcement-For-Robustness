@@ -1,0 +1,110 @@
+{
+  "canonical_eligible": true,
+  "cleanup_diff_shortstat": "612 files changed, 15890 insertions(+), 173241 deletions(-)",
+  "comment_audit": {
+    "dated_history": 0,
+    "historical_comments": 0,
+    "prompt_wording": 0
+  },
+  "comparison_baseline": {
+    "commit": "ad593728a6595e8b697e56b205e4466f9a8be796",
+    "tree": "b906220dd6487fa034c3182af97b27317f049ef9"
+  },
+  "eligibility_rationale": "All cleanup gates pass. Two data-dependent Stage-2 profiles fail closed identically at the pre-cleanup source and therefore preserve scientific behavior.",
+  "gpu_gate": {
+    "cuda_available": true,
+    "device": "NVIDIA GeForce RTX 4090",
+    "device_count": 1,
+    "driver": "580.173.02",
+    "status": "passed_with_matching_userspace",
+    "tensor_result": 1240.0,
+    "torch": "2.9.1+cu128",
+    "userspace_library_dir": "/hy-tmp/nvidia_userspace_580.173.02/root/usr/lib/x86_64-linux-gnu"
+  },
+  "non_result_pdfs": [],
+  "parity": {
+    "covered": [
+      "action",
+      "materialization",
+      "cost",
+      "reward",
+      "candidate",
+      "checkpoint",
+      "final_evaluation"
+    ],
+    "execution_equal": true,
+    "execution_sha256": "68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7",
+    "scientific_state_equal": true,
+    "scientific_state_sha256": "0e42f6e55ed8c01a90dc776e9a2150f177f000535d9d97f8ebc6106b6accace8"
+  },
+  "production_surface_guard": {
+    "backup_paths": [],
+    "forbidden_paths": [],
+    "ok": true,
+    "reference_hits": []
+  },
+  "protected_results": {
+    "entry_count": 20,
+    "equal": true,
+    "sha256": "fa8edaa198d45ab457b988df0e444adc3cef8bceffe976756672cb65ee6497bc"
+  },
+  "readme_dry_runs": {
+    "bo_rf": true,
+    "coinn_ga": true,
+    "final_eval": true,
+    "greedy": true,
+    "stage1": true,
+    "stage2": true
+  },
+  "real_model_smoke": {
+    "all_accepted": true,
+    "baseline_failure_parity": {
+      "stage2-bert-base-sst2": true,
+      "stage2-bert-large-mrpc": true
+    },
+    "case_count": 15,
+    "passed_count": 13,
+    "scientific_fail_closed_count": 2,
+    "statuses": {
+      "comparator-bo_rf": "passed",
+      "comparator-coinn_ga": "passed",
+      "comparator-greedy": "passed",
+      "stage1-bert-base-mrpc": "passed",
+      "stage1-bert-base-rte": "passed",
+      "stage1-bert-base-sst2": "passed",
+      "stage1-bert-large-mrpc": "passed",
+      "stage1-bert-large-rte": "passed",
+      "stage1-bert-large-sst2": "passed",
+      "stage2-bert-base-mrpc": "passed",
+      "stage2-bert-base-rte": "passed",
+      "stage2-bert-base-sst2": "scientific_fail_closed",
+      "stage2-bert-large-mrpc": "scientific_fail_closed",
+      "stage2-bert-large-rte": "passed",
+      "stage2-bert-large-sst2": "passed"
+    }
+  },
+  "schema": "production_code_cleanup_server_evidence_v2",
+  "source": {
+    "commit": "15877d6ab94f07552da645c8d6ac916cfb0fee68",
+    "tree": "ed0d066e2a51678ea63fe44c4b4ff14ce76010b6"
+  },
+  "task_id": "production-code-cleanup-20260825",
+  "tests": {
+    "pytest_gpu": {
+      "pass": true,
+      "passed": 1659,
+      "skipped": 3,
+      "subtests_passed": 267
+    },
+    "red_green": {
+      "cost_maps": true,
+      "skipped_stage_defaults": true,
+      "stage2_lock": true
+    },
+    "unittest_gpu": {
+      "pass": true,
+      "ran": 1510,
+      "skipped": 3
+    }
+  }
+}

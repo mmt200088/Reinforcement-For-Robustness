@@ -1,0 +1,46 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ LayerImportanceRuntimeCostMapTests.test_active_noise_cost_maps_cover_every_runtime_scaling_factor _
+
+self = <tests.test_layer_importance_runtime_cost_maps.LayerImportanceRuntimeCostMapTests testMethod=test_active_noise_cost_maps_cover_every_runtime_scaling_factor>
+
+    def test_active_noise_cost_maps_cover_every_runtime_scaling_factor(self):
+        expected_input = {
+            value: value * 0.025
+            for value in INPUT_NOISE_ALLOWED_SCALING_FACTORS
+        }
+        expected_weight = {
+            value: value * 0.025
+            for value in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS
+        }
+        expected_wffn1 = {
+            value: value * 0.025
+            for value in WFFN1_NOISE_ALLOWED_SCALING_FACTORS
+        }
+
+>       self.assertEqual(evaluator_module.INPUT_NOISE_COST_MAP, expected_input)
+E       AttributeError: module 'layer_importance_evaluator' has no attribute 'INPUT_NOISE_COST_MAP'
+
+tests/test_layer_importance_runtime_cost_maps.py:26: AttributeError
+=============================== warnings summary ===============================
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+    warnings.warn("Can't initialize NVML")
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:1034: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+    r = torch._C._cuda_getDeviceCount() if nvml_count < 0 else nvml_count
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_layer_importance_runtime_cost_maps.py::LayerImportanceRuntimeCostMapTests::test_active_noise_cost_maps_cover_every_runtime_scaling_factor
+1 failed, 5 warnings in 1.32s

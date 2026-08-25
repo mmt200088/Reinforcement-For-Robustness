@@ -1,0 +1,16 @@
+15877d6ab94f07552da645c8d6ac916cfb0fee68
+ed0d066e2a51678ea63fe44c4b4ff14ce76010b6
+{
+  "backup_paths": [],
+  "forbidden_paths": [],
+  "ok": true,
+  "reference_hits": []
+}
+bash_files_checked=4
+stage1=pass
+stage2=pass
+bo_rf=pass
+greedy=pass
+coinn_ga=pass
+final_eval=pass
+tracked_clean=true

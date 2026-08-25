@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ Stage2PersistentLauncherTest.test_stage1_and_stage2_use_the_expected_production_routes _
+
+self = <tests.test_stage2_persistent_launcher.Stage2PersistentLauncherTest testMethod=test_stage1_and_stage2_use_the_expected_production_routes>
+
+    def test_stage1_and_stage2_use_the_expected_production_routes(self):
+        stage1_argv, stage1_path, stage1_meta = self._capture(
+            "rl", "--run-tag", "stage1-test", mode="stage1-only"
+        )
+        self.assertEqual(stage1_argv[0], "rl_tune.py")
+        self.assertEqual(self._value(stage1_argv, "--skip_stage1_rl"), "false")
+        self.assertEqual(self._value(stage1_argv, "--skip_noise_rl"), "true")
+        self.assertEqual(self._value(stage1_argv, "--decoupled_layout"), "true")
+>       self.assertEqual(self._value(stage1_argv, "--stage2_rl_episodes"), "0")
+E       AssertionError: '150000' != '0'
+E       - 150000
+E       + 0
+
+tests/test_stage2_persistent_launcher.py:128: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_stage2_persistent_launcher.py::Stage2PersistentLauncherTest::test_stage1_and_stage2_use_the_expected_production_routes
+1 failed in 0.19s

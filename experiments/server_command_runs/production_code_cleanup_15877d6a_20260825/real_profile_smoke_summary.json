@@ -1,0 +1,97 @@
+{
+  "all_accepted": true,
+  "case_count": 15,
+  "cases": [
+    {
+      "accepted_status": "passed",
+      "case": "comparator-bo_rf",
+      "exit_code": 0,
+      "sha256": "55bcac50debf9db9aea9e2900f74b091945eff2f5372674a9e96268f37f8848f"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "comparator-coinn_ga",
+      "exit_code": 0,
+      "sha256": "6ea0e0df064ca9b689be5d28de109e0326f2e7663eb53b78c72487777a92bac1"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "comparator-greedy",
+      "exit_code": 0,
+      "sha256": "374fbe46888a0dca23bffe06155803da41b222637263db266d11322e91ed56de"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-base-mrpc",
+      "exit_code": 0,
+      "sha256": "da9b8cdb8dc97a4648dea8bdf10385ef98dab74e07ac39f1b15dcb18e21770a7"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-base-rte",
+      "exit_code": 0,
+      "sha256": "5b2678dd4a037d5180813f46c899cd8393f58eccea4fb5d94274573ce895bc2f"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-base-sst2",
+      "exit_code": 0,
+      "sha256": "7d8c352d04db7837f20d43360ac89f724612af7253e850b4fe0bd1f4ab938b34"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-large-mrpc",
+      "exit_code": 0,
+      "sha256": "09694a16aebae84e8162009da701823e16316f297a4201ce37d8ac7b1271294a"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-large-rte",
+      "exit_code": 0,
+      "sha256": "1b13ff0c9387629baddb75d57200ac83d4248bc61b40699185df46674a4448f8"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage1-bert-large-sst2",
+      "exit_code": 0,
+      "sha256": "55a7dcf150e0a20e0d2c26e4df22edf30dcbf6072b4ca96e48fb7e837efdc157"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage2-bert-base-mrpc",
+      "exit_code": 0,
+      "sha256": "0735d9b8f151436ec41e6799d42c696bdee619da002739fdeb04b0b134859e44"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage2-bert-base-rte",
+      "exit_code": 0,
+      "sha256": "652d4c9149cd9777b3853c0ec11cd3a8d9f75e41bc96eca2c4ab2aa0bc35f7e5"
+    },
+    {
+      "accepted_status": "scientific_fail_closed",
+      "case": "stage2-bert-base-sst2",
+      "exit_code": 1,
+      "sha256": "bf76b5dc5bc8b5d41a05f0d3af4416370c655a5df393ef4a5000e026b218a67a"
+    },
+    {
+      "accepted_status": "scientific_fail_closed",
+      "case": "stage2-bert-large-mrpc",
+      "exit_code": 1,
+      "sha256": "1d46ab5334a32e1fced6eb12abf8016fe37507f2aede6304ad9b029c42024792"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage2-bert-large-rte",
+      "exit_code": 0,
+      "sha256": "8350923b9a7478c73cb2ff9668482f724b3d4e022173741b3c775234db646725"
+    },
+    {
+      "accepted_status": "passed",
+      "case": "stage2-bert-large-sst2",
+      "exit_code": 0,
+      "sha256": "c8148c64313031358e6d95b9bb80862634d01bcd724e766f03453432f73e9ef5"
+    }
+  ],
+  "schema": "production_cleanup_real_profile_smoke_v1"
+}
