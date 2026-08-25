@@ -309,11 +309,11 @@ class PaeanActionGridTest(unittest.TestCase):
             total_fusion_count = 0
 
         bridge = type("Bridge", (), {"evaluate_blocks": lambda self, _requests: {}})()
-        rescale_stub = types.ModuleType("rescale_optimizer_bridge")
+        rescale_stub = types.ModuleType("rfr.preparation.rescale.bridge")
         rescale_stub.aggregate_optimizer_signals = lambda _outputs: Signals()
 
-        previous = sys.modules.get("rescale_optimizer_bridge")
-        sys.modules["rescale_optimizer_bridge"] = rescale_stub
+        previous = sys.modules.get("rfr.preparation.rescale.bridge")
+        sys.modules["rfr.preparation.rescale.bridge"] = rescale_stub
         try:
             action_grid.action_vector_to_cfgs = action_vector_to_cfgs
             candidates, diagnostics = action_grid.build_cost_matched_random_action_candidates(
@@ -333,9 +333,9 @@ class PaeanActionGridTest(unittest.TestCase):
             )
         finally:
             if previous is None:
-                sys.modules.pop("rescale_optimizer_bridge", None)
+                sys.modules.pop("rfr.preparation.rescale.bridge", None)
             else:
-                sys.modules["rescale_optimizer_bridge"] = previous
+                sys.modules["rfr.preparation.rescale.bridge"] = previous
 
         self.assertEqual(len(candidates), 2)
         self.assertEqual(diagnostics.accepted, 2)

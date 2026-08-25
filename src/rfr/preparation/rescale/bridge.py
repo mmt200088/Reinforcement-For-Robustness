@@ -9,7 +9,6 @@ from __future__ import annotations
 import copy
 import json
 import os
-import sys
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
@@ -178,7 +177,7 @@ class InProcessInvoker:
     Usage:
 
         inv = InProcessInvoker.from_profile(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             profile="mrpc",
         )
         bridge = RescaleOptimizerBridge(invoker=inv)
@@ -187,11 +186,11 @@ class InProcessInvoker:
 
         inv = InProcessInvoker(
             configs={
-                "block1_mrpc": "Rescale_optimizer/configs/mrpc/block1_mrpc.json",
+                "block1_mrpc": "configs/preparation/rescale/mrpc/block1_mrpc.json",
                 ...,
             },
-            baseline_archive="Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json",
-            rescale_optimizer_root="Rescale_optimizer",
+            baseline_archive="configs/preparation/rescale/mrpc/static_skeletons_mrpc.json",
+            rescale_optimizer_root="configs/preparation/rescale",
         )
     """
 
@@ -202,13 +201,7 @@ class InProcessInvoker:
             baseline_archive: str,
             rescale_optimizer_root: Optional[str] = None,
             ):
-        if rescale_optimizer_root:
-            root = os.path.abspath(rescale_optimizer_root)
-            if root not in sys.path:
-                sys.path.insert(0, root)
-
-
-        from rescale_optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import ReplanSession
 
         self._session = ReplanSession(
             configs={str(k): str(v) for k, v in configs.items()},
@@ -228,9 +221,7 @@ class InProcessInvoker:
         """Scan ``configs/<profile>/*.json`` and register every graph with a
         successful baseline entry."""
         root = os.path.abspath(str(rescale_optimizer_root))
-        if root not in sys.path:
-            sys.path.insert(0, root)
-        from rescale_optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import ReplanSession
 
         inv = cls.__new__(cls)
         inv._session = ReplanSession.from_profile(

@@ -381,7 +381,7 @@ def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> 
             "block5": {...}
         }
 
-    若想从 ``Rescale_optimizer/configs/<profile>/static_skeletons_<profile>.json``
+    若想从 ``configs/preparation/rescale/<profile>/static_skeletons_<profile>.json``
     自动生成，参见 ``docs/BLB_stage2_rl_spec.md`` §4.4。
     """
     profile = str(profile or "default")
@@ -1543,7 +1543,7 @@ def _load_active_rescale_sets() -> Dict[str, frozenset]:
             from . import skeleton_stage_map as _ssm
             ro_root = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "Rescale_optimizer",
+                "configs/preparation/rescale",
             )
             arch_path = os.path.join(ro_root, "configs", "mrpc", "static_skeletons_mrpc.json")
             archive = read_json_file(arch_path)

@@ -1435,7 +1435,7 @@ def write_blb_final_report(
         lines.append("Baseline 校准时 Rescale_optimizer 报告 `invalid_chain != None`。")
         lines.append("通常说明 graph / max_sfs JSON 与 BLB cfg 字段命名不对齐，"
                      "或者 baseline t 在某个 stage 越界。请检查 "
-                     "`Rescale_optimizer/configs/<profile>/static_skeletons_<profile>.json`。")
+                     "`configs/preparation/rescale/<profile>/static_skeletons_<profile>.json`。")
         lines.append("")
 
     if extra_lines:

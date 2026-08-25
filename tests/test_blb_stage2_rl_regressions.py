@@ -618,7 +618,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
     def test_action_candidate_applies_replan_cfg_before_model_forward(self):
         import Paean.blb_action_eval as mod
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from rescale_optimizer_bridge import RescaleOptimizerOutput
+        from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class FakeCfg:
             def __init__(self):
@@ -1327,7 +1327,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
 
 class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
     def test_bridge_baseline_evaluation_bypasses_cfg_derived_payload(self):
-        from rescale_optimizer_bridge import RescaleOptimizerBridge
+        from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 
         class RecordingInvoker:
             def __init__(self):
@@ -1363,7 +1363,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         )
         from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
         from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
-        from rescale_optimizer_bridge import RescaleOptimizerOutput
+        from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class TinyModel(torch.nn.Module):
             def __init__(self):
@@ -1474,7 +1474,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
         from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
         from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
-        from rescale_optimizer_bridge import RescaleOptimizerOutput
+        from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class TinyModel(torch.nn.Module):
             def __init__(self):
@@ -1550,7 +1550,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             load_max_sfs,
             make_all_max_action_vector,
         )
-        from rescale_optimizer_bridge import (
+        from rfr.preparation.rescale.bridge import (
             InProcessInvoker,
             RescaleOptimizerBridge,
             aggregate_optimizer_signals,
@@ -1568,7 +1568,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         requests = build_optimizer_requests("mrpc", decoded.cfgs_dict())
         bridge = RescaleOptimizerBridge(
             invoker=InProcessInvoker.from_profile(
-                rescale_optimizer_root="Rescale_optimizer",
+                rescale_optimizer_root="configs/preparation/rescale",
                 profile="mrpc",
             )
         )
@@ -1592,7 +1592,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             load_max_sfs,
             make_all_max_action_vector,
         )
-        from rescale_optimizer_bridge import (
+        from rfr.preparation.rescale.bridge import (
             InProcessInvoker,
             RescaleOptimizerBridge,
             aggregate_optimizer_signals,
@@ -1608,7 +1608,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         requests = build_optimizer_requests("mrpc", decoded.cfgs_dict())
         bridge = RescaleOptimizerBridge(
             invoker=InProcessInvoker.from_profile(
-                rescale_optimizer_root="Rescale_optimizer",
+                rescale_optimizer_root="configs/preparation/rescale",
                 profile="mrpc",
             )
         )

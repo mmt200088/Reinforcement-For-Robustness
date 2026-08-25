@@ -9,7 +9,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
-from .action_space import (
+from blb_stage2_rl.action_space import (
     _BLOCK_SPECS,
     _block_default_N,
     _degree_for_layer,
@@ -17,7 +17,7 @@ from .action_space import (
     build_block_cfg_from_field_values,
     make_all_max_action_vector,
 )
-from .env import BLBStage2Env
+from blb_stage2_rl.env import BLBStage2Env
 from .optimizer_cost import materialize_decoded_action
 
 

@@ -28,7 +28,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import optimizer_output_introspect as ooi
+from rfr.preparation.rescale import output_introspection as ooi
 
 
 class FusedSkeletonPositionsTest(unittest.TestCase):

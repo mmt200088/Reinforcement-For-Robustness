@@ -15,15 +15,15 @@ from types import SimpleNamespace
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_REPO / "Rescale_optimizer"), str(_REPO)):
+for _p in (str(_REPO / "configs/preparation/rescale"), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from rfr.preparation.fusion import enumeration_fast as fef  # noqa: E402
 
 try:
-    from rescale_optimizer import ReplanSession
-    _SESSION = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+    from rfr.preparation.rescale.optimizer import ReplanSession
+    _SESSION = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "configs/preparation/rescale"))
 except Exception:  # pragma: no cover
     _SESSION = None
 

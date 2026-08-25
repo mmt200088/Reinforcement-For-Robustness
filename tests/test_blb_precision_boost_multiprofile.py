@@ -21,7 +21,7 @@ import sys
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer")):
+for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "configs/preparation/rescale")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

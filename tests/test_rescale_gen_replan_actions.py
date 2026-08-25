@@ -4,7 +4,7 @@ import sys
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = REPO_ROOT / "Rescale_optimizer" / "scripts" / "gen_replan_actions.py"
+SCRIPT_PATH = REPO_ROOT / "configs/preparation/rescale" / "scripts" / "gen_replan_actions.py"
 
 
 def _load_module():

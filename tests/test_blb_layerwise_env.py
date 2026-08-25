@@ -681,7 +681,7 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
 
         cls.sequential = load(
             f"{pkg_name}.block_materialization",
-            BLB_DIR / "block_materialization.py",
+            REPO_ROOT / "src/rfr/preparation/rescale/block_materialization.py",
         )
         cls.layerwise_env = load(
             f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py",

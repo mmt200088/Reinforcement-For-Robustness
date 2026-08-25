@@ -28,7 +28,7 @@ import unittest
 from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_REPO_ROOT), str(_REPO_ROOT / "Rescale_optimizer")):
+for _p in (str(_REPO_ROOT), str(_REPO_ROOT / "configs/preparation/rescale")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

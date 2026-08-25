@@ -361,7 +361,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         action_vector_to_cfgs,
     )
 
-    from rescale_optimizer_bridge import (
+    from rfr.preparation.rescale.bridge import (
         GRAPH_NODE_TO_CFG_ATTR,
         cfg_to_t_new_from_table,
         sync_block2_aux_fresh_binding,
@@ -653,12 +653,8 @@ def enumerate_range_worker(payload: Mapping[str, Any]) -> Tuple[int, List[Tuple]
     wall_seconds, combo_count)``. The worker process imports only this module
     + ReplanSession — no torch (faster spawn, smaller footprint).
     """
-    import sys
-
     root = str(payload["ro_root"])
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    from rescale_optimizer import ReplanSession
+    from rfr.preparation.rescale.optimizer import ReplanSession
 
     template: FastEnumTemplate = payload["template"]
     session = ReplanSession.from_profile(profile=str(payload["profile"]), root=root)

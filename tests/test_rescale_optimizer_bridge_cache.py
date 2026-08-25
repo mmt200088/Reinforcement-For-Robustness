@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 try:
-    import rescale_optimizer_bridge as bridge_mod
-    from rescale_optimizer_bridge import RescaleOptimizerBridge
+    from rfr.preparation.rescale import bridge as bridge_mod
+    from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 except ModuleNotFoundError as exc:
     if exc.name != "torch":
         raise

@@ -570,7 +570,7 @@ def build_cost_matched_random_action_candidates(
             continue
 
 
-        from rescale_optimizer_bridge import aggregate_optimizer_signals as _agg
+        from rfr.preparation.rescale.bridge import aggregate_optimizer_signals as _agg
         signals = _agg(outputs)
         if bool(signals.any_invalid):
             invalid_n += 1

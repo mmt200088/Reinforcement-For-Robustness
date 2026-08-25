@@ -51,7 +51,7 @@ class FinalEvalSettings:
     action_config: str = ""
     action_ranges: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
     action_fixed: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
-    blb_rescale_optimizer_root: str = "Rescale_optimizer"
+    blb_rescale_optimizer_root: str = "configs/preparation/rescale"
     stage1_accuracy_tolerance: float = 0.005
     stage2_limit_tolerance: float = 0.05
     stage2_stability_tolerance: float = 0.05
@@ -170,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--rescale-optimizer-root",
         "--blb-rescale-optimizer-root",
         dest="blb_rescale_optimizer_root",
-        default="Rescale_optimizer",
+        default="configs/preparation/rescale",
     )
     parser.add_argument(
         "--cost-match-count",

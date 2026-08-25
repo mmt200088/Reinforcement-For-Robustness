@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .reward import BaselineCostStats
-from . import skeleton_stage_map as _ssm
+from blb_stage2_rl import skeleton_stage_map as _ssm
+from blb_stage2_rl.reward import BaselineCostStats
 
 
 ALLOWED_GELU_DEGREES = (1, 2, 4)
@@ -106,10 +106,9 @@ def _validate_stage1(
 
 
 def static_skeletons_archive_path(rescale_optimizer_root: str, dataset: str) -> str:
-    """返回 ``<root>/configs/<dataset>/static_skeletons_<dataset>.json`` 绝对路径。"""
+    """Return the profile archive under the Rescale configuration root."""
     return os.path.join(
         os.path.abspath(str(rescale_optimizer_root)),
-        "configs",
         str(dataset),
         f"static_skeletons_{dataset}.json",
     )
@@ -332,7 +331,7 @@ def load_static_skeletons_baseline(
     """从 ``static_skeletons_<dataset>.json`` 抽出 BLB Stage-2 RL baseline。
 
     Args:
-        rescale_optimizer_root: ``Rescale_optimizer`` 仓库根目录
+        rescale_optimizer_root: Rescale configuration root
         dataset:                supported GLUE task name
         num_layers:             模型 encoder 层数
         gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}
@@ -353,7 +352,7 @@ def load_static_skeletons_baseline(
     if not os.path.isfile(path):
         raise FileNotFoundError(
             f"static_skeletons archive not found: {path} "
-            f"(确认 Rescale_optimizer 仓库已克隆并包含 configs/{dataset}/)"
+            f"(expected profile directory {dataset}/ under the configuration root)"
         )
     archive = load_static_skeletons_archive(path)
 
@@ -428,7 +427,7 @@ def static_skeletons_baseline_to_action(
                                    False ⇒ 原样使用 JSON SF。
     """
 
-    from .action_space import (
+    from blb_stage2_rl.action_space import (
         K_LEVELS, MaxSFsTable, NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N,
         _BLOCK_NODE_NAME_BY_FIELD, _BLOCK_SPECS,
         _block_default_N, load_max_sfs, make_all_max_action_vector,
@@ -536,7 +535,7 @@ def static_skeletons_baseline_to_action(
                 action_vec[int(li * layer_dim + field_offset)] = 0
 
 
-    from .action_space import BASELINE_K_BY_BLOCK
+    from blb_stage2_rl.action_space import BASELINE_K_BY_BLOCK
     k_sum = 0.0
     k_count = 0
     for li in range(L):

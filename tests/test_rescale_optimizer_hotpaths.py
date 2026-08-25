@@ -7,14 +7,14 @@ from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RESCALE_ROOT = REPO_ROOT / "Rescale_optimizer"
+RESCALE_ROOT = REPO_ROOT / "configs/preparation/rescale"
 if str(RESCALE_ROOT) not in sys.path:
     sys.path.insert(0, str(RESCALE_ROOT))
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
     def test_normalized_delta_override_dict_is_reused_without_reparsing(self):
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         overrides = {
             "ctpt_weight": 17,
@@ -30,8 +30,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertIs(normalized, overrides)
 
     def test_compact_replan_matches_full_result_without_building_full_output(self):
-        from rescale_optimizer import CompactReplanResult, ReplanSession
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import CompactReplanResult, ReplanSession
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -54,9 +54,9 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(compact.compact_config, full["new_compact_config"])
 
     def test_compact_config_propagates_each_stage_without_nodes_between(self):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer.graph import propagate_scale
-        from rescale_optimizer.replan_interface import build_new_compact_config
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer.graph import propagate_scale
+        from rfr.preparation.rescale.optimizer.replan_interface import build_new_compact_config
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -117,7 +117,7 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(compact["cut_point_sf"], expected)
 
     def test_replan_session_reuses_precomputed_baseline_stage_paths(self):
-        from rescale_optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import ReplanSession
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -136,8 +136,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertTrue(compact.valid)
 
     def test_replan_session_reuses_precomputed_delta_node_lookup(self):
-        from rescale_optimizer import NodeType, ReplanSession
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import NodeType, ReplanSession
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -176,9 +176,9 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         )
 
     def test_replan_session_reuses_prepared_default_fusion_policy(self):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer import replan
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import replan
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         with mock.patch.object(
             replan_interface,
@@ -219,8 +219,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(normalize_policy.call_count, constructor_counts[1] + 1)
 
     def test_replan_session_skips_redundant_clean_state_restore(self):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -241,8 +241,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertTrue(session._delta_state_clean["block4"])
 
     def test_delta_override_can_skip_unused_applied_record(self):
-        from rescale_optimizer import NodeType
-        from rescale_optimizer import replan
+        from rfr.preparation.rescale.optimizer import NodeType
+        from rfr.preparation.rescale.optimizer import replan
 
         node = SimpleNamespace(
             name="ctpt_weight",
@@ -262,8 +262,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(node.scale_delta_bits, 17)
 
     def test_compact_replan_skips_unused_applied_delta_record(self):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -283,8 +283,8 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         )
 
     def test_only_full_replan_requests_baseline_delta_diagnostics(self):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         session = ReplanSession.from_profile(
             profile="mrpc",
@@ -310,7 +310,7 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         )
 
     def test_replan_validates_drop_bounds_in_one_scan(self):
-        from rescale_optimizer import replan
+        from rfr.preparation.rescale.optimizer import replan
 
         source = inspect.getsource(replan.replan_with_user_actions)
 
@@ -321,7 +321,7 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         )
 
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
-        from rescale_optimizer import replan_interface
+        from rfr.preparation.rescale.optimizer import replan_interface
 
         graph = SimpleNamespace(nodes=[
             SimpleNamespace(scale_delta_bits=7, other_ct_scale_bits=31),
@@ -339,14 +339,14 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(graph.nodes[0].other_ct_scale_bits, 31)
 
     def test_reachability_uses_stage_successor_adjacency(self):
-        from rescale_optimizer import reachability
+        from rfr.preparation.rescale.optimizer import reachability
 
         source = inspect.getsource(reachability.compute_reachability)
 
         self.assertNotIn("for (ii, v) in graph.stage_edges.keys()", source)
 
     def test_backward_dp_uses_stage_successor_adjacency(self):
-        from rescale_optimizer import backward_level_dp
+        from rfr.preparation.rescale.optimizer import backward_level_dp
 
         source = inspect.getsource(backward_level_dp.build_dp_table)
         dp_loop = source.split("for i in range(M, -1, -1):", 1)[1]
@@ -355,7 +355,7 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertNotIn("graph.stage_edges.items()", dp_loop)
 
     def test_feasibility_dag_uses_incremental_stage_accumulation(self):
-        from rescale_optimizer import feasibility
+        from rfr.preparation.rescale.optimizer import feasibility
 
         source = inspect.getsource(feasibility.build_feasibility_dag)
 
@@ -367,7 +367,7 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertNotIn("for n in cumulative_nodes)", source)
 
     def test_feasibility_dag_precomputes_cut_point_indices(self):
-        from rescale_optimizer import feasibility
+        from rfr.preparation.rescale.optimizer import feasibility
 
         source = inspect.getsource(feasibility.build_feasibility_dag)
 

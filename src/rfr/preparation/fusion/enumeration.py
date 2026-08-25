@@ -383,7 +383,7 @@ def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dic
     replan, and (if valid) return the post-override installed noise plan."""
     from blb_stage2_rl.action_space import action_vector_to_cfgs
 
-    from rescale_optimizer_bridge import (
+    from rfr.preparation.rescale.bridge import (
         apply_optimizer_output_to_cfg,
         sync_block2_aux_fresh_binding,
         sync_block2_qk_binding,
@@ -442,7 +442,7 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
     points (the chain fields come straight from the real replan result)."""
     from blb_stage2_rl.action_space import build_block_cfg_from_field_values
 
-    from rescale_optimizer_bridge import (
+    from rfr.preparation.rescale.bridge import (
         apply_optimizer_output_to_cfg,
         sync_block2_aux_fresh_binding,
         sync_block2_qk_binding,
@@ -662,9 +662,9 @@ def prepare_block_type_context(
         distinct_sf_level_indices,
     )
 
-    from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+    from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
 
-    from blb_stage2_rl.baseline_bootstrap import (
+    from rfr.preparation.rescale.baseline_bootstrap import (
         load_static_skeletons_baseline,
         static_skeletons_baseline_to_action,
     )

@@ -33,7 +33,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[4]
+CONFIG_ROOT = REPO_ROOT / "configs" / "preparation" / "rescale"
 
 
 def _baseline_t_from_entry(entry: Dict[str, Any]) -> List[int]:
@@ -78,10 +79,10 @@ def _format_actions_file(name: str, t_new: List[int],
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--archive",
-                   default=str(REPO_ROOT / "configs" / "static_skeletons.json"),
+                   default=str(CONFIG_ROOT / "static_skeletons.json"),
                    help="Path to static_skeletons.json")
     p.add_argument("--out-dir",
-                   default=str(REPO_ROOT / "configs"),
+                   default=str(CONFIG_ROOT),
                    help="Where to write replan_actions_*.json")
     p.add_argument("--filter", default="block*",
                    help="Glob over config_name (default: block*)")

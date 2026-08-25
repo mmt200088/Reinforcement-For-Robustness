@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RESCALE_ROOT = REPO_ROOT / "Rescale_optimizer"
+RESCALE_ROOT = REPO_ROOT / "configs/preparation/rescale"
 if str(RESCALE_ROOT) not in sys.path:
     sys.path.insert(0, str(RESCALE_ROOT))
 
-import rescale_optimizer.replan_interface as replan_interface
+import rfr.preparation.rescale.optimizer.replan_interface as replan_interface
 
 
 class ReplanSessionConstructionTest(unittest.TestCase):

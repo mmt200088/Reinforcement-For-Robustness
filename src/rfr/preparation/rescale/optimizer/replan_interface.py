@@ -622,10 +622,15 @@ class ReplanSession:
         baseline_archive: Optional[Union[str, Path]] = None,
         include: Optional[Iterable[str]] = None,
     ) -> "ReplanSession":
-        """Create a session by scanning ``configs/<profile>``."""
+        """Create a session by scanning one profile under the config root."""
 
-        repo_root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
-        cfg_dir = Path(configs_dir) if configs_dir is not None else repo_root / "configs" / profile
+        if root is None:
+            from .. import RESCALE_CONFIG_ROOT
+
+            config_root = RESCALE_CONFIG_ROOT
+        else:
+            config_root = Path(root)
+        cfg_dir = Path(configs_dir) if configs_dir is not None else config_root / profile
         archive = (
             Path(baseline_archive)
             if baseline_archive is not None

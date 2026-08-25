@@ -30,7 +30,7 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
 import noise_tables as nt  # noqa: E402  (torch-free: parses function_handler text)
 from blb_stage2_rl import precision_boost as pb  # noqa: E402
 
-_RO_ROOT = str(_REPO / "Rescale_optimizer")
+_RO_ROOT = str(_REPO / "configs/preparation/rescale")
 
 
 class AboveTableNoiseSemanticsTest(unittest.TestCase):
@@ -268,7 +268,7 @@ class Phase2BoostReplanTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession
+        from rfr.preparation.rescale.optimizer import ReplanSession
         cls.S = ReplanSession.from_profile(profile="mrpc", root=_RO_ROOT)
 
 

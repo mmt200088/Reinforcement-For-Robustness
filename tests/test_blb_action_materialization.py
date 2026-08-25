@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 try:
     from function_handler import make_block3_default_config
-    from blb_stage2_rl.optimizer_cost import (
+    from rfr.preparation.rescale.optimizer_cost import (
         configure_truncation_backend,
         materialize_decoded_action,
         materialized_config_fingerprint,
@@ -283,7 +283,7 @@ class ActionVectorBoundsTests(unittest.TestCase):
 
     def test_optimizer_cost_preserves_invalid_raw_action_for_shared_validation(self):
         evaluate_action_for_cost = _load_function_standalone(
-            "blb_stage2_rl/optimizer_cost.py",
+            "src/rfr/preparation/rescale/optimizer_cost.py",
             "evaluate_action_for_cost",
             np=__import__("numpy"),
             validate_action_vector=_reject_invalid_raw_action,
@@ -647,11 +647,11 @@ class ActionMaterializationTests(unittest.TestCase):
             load_max_sfs,
             make_all_max_action_vector,
         )
-        from blb_stage2_rl.optimizer_cost import materialize_action_for_model
-        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+        from rfr.preparation.rescale.optimizer_cost import materialize_action_for_model
+        from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
 
         invoker = InProcessInvoker.from_profile(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             profile="mrpc",
         )
         result = materialize_action_for_model(
@@ -720,8 +720,8 @@ class ActionMaterializationTests(unittest.TestCase):
             make_all_max_action_vector,
             per_layer_field_offsets,
         )
-        from blb_stage2_rl.optimizer_cost import materialize_action_for_model
-        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+        from rfr.preparation.rescale.optimizer_cost import materialize_action_for_model
+        from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
 
         num_layers = 12
         action = make_all_max_action_vector(num_layers=num_layers)
@@ -741,7 +741,7 @@ class ActionMaterializationTests(unittest.TestCase):
                 action[layer_start + field_offset] = k6_index
 
         invoker = InProcessInvoker.from_profile(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             profile="mrpc",
         )
         result = materialize_action_for_model(

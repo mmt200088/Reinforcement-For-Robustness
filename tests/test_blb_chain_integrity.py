@@ -31,11 +31,11 @@ try:
         make_block3_default_config,
         make_block4_default_config,
     )
-    from rescale_optimizer_bridge import (
+    from rfr.preparation.rescale.bridge import (
         apply_optimizer_output_to_cfg,
         sync_block2_qk_binding,
     )
-    from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
+    from rfr.preparation.rescale.optimizer_cost import apply_optimizer_outputs_to_cfgs
     from blb_stage2_rl.sequential_policy import (
         BLBStage2SequentialPolicy,
         SequentialPolicyConfig,

@@ -207,7 +207,7 @@ class BLBNoiseRLBridge:
             extra_overrides=None,
             ):
         """Evaluate already-installed configs without changing model state."""
-        from rescale_optimizer_bridge import aggregate_optimizer_signals
+        from rfr.preparation.rescale.bridge import aggregate_optimizer_signals
 
         outputs = rescale_bridge.evaluate_blocks(requests, extra_overrides=extra_overrides)
         signals = aggregate_optimizer_signals(outputs)

@@ -548,7 +548,7 @@ CMD=(
   --blb_v3_save_interval "$STAGE2_SAVE_INTERVAL"
   --blb_v3_eval_interval "$STAGE2_EVAL_INTERVAL"
   --blb_v3_calibrate_baseline_samples "$CALIBRATE_BASELINE_SAMPLES"
-  --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer
+  --blb_v3_inproc_rescale_optimizer_root configs/preparation/rescale
   --blb_v3_seed "$RANDOM_SEED"
   --blb_v3_online_k_trials "$ONLINE_K_TRIALS"
   --blb_v3_terminal_eval_batch_size "$TERMINAL_EVAL_BATCH_SIZE"

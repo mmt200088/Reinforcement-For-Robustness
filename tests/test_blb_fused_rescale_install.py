@@ -37,14 +37,14 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 for p in (
     str(_REPO),
     str(_REPO / "blb_stage2_rl"),
-    str(_REPO / "Rescale_optimizer"),
+    str(_REPO / "configs/preparation/rescale"),
 ):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 
 try:
-    from rescale_optimizer_bridge import (
+    from rfr.preparation.rescale.bridge import (
         DEFAULT_CFG_TO_T_NEW_MAP,
         _SkelEntry,
         apply_optimizer_output_to_cfg,
@@ -68,7 +68,7 @@ class _NP:
         return f"_NP({self.scaling_factor})"
 
 
-@unittest.skipUnless(_BRIDGE_OK, "rescale_optimizer_bridge (torch) required")
+@unittest.skipUnless(_BRIDGE_OK, "rfr.preparation.rescale.bridge (torch) required")
 class SyntheticTest(unittest.TestCase):
     """Lock the detection on a hand-built optimizer output (no replan needed)."""
 
@@ -165,7 +165,7 @@ _BUILD = {
 
 @unittest.skipUnless(
     _BRIDGE_OK and importlib.util.find_spec("rescale_optimizer") is not None,
-    "rescale_optimizer_bridge (torch) + rescale_optimizer required",
+    "rfr.preparation.rescale.bridge (torch) + rescale_optimizer required",
 )
 class RealReplanTest(unittest.TestCase):
     """Drive REAL replans for every boosted fusion option and assert the fields
@@ -174,9 +174,9 @@ class RealReplanTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession
-        from rescale_optimizer_bridge import InProcessInvoker
-        root = str(_REPO / "Rescale_optimizer")
+        from rfr.preparation.rescale.optimizer import ReplanSession
+        from rfr.preparation.rescale.bridge import InProcessInvoker
+        root = str(_REPO / "configs/preparation/rescale")
         cls.S = ReplanSession.from_profile(profile="mrpc", root=root)
         cls.inv = InProcessInvoker.from_profile(rescale_optimizer_root=root, profile="mrpc")
 

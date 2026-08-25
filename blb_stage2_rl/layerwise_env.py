@@ -19,7 +19,7 @@ from .layerwise_action import (
     layerwise_schedule,
 )
 from .precision_presets import validate_communication_importance_ratio
-from .block_materialization import (
+from rfr.preparation.rescale.block_materialization import (
     BlockRuntimeResult,
     evaluate_block_from_full_vector,
 )

@@ -126,7 +126,7 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
             import torch  # noqa: F401
         except Exception as exc:
             self.skipTest(f"torch unavailable for bridge import: {exc}")
-        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+        from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
 
         cfg = SimpleNamespace(
             softmax_out_fresh=self._noise_point(18),
@@ -143,12 +143,12 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
         )
 
         direct_invoker = InProcessInvoker.from_profile(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             profile="mrpc",
             include=["block4"],
         )
         compat_invoker = InProcessInvoker.from_profile(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             profile="mrpc",
             include=["block4"],
         )
@@ -185,7 +185,7 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
             import torch  # noqa: F401
         except Exception as exc:
             self.skipTest(f"torch unavailable for bridge import: {exc}")
-        from rescale_optimizer_bridge import RescaleOptimizerBridge
+        from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 
         class DirectOnlyInvoker:
             baselines = {

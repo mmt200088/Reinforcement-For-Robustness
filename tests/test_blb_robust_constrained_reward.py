@@ -454,7 +454,7 @@ def _runtime_modules():
     torch_stub.long = object()
     blb_bridge = types.ModuleType("blb_rl_bridge")
     blb_bridge.BLBNoiseRLBridge = type("BLBNoiseRLBridge", (), {})
-    rescale_bridge = types.ModuleType("rescale_optimizer_bridge")
+    rescale_bridge = types.ModuleType("rfr.preparation.rescale.bridge")
     rescale_bridge.RescaleOptimizerBridge = type("RescaleOptimizerBridge", (), {})
     for name in (
         "aggregate_optimizer_signals",
@@ -478,7 +478,7 @@ def _runtime_modules():
         **relative_modules,
         "torch": torch_stub,
         "blb_rl_bridge": blb_bridge,
-        "rescale_optimizer_bridge": rescale_bridge,
+        "rfr.preparation.rescale.bridge": rescale_bridge,
     }):
         env_module = load(f"{package_name}.env", _BLB_DIR / "env.py")
 

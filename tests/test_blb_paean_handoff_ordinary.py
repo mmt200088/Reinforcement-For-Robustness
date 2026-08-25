@@ -354,7 +354,7 @@ class PaeanOrdinaryFinalEvalHandoffTest(unittest.TestCase):
                 get_simulated_cost=lambda _gelu, _softmax: (1.0, 0.5, 0.5),
             ),
             rescale_backend="in_process",
-            rescale_optimizer_root="/repo/Rescale_optimizer",
+            rescale_optimizer_root="/repo/configs/preparation/rescale",
             rescale_optimizer_mode="cfg_derived",
             _decode_action_candidate=lambda **_kwargs: (_ for _ in ()).throw(
                 AssertionError("prepared action must not be decoded again")

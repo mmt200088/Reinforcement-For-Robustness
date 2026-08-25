@@ -146,7 +146,7 @@ def test_active_config_inventory_contains_only_supported_profiles():
 
     rescale_profiles = tuple(sorted(
         path.name
-        for path in (ROOT / "Rescale_optimizer/configs").iterdir()
+        for path in (ROOT / "configs/preparation/rescale").iterdir()
         if path.is_dir()
     ))
     assert rescale_profiles == (

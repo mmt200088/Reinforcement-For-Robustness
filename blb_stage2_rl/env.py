@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from blb_rl_bridge import BLBNoiseRLBridge
-from rescale_optimizer_bridge import RescaleOptimizerBridge
+from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 
 from .action_space import (
     K_LEVELS,
@@ -30,7 +30,7 @@ from .action_space import (
 )
 from .candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
-from .optimizer_cost import materialize_action_for_model
+from rfr.preparation.rescale.optimizer_cost import materialize_action_for_model
 from .probe_runner import (
     ProbeRunner,
     _normalize_probe_trial_result,
@@ -1743,7 +1743,7 @@ def estimate_baseline_cost_stats(
     if precomputed_baseline_signals is None:
         raise RuntimeError(
             "BLB Stage-2 baseline must come from "
-            "Rescale_optimizer/configs/<dataset>/static_skeletons_<dataset>.json; "
+            "configs/preparation/rescale/<dataset>/static_skeletons_<dataset>.json; "
             "refusing to estimate baseline from the all-max action path."
         )
 

@@ -27,7 +27,7 @@ from rl_data_points import (
 )
 
 from .action_space import K_LEVELS
-from .baseline_bootstrap import resolve_stage2_model_type
+from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_model_type
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
     SequentialPolicyConfig,
@@ -4274,7 +4274,7 @@ def _build_stage2_materialization_env(
         fixed_softmax: Any,
         log: Callable[[str], None],
         ) -> dict[str, Any]:
-    from .baseline_bootstrap import (
+    from rfr.preparation.rescale.baseline_bootstrap import (
         load_calibrated_stage2_action_context,
         validate_calibrated_stage2_action_context,
     )

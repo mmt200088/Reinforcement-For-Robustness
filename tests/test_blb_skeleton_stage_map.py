@@ -18,7 +18,7 @@ import tempfile
 import unittest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_RO_ROOT = _REPO_ROOT / "Rescale_optimizer"
+_RO_ROOT = _REPO_ROOT / "configs/preparation/rescale"
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
 
 try:
@@ -27,7 +27,7 @@ try:
     if str(_RO_ROOT) not in sys.path:
         sys.path.insert(0, str(_RO_ROOT))
     import skeleton_stage_map as ssm  # type: ignore
-    from rescale_optimizer import ReplanSession  # type: ignore
+    from rfr.preparation.rescale.optimizer import ReplanSession  # type: ignore
 
     _IMPORT_ERROR = None
 except Exception as _exc:  # pragma: no cover
@@ -141,7 +141,7 @@ class LoadProfileConfigsTest(unittest.TestCase):
 
 
 try:
-    from rescale_optimizer_bridge import (  # type: ignore
+    from rfr.preparation.rescale.bridge import (  # type: ignore
         InProcessInvoker as _InProcessInvoker,
         _derive_t_new_table_from_invoker as _derive_t_new,
     )
@@ -153,7 +153,7 @@ except Exception as _be:  # pragma: no cover - torch / RO package missing
     _BRIDGE_IMPORT_ERROR = _be
 
 _BRIDGE_AVAILABLE = _BRIDGE_IMPORT_ERROR is None
-_BRIDGE_SKIP = "" if _BRIDGE_AVAILABLE else f"rescale_optimizer_bridge not importable: {_BRIDGE_IMPORT_ERROR!r}"
+_BRIDGE_SKIP = "" if _BRIDGE_AVAILABLE else f"rfr.preparation.rescale.bridge not importable: {_BRIDGE_IMPORT_ERROR!r}"
 
 
 @unittest.skipUnless(_BRIDGE_AVAILABLE, _BRIDGE_SKIP)

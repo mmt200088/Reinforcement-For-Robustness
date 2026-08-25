@@ -17,7 +17,7 @@ from blb_stage2_rl import layerwise_action as layerwise
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-_RO_ROOT = _REPO_ROOT / "Rescale_optimizer"
+_RO_ROOT = _REPO_ROOT / "configs/preparation/rescale"
 _ASPACE_OK = True
 
 

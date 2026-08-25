@@ -335,7 +335,7 @@ class BlbMakeRunManifestTest(unittest.TestCase):
             },
             "rescale_optimizer": {
                 "mode": "in_process_real",
-                "root": "Rescale_optimizer",
+                "root": "configs/preparation/rescale",
                 "hash": "rescale123",
             },
             "thresholds": {

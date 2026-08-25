@@ -6,7 +6,7 @@ from unittest import mock
 
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer"), str(_REPO)):
+for _p in (str(_REPO / "blb_stage2_rl"), str(_REPO / "configs/preparation/rescale"), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

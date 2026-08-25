@@ -16,7 +16,7 @@ import sys
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for p in (str(_REPO), str(_REPO / "Rescale_optimizer")):
+for p in (str(_REPO), str(_REPO / "configs/preparation/rescale")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -90,8 +90,8 @@ class CandidateGenTest(unittest.TestCase):
 class BoostReplanTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession  # noqa: E402
-        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+        from rfr.preparation.rescale.optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "configs/preparation/rescale"))
 
     def _replan_fn(self, slots):
         t_new = [
@@ -206,8 +206,8 @@ class Block4CandidateGenTest(unittest.TestCase):
 class Block4BoostReplanTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession  # noqa: E402
-        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+        from rfr.preparation.rescale.optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "configs/preparation/rescale"))
 
     def _replan_fn(self, slots):
         t_new = [
@@ -330,8 +330,8 @@ class Block5N2CandidateGenTest(unittest.TestCase):
 class Block5N2BoostReplanTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession  # noqa: E402
-        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+        from rfr.preparation.rescale.optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "configs/preparation/rescale"))
 
     def _replan_fn(self, slots):
         t_new = [
@@ -442,8 +442,8 @@ class Block5N4CandidateGenTest(unittest.TestCase):
 class Block5N4BoostReplanTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from rescale_optimizer import ReplanSession  # noqa: E402
-        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+        from rfr.preparation.rescale.optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "configs/preparation/rescale"))
 
     def _replan_fn(self, slots):
         t_new = [
@@ -540,7 +540,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         import numpy as np
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
-            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "configs/preparation/rescale"),
             num_layers=12, ref_layer=1,
         )
         deg_g = int(ctx.gelu_per_layer[ctx.ref_layer])
@@ -582,10 +582,10 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         from blb_stage2_rl.action_space import _decode_block_field_values
         from rfr.preparation.fusion import enumeration as fusion_enum
         import numpy as np
-        from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost
+        from rfr.preparation.rescale.optimizer_cost import evaluate_action_for_cost
         ctx = fusion_enum.prepare_block_type_context(
             graph_key="block2_mrpc", block_idx=2, gelu_degree=4, attn_degree=2,
-            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "configs/preparation/rescale"),
             num_layers=12, ref_layer=1,
         )
         li = int(ctx.ref_layer)
@@ -637,7 +637,7 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         from rfr.preparation.fusion import enumeration as fusion_enum
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
-            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "configs/preparation/rescale"),
             num_layers=12, ref_layer=1,
         )
         path = _REPO / "blb_stage2_rl" / "fusion_maps" / "mrpc" / f"{graph_key}.json"

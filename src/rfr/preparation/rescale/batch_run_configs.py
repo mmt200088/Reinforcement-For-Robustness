@@ -100,19 +100,18 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
-from rescale_optimizer import (
+from rfr.preparation.rescale.optimizer import (
     OptimizationResult,
     load_graph_from_json,
     optimize_rescale,
 )
-from rescale_optimizer.graph import NodeType, propagate_scale
-from rescale_optimizer.utils import setup_logging
+from rfr.preparation.rescale.optimizer.graph import NodeType, propagate_scale
+from rfr.preparation.rescale.optimizer.utils import setup_logging
 
-DEFAULT_CONFIGS_DIR = REPO_ROOT / "configs"
-DEFAULT_OUT = REPO_ROOT / "configs" / "static_skeletons.json"
+DEFAULT_CONFIGS_DIR = REPO_ROOT / "configs" / "preparation" / "rescale"
+DEFAULT_OUT = DEFAULT_CONFIGS_DIR / "static_skeletons.json"
 
 
 def _extract_compact_entry(

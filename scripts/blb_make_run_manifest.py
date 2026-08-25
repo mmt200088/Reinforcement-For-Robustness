@@ -377,7 +377,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--stage1-source", default="")
     parser.add_argument("--stage1-config-path", default="")
-    parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
+    parser.add_argument("--rescale-optimizer-root", default="configs/preparation/rescale")
     parser.add_argument("--rescale-optimizer-mode", default="in_process_real")
     parser.add_argument("--threshold-source", default="unknown")
     parser.add_argument("--acc-limit", type=float, default=None)

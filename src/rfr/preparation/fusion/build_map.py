@@ -20,16 +20,12 @@ import argparse
 import datetime as dt
 import multiprocessing as mp
 from pathlib import Path
-import sys
 import time
 from typing import Any, Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-for _p in (str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
-from rfr.common.json_utils import write_json_file  # noqa: E402
+from rfr.common.json_utils import write_json_file
 
 
 def block_types_for_profile(profile: str) -> List[Tuple[str, int, int, int]]:
@@ -449,7 +445,7 @@ def main() -> int:
         "--out-dir",
         default=str(REPO_ROOT / "configs" / "preparation" / "fusion" / "maps" / "mrpc"),
     )
-    ap.add_argument("--rescale-optimizer-root", default=str(REPO_ROOT / "Rescale_optimizer"))
+    ap.add_argument("--rescale-optimizer-root", default=str(REPO_ROOT / "configs/preparation/rescale"))
     ap.add_argument("--num-layers", type=int, default=12)
     ap.add_argument("--ref-layer", type=int, default=1)
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2) - 1))

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from blb_stage2_rl.baseline_bootstrap import (
+from rfr.preparation.rescale.baseline_bootstrap import (
     StaticSkeletonsBaseline,
     StaticSkeletonsLayerBlock,
     load_static_skeletons_baseline,
@@ -15,7 +15,7 @@ from blb_stage2_rl.baseline_bootstrap import (
 
 class BLBBaselineBootstrapTests(unittest.TestCase):
     def test_stage2_profile_resolution_binds_dataset_model_and_depth(self):
-        from blb_stage2_rl.baseline_bootstrap import (
+        from rfr.preparation.rescale.baseline_bootstrap import (
             resolve_stage2_model_type,
             resolve_stage2_profile,
         )
@@ -56,7 +56,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
             )
 
     def test_calibrated_action_context_wraps_static_baseline_with_provenance(self):
-        import blb_stage2_rl.baseline_bootstrap as bootstrap
+        import rfr.preparation.rescale.baseline_bootstrap as bootstrap
 
         self.assertTrue(
             hasattr(bootstrap, "load_calibrated_stage2_action_context"),
@@ -89,7 +89,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
                 return_value=(action_vec, max_sfs, cost_stats, diagnostics),
             ) as convert:
                 context = load_context(
-                    rescale_optimizer_root="/repo/Rescale_optimizer",
+                    rescale_optimizer_root="/repo/configs/preparation/rescale",
                     dataset="mrpc",
                     num_layers=2,
                     gelu_per_layer=[4, 4],
@@ -116,7 +116,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
                 )
 
         load_baseline.assert_called_once_with(
-            rescale_optimizer_root="/repo/Rescale_optimizer",
+            rescale_optimizer_root="/repo/configs/preparation/rescale",
             dataset="mrpc",
             num_layers=2,
             gelu_per_layer=(4, 4),
@@ -145,7 +145,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
     )
     def test_calibrated_action_context_matches_mrpc_block3_static_baseline(self):
         from blb_stage2_rl.action_space import action_vector_to_cfgs
-        from blb_stage2_rl.baseline_bootstrap import (
+        from rfr.preparation.rescale.baseline_bootstrap import (
             load_calibrated_stage2_action_context,
         )
 
@@ -153,7 +153,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         gelu = [4] * num_layers
         softmax = [6] * num_layers
         context = load_calibrated_stage2_action_context(
-            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_root="configs/preparation/rescale",
             dataset="mrpc",
             num_layers=num_layers,
             gelu_per_layer=gelu,
@@ -182,7 +182,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         gelu = [1, 4]
         softmax = [2, 5]
         baseline = load_static_skeletons_baseline(
-            "Rescale_optimizer",
+            "configs/preparation/rescale",
             "mrpc",
             num_layers=2,
             gelu_per_layer=gelu,

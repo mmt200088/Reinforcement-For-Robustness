@@ -24,7 +24,7 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
     validate_action_vector,
 )
-from blb_stage2_rl.baseline_bootstrap import (
+from rfr.preparation.rescale.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
@@ -34,14 +34,14 @@ from blb_stage2_rl.eval_metrics import (
 )
 from rfr.preparation.fusion.count_map import FusionCountMap
 from rfr.preparation.fusion.fixed_action import select_fusion_eval_metadata
-from blb_stage2_rl.optimizer_cost import materialize_decoded_action
+from rfr.preparation.rescale.optimizer_cost import materialize_decoded_action
 from final_evaluation_module import (
     UnifiedFinalEvaluationModule,
     require_final_evaluation_protocol,
 )
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT
 from rfr.common.json_utils import read_json_file, to_jsonable
-from rescale_optimizer_bridge import (
+from rfr.preparation.rescale.bridge import (
     RescaleOptimizerBridge,
     aggregate_optimizer_signals,
     build_rescale_invoker,
@@ -1461,7 +1461,7 @@ class BLBActionFinalEvaluationModule:
         ev = self.evaluator
         raw = (
             getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
-            or "Rescale_optimizer"
+            or "configs/preparation/rescale"
         )
         path = Path(str(raw))
         if not path.is_absolute():

@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from rfr.preparation.data.protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
-from rescale_optimizer_bridge import (
+from rfr.preparation.rescale.bridge import (
     RescaleOptimizerBridge,
     build_rescale_invoker,
 )
@@ -109,7 +109,7 @@ class BLBStage2TrainConfig:
     truncation_source_fractional_bits: int = 24
     calibrate_baseline_samples: int = 8
     inproc_rescale_optimizer_root: str = field(
-        default_factory=lambda: os.path.join(_repo_root(), "Rescale_optimizer")
+        default_factory=lambda: os.path.join(_repo_root(), "configs/preparation/rescale")
     )
     inproc_baseline_archive: Optional[str] = None
 
@@ -255,7 +255,7 @@ class BLBStage2RLRunner:
         )
 
     def _build_train_config_from_evaluator(self, evaluator: Any) -> BLBStage2TrainConfig:
-        from .baseline_bootstrap import resolve_stage2_profile
+        from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_profile
         from .probe_runner import parse_device_ids
 
         config = BLBStage2TrainConfig(
@@ -277,9 +277,9 @@ class BLBStage2RLRunner:
                 getattr(
                     evaluator,
                     "blb_v3_inproc_rescale_optimizer_root",
-                    os.path.join(_repo_root(), "Rescale_optimizer"),
+                    os.path.join(_repo_root(), "configs/preparation/rescale"),
                 )
-                or os.path.join(_repo_root(), "Rescale_optimizer")
+                or os.path.join(_repo_root(), "configs/preparation/rescale")
             ),
             search_backend=getattr(evaluator, "blb_v3_search_backend", "ppo"),
             search_evaluation_budget=int(

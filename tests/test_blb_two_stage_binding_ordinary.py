@@ -378,7 +378,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         }
         common = {
             "train_cfg": SimpleNamespace(
-                inproc_rescale_optimizer_root="Rescale_optimizer",
+                inproc_rescale_optimizer_root="configs/preparation/rescale",
                 profile="mrpc",
                 stage2_inference_batch_size=64,
             ),
@@ -449,7 +449,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         )
         common = {
             "train_cfg": SimpleNamespace(
-                inproc_rescale_optimizer_root="Rescale_optimizer",
+                inproc_rescale_optimizer_root="configs/preparation/rescale",
                 profile="mrpc",
                 stage2_inference_batch_size=64,
             ),
