@@ -8,7 +8,7 @@ import time
 from typing import Callable, Dict, List
 
 from rfr.preparation.data.protocol import validate_supported_profile
-from .config import (
+from .evaluation_config import (
     PRESET_DIR,
     REPO_ROOT,
     FinalEvalSettings,
@@ -120,7 +120,8 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
     backend = "ppo" if settings.algorithm == "rl" else settings.algorithm
     return [
         sys.executable,
-        str(REPO_ROOT / "rl_tune.py"),
+        "-m",
+        "rfr.cli.run",
         *common,
         "--stage1_rl_episodes",
         "51000",

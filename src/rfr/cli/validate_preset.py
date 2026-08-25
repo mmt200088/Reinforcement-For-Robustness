@@ -1,6 +1,6 @@
 """Validate a preset .conf file against the launcher's declared flag list.
 
-The launcher (``llama_7B_LayerImportance.sh``) accepts ~80 flags via a long
+The launcher (``run_search.sh``) accepts the production flags via a long
 ``case`` block. A typo in a preset file (``--stage2-rolllout-size`` with an
 extra ``l``) is silently ignored — the bash branch doesn't match, and the
 flag is dropped without warning. Hours of debugging later.
@@ -15,8 +15,8 @@ token. It also catches:
 
 Usage::
 
-    python -m tools.validate_preset presets/*.conf Paean/presets/*.conf
-    python tools/validate_preset.py presets/mrpc-blb-stage2-rl.conf
+    python -m rfr.cli.validate_preset configs/presets/*.conf \
+        configs/evaluation/presets/*.conf
 
 Exit code 0 = clean; 1 = problems found (with line-number annotations).
 """
@@ -31,9 +31,9 @@ from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Set, Tuple
 
 
-LAUNCHER_REL = "llama_7B_LayerImportance.sh"
-PAEAN_LAUNCHER_REL = "Paean/run_final_eval.sh"
-PAEAN_CONFIG_REL = "Paean/config.py"
+LAUNCHER_REL = "run_search.sh"
+PAEAN_LAUNCHER_REL = "run_search.sh"
+PAEAN_CONFIG_REL = "src/rfr/cli/evaluation_config.py"
 
 
 _FLAG_LINE_RE = re.compile(

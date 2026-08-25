@@ -11,7 +11,7 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = REPO_ROOT / "llama_7B_LayerImportance.sh"
+LAUNCHER = REPO_ROOT / "run_search.sh"
 
 
 class Stage2PersistentLauncherTest(unittest.TestCase):
@@ -23,19 +23,21 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
         )
         (fake_bin / "flock").chmod(0o755)
-        (fake_bin / "python").write_text(
-            textwrap.dedent(
-                f"""\
+        python_stub = textwrap.dedent(
+            f"""\
                 #!/usr/bin/env bash
                 tmp={str(capture)!r}.tmp.$$
                 printf '%s\\0' "$@" > "$tmp"
                 mv "$tmp" {str(capture)!r}
                 exit 0
                 """
-            ),
-            encoding="utf-8",
         )
-        (fake_bin / "python").chmod(0o755)
+        for executable in ("python", "python3"):
+            (fake_bin / executable).write_text(
+                python_stub,
+                encoding="utf-8",
+            )
+            (fake_bin / executable).chmod(0o755)
         return fake_bin
 
     def _capture(
@@ -113,7 +115,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "--num_epochs",
         ):
             self.assertNotIn(removed, source)
-        self.assertIn("python rl_tune.py", source)
+        self.assertIn("python3 -m rfr.cli.run", source)
         for backend in ("bo_rf", "greedy", "coinn_ga"):
             self.assertIn(f'SEARCH_BACKEND="{backend}"', source)
 
@@ -126,7 +128,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         stage1_argv, stage1_path, stage1_meta = self._capture(
             "rl", "--run-tag", "stage1-test", mode="stage1-only"
         )
-        self.assertEqual(stage1_argv[0], "rl_tune.py")
+        self.assertEqual(stage1_argv[:2], ["-m", "rfr.cli.run"])
         self.assertEqual(self._value(stage1_argv, "--skip_stage1_rl"), "false")
         self.assertEqual(self._value(stage1_argv, "--skip_noise_rl"), "true")
         self.assertEqual(self._value(stage1_argv, "--decoupled_layout"), "true")

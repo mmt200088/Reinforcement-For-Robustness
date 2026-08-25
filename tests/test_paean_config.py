@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from Paean import config as paean_config
+from rfr.cli import evaluation_config as paean_config
 from rfr.common.runtime_error_reporter import format_command as shared_format_command
 
 

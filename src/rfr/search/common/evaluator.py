@@ -1303,7 +1303,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  device='cuda', data_path='mrpc',
                  run_output_dir='',
                  final_eval_config_source='search',
-                 final_eval_config_path='glue_final_configs_best_ppo.json',
+                 final_eval_config_path='configs/reference/rl.json',
                  manual_stage1_gelu=None,
                  manual_stage1_softmax=None,
                  manual_stage2_noise=None,
@@ -1712,7 +1712,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
         self.final_eval_config_source = (final_eval_config_source or 'search').lower()
-        self.final_eval_config_path = final_eval_config_path or 'glue_final_configs_best_ppo.json'
+        self.final_eval_config_path = final_eval_config_path or 'configs/reference/rl.json'
         self.manual_stage1_gelu = manual_stage1_gelu
         self.manual_stage1_softmax = manual_stage1_softmax
         self.manual_stage2_noise = manual_stage2_noise

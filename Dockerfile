@@ -6,10 +6,10 @@
 #   docker run --gpus all -it --rm \
 #     -v "$PWD":/workspace \
 #     -v "$HOME/.cache/huggingface":/root/.cache/huggingface \
-#     -v "$PWD/Parting Chapter":/workspace/Parting\ Chapter \
+#     -v "$PWD/outputs":/workspace/outputs \
 #     -e GLUE_LOCAL_DATASET_DIR=/data/glue \
 #     blb-rl:latest \
-#     bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage2-rl --fresh
+#     bash run_search.sh run rl --preset bert-base-mrpc-stage2-rl --fresh
 #
 ARG CUDA_TAG=12.4.1
 FROM nvidia/cuda:${CUDA_TAG}-cudnn8-runtime-ubuntu22.04
@@ -52,5 +52,5 @@ print(\"torch:\", torch.__version__, \"cuda:\", torch.cuda.is_available()); \
 print(\"transformers:\", transformers.__version__); \
 print(\"numpy:\", numpy.__version__)' && \
     echo '--- Frozen requirements at /opt/requirements-frozen.txt ---' && \
-    echo 'Run training with: bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage2-rl --fresh' \
+    echo 'Run training with: bash run_search.sh run rl --preset bert-base-mrpc-stage2-rl --fresh' \
     "

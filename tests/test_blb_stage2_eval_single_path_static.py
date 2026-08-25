@@ -105,7 +105,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_truncation_backend_is_explicitly_wired_and_defaults_to_binary(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        launcher = (repo / "llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        launcher = (repo / "run_search.sh").read_text(encoding="utf-8")
         evaluator = (repo / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         training = (repo / "src/rfr/search/rl/stage2/training.py").read_text(encoding="utf-8")
         sequential = (repo / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(

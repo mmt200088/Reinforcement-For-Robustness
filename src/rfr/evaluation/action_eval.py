@@ -97,7 +97,7 @@ class BLBActionFinalEvaluationModule:
         *,
         evaluator,
         config_source: str = "search",
-        config_path: str = "glue_final_configs_best_ppo.json",
+        config_path: str = "configs/reference/rl.json",
         manual_stage1_gelu: Optional[Sequence[int]] = None,
         manual_stage1_softmax: Optional[Sequence[int]] = None,
         random_seed: int = 42,

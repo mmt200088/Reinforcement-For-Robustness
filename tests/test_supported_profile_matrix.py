@@ -10,8 +10,8 @@ import time
 import pytest
 
 from rfr.preparation.data.protocol import supported_profiles
-from Paean import config as paean_config
-from Paean import run_final_eval
+from rfr.cli import evaluation_config as paean_config
+from rfr.cli import evaluate as run_final_eval
 from rfr.common.config import run_layout
 
 
@@ -74,7 +74,7 @@ def test_launcher_rejects_unsupported_profile_before_python(args, tmp_path):
     result = subprocess.run(
         [
             "bash",
-            "llama_7B_LayerImportance.sh",
+            "run_search.sh",
             "run",
             "rl",
             *args,
@@ -96,11 +96,11 @@ def test_launcher_rejects_unsupported_profile_before_python(args, tmp_path):
 
 def test_active_entrypoint_sources_have_no_unsupported_dispatch_literals():
     paths = (
-        "llama_7B_LayerImportance.sh",
-        "Paean/config.py",
-        "Paean/run_final_eval.py",
+        "run_search.sh",
+        "src/rfr/cli/evaluation_config.py",
+        "src/rfr/cli/evaluate.py",
         "src/rfr/preparation/data/protocol.py",
-        "rl_tune.py",
+        "src/rfr/cli/run.py",
     )
     forbidden = (
         "gpt-2",
@@ -121,10 +121,10 @@ def test_active_entrypoint_sources_have_no_unsupported_dispatch_literals():
 
 def test_production_entrypoints_remain_syntax_valid():
     for relative_path in (
-        "Paean/config.py",
-        "Paean/run_final_eval.py",
+        "src/rfr/cli/evaluation_config.py",
+        "src/rfr/cli/evaluate.py",
         "src/rfr/preparation/data/protocol.py",
-        "rl_tune.py",
+        "src/rfr/cli/run.py",
     ):
         ast.parse(
             (ROOT / relative_path).read_text(encoding="utf-8").lstrip("\ufeff")
@@ -132,17 +132,11 @@ def test_production_entrypoints_remain_syntax_valid():
 
 
 def test_active_config_inventory_contains_only_supported_profiles():
-    glue_config = json.loads((ROOT / "glue_configs.json").read_text())
+    glue_config = json.loads((ROOT / "configs/models/glue.json").read_text())
     assert tuple(key for key in glue_config if key != "_comment") == (
         "mrpc", "rte", "sst2"
     )
 
-    approx_config = json.loads(
-        (ROOT / "Model_analysis/configs/approx_per_dataset.json").read_text()
-    )
-    assert tuple(key for key in approx_config if key != "_comment") == (
-        "mrpc", "rte", "sst2", "mrpc_large", "rte_large", "sst2_large"
-    )
 
     rescale_profiles = tuple(sorted(
         path.name

@@ -17,9 +17,9 @@ from rfr.preparation.data.protocol import (
 from rfr.common.runtime_error_reporter import format_command
 
 PACKAGE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = PACKAGE_DIR.parent
-PRESET_DIR = PACKAGE_DIR / "presets"
-DEFAULT_OUTPUT_ROOT = PACKAGE_DIR / "outputs"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PRESET_DIR = REPO_ROOT / "configs" / "evaluation" / "presets"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "outputs"
 DEFAULT_PRESET = "default"
 
 DATASET_CHOICES = SUPPORTED_DATASETS
@@ -36,7 +36,7 @@ class FinalEvalSettings:
     batch_size: int = 16
     logfile: str = "final_eval.log"
     source: str = "json"
-    config: str = "glue_final_configs_best_ppo.json"
+    config: str = "configs/reference/rl.json"
     resume_from: str = ""
     output_root: str = str(DEFAULT_OUTPUT_ROOT)
     run_name: str = ""
@@ -129,7 +129,7 @@ def expand_preset_args(argv: Sequence[str], preset_dir: Path = PRESET_DIR) -> Li
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="Paean/run_final_eval.sh",
+        prog="run_search.sh eval",
         description="Run the independent unified final-eval module.",
     )
     parser.add_argument("--preset", default="")
@@ -213,10 +213,10 @@ def normalize_algorithm(value: str) -> str:
 
 def default_config_for_algorithm(algorithm: str) -> str:
     if algorithm == "coinn_ga":
-        return "glue_final_configs_best_genetic.json"
+        return "configs/reference/coinn_ga.json"
     if algorithm == "greedy":
         return "glue_final_configs_best_greedy.json"
-    return "glue_final_configs_best_ppo.json"
+    return "configs/reference/rl.json"
 
 
 def resolve_repo_path(path_value: str) -> str:

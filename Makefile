@@ -21,13 +21,14 @@ docker:
 	docker build -t rfr:latest .
 
 stage1:
-	bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage1-rl --fresh
+	bash run_search.sh run rl --preset bert-base-mrpc-stage1-rl --fresh
 
 stage2:
-	bash llama_7B_LayerImportance.sh run rl --preset $(PRESET) --fresh
+	bash run_search.sh run rl --preset $(PRESET) --fresh
 
 comparator:
-	bash llama_7B_LayerImportance.sh run $(ALGORITHM) --fresh
+	bash run_search.sh run $(ALGORITHM) --fresh
 
 preset-check:
-	$(PYTHON) tools/validate_preset.py presets/*.conf Paean/presets/*.conf
+	PYTHONPATH=src $(PYTHON) -m rfr.cli.validate_preset \
+		configs/presets/*.conf configs/evaluation/presets/*.conf

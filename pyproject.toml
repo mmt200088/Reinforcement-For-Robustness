@@ -39,8 +39,9 @@ dev = [
     "pytest-xdist>=3.0",
 ]
 
-[tool.setuptools]
-py-modules = []
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["rfr*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -86,13 +87,13 @@ allowed-confusables = ["’", "‘"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F401", "F841", "E402"]
 "layer_importance_evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
-"rl_tune.py" = ["F841", "E402"]
+"src/rfr/cli/run.py" = ["F841", "E402"]
 ".github/*" = ["ALL"]
 "scripts/*" = ["F401", "F841"]
 "Rescale_optimizer/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["blb_stage2_rl", "Paean", "tools"]
+known-first-party = ["rfr"]
 combine-as-imports = true
 force-sort-within-sections = true
 

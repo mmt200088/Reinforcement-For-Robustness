@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SearchBackendWiringTests(unittest.TestCase):
     def test_python_entrypoint_forwards_search_backend_and_budget(self):
-        tree = ast.parse((ROOT / "rl_tune.py").read_text(encoding="utf-8"))
+        tree = ast.parse((ROOT / "src/rfr/cli/run.py").read_text(encoding="utf-8"))
         train = next(
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "train"
@@ -37,7 +37,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("stage2_inference_batch_size", keywords)
 
     def test_comparator_smoke_is_parsed_and_validated_at_evaluator_boundary(self):
-        entrypoint = (ROOT / "rl_tune.py").read_text(encoding="utf-8")
+        entrypoint = (ROOT / "src/rfr/cli/run.py").read_text(encoding="utf-8")
         self.assertIn(
             'comparator_smoke = parse_bool_flag(\n'
             '        comparator_smoke, "comparator_smoke",\n'
@@ -403,7 +403,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_launcher_and_layerwise_runner_expose_all_three_baselines(self):
-        launcher = (ROOT / "llama_7B_LayerImportance.sh").read_text(
+        launcher = (ROOT / "run_search.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn("--blb_v3_search_backend", launcher)

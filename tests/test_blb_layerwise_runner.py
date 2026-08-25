@@ -2637,7 +2637,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
-        source = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        source = Path("run_search.sh").read_text(encoding="utf-8")
         persistent_dir = source.index(
             'RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/'
             '$CONSTRAINT_SLUG"'

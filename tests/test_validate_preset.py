@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tools import validate_preset
+from rfr.cli import validate_preset
 
 
 class IterOnlyPresetFile:

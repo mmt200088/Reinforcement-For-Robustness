@@ -3,7 +3,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = ROOT / "llama_7B_LayerImportance.sh"
+LAUNCHER = ROOT / "run_search.sh"
 
 
 class Stage1LauncherDefaultTest(unittest.TestCase):

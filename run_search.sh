@@ -8,12 +8,12 @@ export PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 usage() {
   cat <<'EOF'
 Usage:
-  bash llama_7B_LayerImportance.sh run rl --preset NAME [options]
-  bash llama_7B_LayerImportance.sh run bo_rf [options]
-  bash llama_7B_LayerImportance.sh run greedy [options]
-  bash llama_7B_LayerImportance.sh run coinn_ga [options]
-  bash llama_7B_LayerImportance.sh eval --preset NAME [options]
-  bash llama_7B_LayerImportance.sh --list-presets
+  bash run_search.sh run rl --preset NAME [options]
+  bash run_search.sh run bo_rf [options]
+  bash run_search.sh run greedy [options]
+  bash run_search.sh run coinn_ga [options]
+  bash run_search.sh eval --preset NAME [options]
+  bash run_search.sh --list-presets
 
 Supported profiles:
   --dataset mrpc|rte|sst2
@@ -61,7 +61,7 @@ Comparators:
   --comparator-smoke
 
 Final evaluation is a separate command:
-  bash llama_7B_LayerImportance.sh eval --preset NAME
+  bash run_search.sh eval --preset NAME
 EOF
 }
 
@@ -92,7 +92,7 @@ is_positive_number() {
 
 list_presets() {
   local file
-  for file in "$ROOT_DIR"/presets/*.conf; do
+  for file in "$ROOT_DIR"/configs/presets/*.conf; do
     [ -f "$file" ] || continue
     basename "$file" .conf
   done | sort
@@ -100,7 +100,7 @@ list_presets() {
 
 load_preset() {
   local name="$1"
-  local file="$ROOT_DIR/presets/${name}.conf"
+  local file="$ROOT_DIR/configs/presets/${name}.conf"
   local line
   [ -f "$file" ] || fail "preset not found: $name"
   while IFS= read -r line; do
@@ -155,7 +155,7 @@ reject_comparator_overrides() {
 
 if [ "${1:-}" = "eval" ]; then
   shift
-  exec bash "$ROOT_DIR/Paean/run_final_eval.sh" "$@"
+  exec python3 -m rfr.cli.evaluate "$@"
 fi
 
 if [ "${1:-}" = "--list-presets" ]; then
@@ -511,7 +511,7 @@ PY
 fi
 
 CMD=(
-  python rl_tune.py
+  python3 -m rfr.cli.run
   --base_model "$BASE_MODEL"
   --data_path "$DATASET"
   --output_dir "$RUN_ROOT"

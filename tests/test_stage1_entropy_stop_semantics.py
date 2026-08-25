@@ -4,8 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYER_EVALUATOR = ROOT / "src/rfr/search/common/evaluator.py"
-RL_TUNE = ROOT / "rl_tune.py"
-LAUNCHER = ROOT / "llama_7B_LayerImportance.sh"
+RL_TUNE = ROOT / "src/rfr/cli/run.py"
+LAUNCHER = ROOT / "run_search.sh"
 
 
 def _source(path: Path) -> str:

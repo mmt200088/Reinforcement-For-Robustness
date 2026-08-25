@@ -557,7 +557,7 @@ def write_action_description_files(
         lines.append("")
         lines.append(
             f"> JSON 配对文件：`{os.path.basename(json_path)}`。"
-            "可以直接喂给 `Paean/run_final_eval.sh --action-config`。"
+            "可以直接喂给 `run_search.sh eval --action-config`。"
         )
         with open(md_path, "w", encoding="utf-8") as f:
             _write_joined_lines_stream(f, lines)
@@ -1334,7 +1334,7 @@ def write_blb_final_report(
             f"`{os.path.basename(best_action_full_md_path) or 'blb_stage2_best_action_full.md'}` "
             "（人类阅读）和 "
             f"`{os.path.basename(best_action_full_json_path) or 'blb_stage2_best_action_full.json'}` "
-            "（可直接喂给 `Paean/run_final_eval.sh --action-config`）。下面只列出与 baseline 不同的槽位。"
+            "（可直接喂给 `run_search.sh eval --action-config`）。下面只列出与 baseline 不同的槽位。"
         )
         lines.append("")
 

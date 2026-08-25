@@ -566,7 +566,7 @@ def train(
         stage1_entropy_stop_threshold: float = None,
         ppo_update_interval: int = 120,
         final_eval_config_source: str = "search",
-        final_eval_config_path: str = "glue_final_configs_best_ppo.json",
+        final_eval_config_path: str = "configs/reference/rl.json",
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",
         manual_stage2_noise: str = "",
@@ -763,7 +763,7 @@ def train(
         str(glue_train_probe_fixture_path or "").strip()
     ).expanduser()
     if not glue_fixture_path.is_absolute():
-        glue_fixture_path = Path(__file__).resolve().parent / glue_fixture_path
+        glue_fixture_path = Path(__file__).resolve().parents[3] / glue_fixture_path
     glue_fixture = load_train_probe_fixture(glue_fixture_path)
 
     mrpc_fixture = None
@@ -1066,5 +1066,5 @@ if __name__ == "__main__":
     run_fire_entrypoint(
         fire,
         train,
-        program_name="rl_tune.py",
+        program_name="run_search",
     )

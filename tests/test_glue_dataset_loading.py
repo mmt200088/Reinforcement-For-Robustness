@@ -95,7 +95,7 @@ def _import_rl_tune():
             "transformers": transformers_stub,
             "datasets": datasets_stub,
     }, clear=False):
-        import rl_tune
+        from rfr.cli import run as rl_tune
     _RL_TUNE = rl_tune
     return _RL_TUNE
 

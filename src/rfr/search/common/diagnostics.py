@@ -34,7 +34,7 @@ Files written
                               action. Written on every new best so the user
                               can run::
 
-                                bash Paean/run_final_eval.sh \\
+                                bash run_search.sh eval \\
                                     --action-config <progress_dir>/diagnostics/best_action_vec.json
 
                               to evaluate the in-flight champion without waiting
@@ -1733,7 +1733,7 @@ class RLDiagnosticsRecorder:
         lines.append("| `first_invalid_counts.json` | (L, B) → 首次 invalid 计数 |")
         lines.append("| `action_histogram.npz` | (num_slots, max_levels) 频次矩阵 |")
         lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")
-        lines.append("| `best_action_vec.json` | **训练期最优**：`slots` 列表（按 SF/K 选）+ `action_vec` 兜底字段。**可直接喂给 `Paean/run_final_eval.sh --action-config`** |")
+        lines.append("| `best_action_vec.json` | **训练期最优**：`slots` 列表（按 SF/K 选）+ `action_vec` 兜底字段。**可直接喂给 `run_search.sh eval --action-config`** |")
         lines.append("")
         lines.append(
             "**重跑 final eval 的最简命令**（无需等训练结束）："
@@ -1741,7 +1741,7 @@ class RLDiagnosticsRecorder:
         lines.append("")
         lines.append("```bash")
         lines.append(
-            "bash Paean/run_final_eval.sh \\\n"
+            "bash run_search.sh eval \\\n"
             f"    --preset mrpc-final-eval-only \\\n"
             f"    --action-config {self.best_json_path}"
         )

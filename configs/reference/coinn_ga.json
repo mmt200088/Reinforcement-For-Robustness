@@ -1,5 +1,5 @@
 {
-    "_comment": "Unified GLUE final-eval configs (Genetic). Top-level keys are model variants: 'bert-base' (12 layers), 'bert-large' (24 layers), 'gpt-2' (12 layers). Each dataset contains a 'stage1' section (gelu/softmax polynomial degrees; gpt-2 softmax is ignored at runtime) and a 'stage2' section (noise scaling factors). See glue_final_configs_best_ppo.json for allowed value ranges.",
+    "_comment": "Unified GLUE final-eval configs for the genetic comparator. See configs/reference/rl.json for the reference schema.",
     "bert-base": {
         "qnli": {
             "stage1": {

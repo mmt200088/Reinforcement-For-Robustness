@@ -136,7 +136,7 @@ class Stage2All4BaseConfigTest(unittest.TestCase):
                 self.assertEqual(payload["gelu_degree"], 4)
 
     def test_rl_tune_forwards_dedicated_stage2_config(self):
-        source = (REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src/rfr/cli/run.py").read_text(encoding="utf-8")
         call = source[source.index("importance_evaluator = LayerImportanceEvaluator(") :]
         required = (
             "stage2_fixed_config_source=stage2_fixed_config_source",

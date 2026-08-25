@@ -10,7 +10,7 @@ from rfr.evaluation.final_evaluation import (
 )
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT
 
-from Paean.config import (
+from rfr.cli.evaluation_config import (
     DEFAULT_PRESET,
     FinalEvalSettings,
     default_config_for_algorithm,

@@ -142,7 +142,7 @@ class UnifiedFinalEvaluationModule:
         self,
         evaluator,
         config_source: str = "search",
-        config_path: str = "glue_final_configs_best_ppo.json",
+        config_path: str = "configs/reference/rl.json",
         manual_stage1_gelu: Optional[Sequence[int]] = None,
         manual_stage1_softmax: Optional[Sequence[int]] = None,
         manual_stage2_noise: Optional[Dict[str, Sequence[int]]] = None,
@@ -157,7 +157,7 @@ class UnifiedFinalEvaluationModule:
     ):
         self.evaluator = evaluator
         self.config_source = (config_source or "search").lower()
-        self.config_path = config_path or "glue_final_configs_best_ppo.json"
+        self.config_path = config_path or "configs/reference/rl.json"
         self.manual_stage1_gelu = manual_stage1_gelu
         self.manual_stage1_softmax = manual_stage1_softmax
         self.manual_stage2_noise = manual_stage2_noise

@@ -6,9 +6,9 @@ from contextlib import redirect_stdout
 import unittest
 from unittest import mock
 
-from Paean import run_final_eval
-from Paean.config import FinalEvalSettings
-from Paean.run_final_eval import configuration_lines, estimate_workload
+from rfr.cli import evaluate as run_final_eval
+from rfr.cli.evaluation_config import FinalEvalSettings
+from rfr.cli.evaluate import configuration_lines, estimate_workload
 
 
 class FinalEvalWorkloadEstimateTest(unittest.TestCase):
@@ -90,7 +90,7 @@ class FinalEvalWorkloadEstimateTest(unittest.TestCase):
         lines = configuration_lines(
             settings,
             Path("/tmp/paean-final-eval"),
-            ["python", "rl_tune.py"],
+            ["python", "-m", "rfr.cli.run"],
             include_command=False,
         )
         text = "\n".join(lines)
