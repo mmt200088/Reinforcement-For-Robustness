@@ -1,0 +1,123 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "c799a2780a84ffc7c63e08bf834ec8cc4360ec42",
+  "base_tree": "f6e6aafea6068bfc432a02dc27b848425d1b2240",
+  "branch": "codex/task-search-structure-reorganization-20260826",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    "AGENTS.md",
+    "Dockerfile",
+    "Makefile",
+    "Model_analysis",
+    "Paean",
+    "README.md",
+    "Rescale_optimizer",
+    "blb_rl_bridge.py",
+    "blb_stage2_rl",
+    "cli_parse_utils.py",
+    "config",
+    "configs",
+    "csv_field_utils.py",
+    "device_utils.py",
+    "docs/superpowers",
+    "elastic_gpu.py",
+    "final_evaluation_module.py",
+    "function_handler.py",
+    "glue_configs.json",
+    "glue_data_protocol.py",
+    "glue_final_configs_best_genetic.json",
+    "glue_final_configs_best_ppo.json",
+    "json_utils.py",
+    "jsonl_utils.py",
+    "layer_importance_evaluator.py",
+    "llama_7B_LayerImportance.sh",
+    "mrpc_reproducibility.py",
+    "noise_tables.py",
+    "noise_targets_registry.py",
+    "numeric_parse_utils.py",
+    "outputs",
+    "presets",
+    "pyproject.toml",
+    "report_format_utils.py",
+    "rescale_optimizer_bridge.py",
+    "rl_data_points.py",
+    "rl_local_optimum.py",
+    "rl_tune.py",
+    "run_search.sh",
+    "runtime_error_reporter.py",
+    "scripts",
+    "src/rfr",
+    "stage1_rl",
+    "stats_utils.py",
+    "tests",
+    "tools",
+    "training_curve_plot.py"
+  ],
+  "completed_at": "2026-08-26T03:04:26+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-search-structure-reorganization-20260826:evidence/search_structure_reorganization_0f19b00_20260826/"
+  ],
+  "source_commit": "0f19b0000d962de45e5d8dbc7811e4d3dc12cf34",
+  "source_tree": "9905b0a857ab8bbc64cc745184d10a5b6db01966",
+  "started_at": "2026-08-26T00:25:41+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "search-structure-reorganization-20260826",
+  "verification": [
+    {
+      "command": "baseline CUDA server pytest at c799a278",
+      "evidence": "1659 passed, 3 hardware-count skips, 267 subtests passed; skips require unavailable 2-GPU or 5-GPU hardware",
+      "outcome": "passed"
+    },
+    {
+      "command": "reorganized CUDA server pytest before requested test removal",
+      "evidence": "1660 passed, 3 hardware-count skips, 267 subtests passed at cd3ae58; the subsequent source commit differs only by requested test/analysis removal and non-runtime workflow configuration",
+      "outcome": "passed"
+    },
+    {
+      "command": "old/new scientific execution snapshot comparison",
+      "evidence": "H/M/L ciphertext and simulation K, reserve/ring metadata, 12-layer materialization, full action vector, candidate hash, Stage-1/Stage-2 initial designs, policy architecture, and all fusion/Rescale config hashes are byte-identical; both snapshots SHA-256 9dddc4d6b0fcece4e61fd3456acedb57ae267e5e41d192e305d464052c1db4e2; cmp_rc=0",
+      "outcome": "passed"
+    },
+    {
+      "command": "normalized old/new production launcher comparison",
+      "evidence": "18/18 Stage-1, Stage-2, and comparator command sections have identical scientific arguments after normalizing only approved module, output, fixture, config, and resume paths",
+      "outcome": "passed"
+    },
+    {
+      "command": "final exact-source compile, shell, preset, production-surface, import, and dry-run gates",
+      "evidence": "126 Python modules imported with zero failures; 14 presets validated; 18 dry-runs passed and remained confined to outputs/<algorithm>; production_surface_guard ok=true",
+      "outcome": "passed"
+    },
+    {
+      "command": "real in-process Rescale materialization",
+      "evidence": "59 graph outputs, model_ready=true, optimizer_invalid=false, final config fingerprint 21c3e6f740f7aeeab80514041fbd4d2439f3ee4ccbcf2aea4dc53195e621f39d",
+      "outcome": "passed"
+    },
+    {
+      "command": "two-repeat deterministic Stage-1 and Stage-2 comparator smoke",
+      "evidence": "BO-RF, Greedy, and COINN-GA produced exact repeated observation order, history, termination, and best result in both stages",
+      "outcome": "passed"
+    },
+    {
+      "command": "real BERT-base MRPC BO-RF comparator smoke",
+      "evidence": "real train-probe baseline, Stage-1 model inference, Rescale/fusion materialization, Stage-2 GPU probe, and result persistence completed with two_stage_result status smoke_only_complete; GPU and process resources released",
+      "outcome": "passed"
+    },
+    {
+      "command": "repo_sync_guard.py result-check --require-remote",
+      "evidence": "result commit 69ccc888a18c225509fe41950d577f86b08cc825, tree 2f95d5ec6cb3d43f7354b4f46fe73b90f04333ab, artifact-only path validation and remote parity passed; SHA256SUMS verified",
+      "outcome": "passed"
+    },
+    {
+      "command": "personal-information and obsolete-path scan",
+      "evidence": "tracked source contains no personal names, local user paths, local host e-mail, WeChat IDs, old package roots, old launcher, Model_analysis, or tests directory",
+      "outcome": "passed"
+    }
+  ]
+}
