@@ -96,8 +96,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO, Tuple
 import numpy as np
 
 from rl_data_points import _strict_jsonable
-from jsonl_utils import iter_jsonl, recover_jsonl_file
-from stats_utils import mean_or_default
+from rfr.common.jsonl_utils import iter_jsonl, recover_jsonl_file
+from rfr.common.stats_utils import mean_or_default
 
 try:
     from .candidate_store import action_hash

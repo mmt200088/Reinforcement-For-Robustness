@@ -1,7 +1,7 @@
 import pathlib
 import unittest
 
-from cli_parse_utils import (
+from rfr.common.cli_parse_utils import (
     parse_bool_flag,
     parse_broadcast_int_vector,
     parse_degree_config,

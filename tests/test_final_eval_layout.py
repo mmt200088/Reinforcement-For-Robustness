@@ -20,7 +20,7 @@ from Paean.final_eval_layout import (
     paean_stage_run_dir,
     sorted_bar_highlight,
 )
-from config.constants import GELU_COST, SOFTMAX_COST
+from rfr.common.config.constants import GELU_COST, SOFTMAX_COST
 
 
 def _total_cost(gelu, softmax):

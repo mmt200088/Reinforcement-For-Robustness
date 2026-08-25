@@ -6086,7 +6086,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             restore_promoted_candidates,
         )
         from blb_stage2_rl.statistical_constraints import TrialSeries
-        from json_utils import stable_json_hash
+        from rfr.common.json_utils import stable_json_hash
 
         action = tuple(range(20))
         action_matrix = [[0] * 2 for _ in range(12)]

@@ -14,7 +14,7 @@ from unittest import mock
 
 import numpy as np
 
-from json_utils import stable_json_hash
+from rfr.common.json_utils import stable_json_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 

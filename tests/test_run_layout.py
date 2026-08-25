@@ -1,4 +1,4 @@
-"""torch-free 单测：config/run_layout.py（解耦后 RL 输出布局 SSOT）。
+"""Torch-free checks for the deterministic search run layout.
 
 覆盖：combo 命名（空格）、扁平工作目录、record 序号扫描（含 combo 自身含数字的
 sst2、以及多 combo 共存）、run-id 格式、完成标记往返、约束守卫、record 定位。
@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import run_layout as rl
+from rfr.common.config import run_layout as rl
 
 
 class ComboAndPathTest(unittest.TestCase):

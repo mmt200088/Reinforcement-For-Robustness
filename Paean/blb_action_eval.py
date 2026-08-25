@@ -40,7 +40,7 @@ from final_evaluation_module import (
     require_final_evaluation_protocol,
 )
 from glue_data_protocol import FINAL_EVAL_SPLIT
-from json_utils import read_json_file, to_jsonable
+from rfr.common.json_utils import read_json_file, to_jsonable
 from rescale_optimizer_bridge import (
     RescaleOptimizerBridge,
     aggregate_optimizer_signals,

@@ -739,7 +739,7 @@ def _run_layerwise_training_branch(
         )
     bullet = "*"
 
-    from json_utils import to_jsonable
+    from rfr.common.json_utils import to_jsonable
 
     from .candidate_store import CandidateStore, sha256_json
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
@@ -904,7 +904,7 @@ def _run_layerwise_training_branch(
         search_output_dir = os.path.join(
             blb_progress_dir, f"search_{search_backend}",
         )
-        from json_utils import read_json_file
+        from rfr.common.json_utils import read_json_file
 
         invocation_path = os.path.join(
             search_output_dir, "invocation.json",
@@ -1836,7 +1836,7 @@ def _run_layerwise_training_branch(
         ),
     )
     candidate_store = CandidateStore(candidate_store_path)
-    from jsonl_utils import iter_jsonl
+    from rfr.common.jsonl_utils import iter_jsonl
 
     diagnostics_dir = os.path.join(blb_progress_dir, "diagnostics")
     existing_episode_path = os.path.join(diagnostics_dir, "episodes.jsonl")
@@ -3255,7 +3255,7 @@ def _build_search_invocation_contract(
         PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
         validate_dataset_protocol_binding,
     )
-    from json_utils import stable_json_hash, to_jsonable
+    from rfr.common.json_utils import stable_json_hash, to_jsonable
     from stage1_rl.search_runner import load_completed_search_result
 
     from .search_baselines import normalize_search_backend
@@ -3481,7 +3481,7 @@ def _validate_completed_search_resume_result(
         result: Mapping[str, Any],
         expected_result: Mapping[str, Any],
         ) -> None:
-    from json_utils import to_jsonable
+    from rfr.common.json_utils import to_jsonable
 
     actual = to_jsonable(result, stringify_unknown=True)
     expected = to_jsonable(expected_result, stringify_unknown=True)
@@ -3777,7 +3777,7 @@ def _write_completed_search_resume(
         result: Mapping[str, Any],
         expected_result: Mapping[str, Any],
         ) -> None:
-    from json_utils import read_json_file
+    from rfr.common.json_utils import read_json_file
 
     from .search_baseline_runner import _atomic_json
 
@@ -3990,7 +3990,7 @@ def _write_pending_strict_resume_context(
         authoritative_validation_example_count: int,
         ) -> None:
     """Persist the baseline evidence needed to restart strict validation."""
-    from json_utils import read_json_file
+    from rfr.common.json_utils import read_json_file
 
     from .search_baseline_runner import _atomic_json
 
@@ -4034,7 +4034,7 @@ def _preflight_pending_strict_search_resume(
         ) -> dict[str, Any] | None:
     """Restore ordinary pending-strict evidence before model setup."""
     from glue_data_protocol import validate_dataset_protocol_binding
-    from json_utils import read_json_file
+    from rfr.common.json_utils import read_json_file
 
     from .search_baselines import normalize_search_backend
 
@@ -4140,7 +4140,7 @@ def _preflight_completed_search_resume(
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
     from glue_data_protocol import validate_dataset_protocol_binding
-    from json_utils import read_json_file
+    from rfr.common.json_utils import read_json_file
 
     from .search_baseline_runner import (
         _atomic_json,

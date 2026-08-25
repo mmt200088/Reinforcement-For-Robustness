@@ -14,8 +14,8 @@ from glue_data_protocol import (
     TRAIN_PROBE_SPLIT,
     validate_dataset_protocol_binding,
 )
-from json_utils import read_json_file, stable_json_hash, to_jsonable
-from jsonl_utils import read_jsonl, recover_jsonl_file
+from rfr.common.json_utils import read_json_file, stable_json_hash, to_jsonable
+from rfr.common.jsonl_utils import read_jsonl, recover_jsonl_file
 
 from .candidate_store import CandidateStore, candidate_key
 from .layerwise_action import describe_layerwise_action_matrix

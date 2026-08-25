@@ -17,7 +17,7 @@ from blb_stage2_rl.search_baselines import (
     SearchMetrics,
     SearchResult,
 )
-from json_utils import stable_json_hash
+from rfr.common.json_utils import stable_json_hash
 
 
 def _reference():

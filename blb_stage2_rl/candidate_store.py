@@ -17,8 +17,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
-from json_utils import stable_json_hash, to_jsonable
-from jsonl_utils import iter_jsonl
+from rfr.common.json_utils import stable_json_hash, to_jsonable
+from rfr.common.jsonl_utils import iter_jsonl
 
 from .statistical_constraints import TrialSeries
 

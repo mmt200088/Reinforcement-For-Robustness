@@ -29,7 +29,7 @@ for _p in (str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from json_utils import write_json_file  # noqa: E402
+from rfr.common.json_utils import write_json_file  # noqa: E402
 
 
 def block_types_for_profile(profile: str) -> List[Tuple[str, int, int, int]]:

@@ -11,7 +11,7 @@ import fire
 import torch
 import transformers
 from datasets import DownloadConfig, load_dataset, load_from_disk
-from runtime_error_reporter import run_fire_entrypoint
+from rfr.common.runtime_error_reporter import run_fire_entrypoint
 
 
 from transformers import (  # noqa: F402
@@ -19,7 +19,7 @@ from transformers import (  # noqa: F402
     AutoTokenizer,
     DataCollatorWithPadding,
 )
-from cli_parse_utils import (
+from rfr.common.cli_parse_utils import (
     parse_bool_flag,
     parse_degree_config,
     parse_noise_config,

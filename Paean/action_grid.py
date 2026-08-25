@@ -24,8 +24,8 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
     validate_action_vector,
 )
-from cli_parse_utils import parse_int_list_text
-from json_utils import read_json_file
+from rfr.common.cli_parse_utils import parse_int_list_text
+from rfr.common.json_utils import read_json_file
 
 _K_LEVEL_INDEX: Dict[int, int] = {int(value): idx for idx, value in enumerate(K_LEVELS)}
 _SORTED_K_LEVEL_CHOICES: Tuple[int, ...] = tuple(sorted(int(value) for value in K_LEVELS))

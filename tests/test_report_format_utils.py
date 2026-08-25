@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from report_format_utils import format_elapsed, format_float, metric_float, progress_bar
+from rfr.common.report_format_utils import format_elapsed, format_float, metric_float, progress_bar
 
 
 class ReportFormatUtilsTest(unittest.TestCase):

@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from tests.source_inspection_utils import function_names, source_text
-from jsonl_utils import (
+from rfr.common.jsonl_utils import (
     count_jsonl_with_required_fields,
     iter_jsonl,
     iter_jsonl_records,
@@ -85,7 +85,7 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(rows, [(2, {"a": 1}), (3, [1, 2])])
 
     def test_iter_jsonl_records_resolves_path_once(self):
-        import jsonl_utils
+        from rfr.common import jsonl_utils
 
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -128,7 +128,7 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(resolved_name, "rows.jsonl.gz")
 
     def test_read_jsonl_fields_passes_unstripped_lines_to_json_loader(self):
-        import jsonl_utils
+        from rfr.common import jsonl_utils
 
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -147,7 +147,7 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertTrue(seen[0].endswith("\n"))
 
     def test_read_jsonl_fields_and_xy_skip_whitespace_lines(self):
-        import jsonl_utils
+        from rfr.common import jsonl_utils
 
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -241,7 +241,7 @@ class JsonlUtilsTest(unittest.TestCase):
         )
 
     def test_write_jsonl_rows_streams_rows_to_file_handle(self):
-        import jsonl_utils
+        from rfr.common import jsonl_utils
 
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "nested" / "rows.jsonl"
@@ -258,7 +258,7 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(text, '{"a": "x", "b": 2}\n')
 
     def test_write_jsonl_rows_reuses_encoder_without_json_dump_calls(self):
-        import jsonl_utils
+        from rfr.common import jsonl_utils
 
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "nested" / "rows.jsonl"

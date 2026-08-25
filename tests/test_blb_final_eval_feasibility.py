@@ -88,6 +88,6 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("from json_utils import write_json_file", source)
+        self.assertIn("from rfr.common.json_utils import write_json_file", source)
         self.assertIn("write_json_file(json_path", source)
         self.assertNotIn("json.dumps(dict(report)", source)

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from tests.source_inspection_utils import function_names, source_text
-from csv_field_utils import (
+from rfr.common.csv_field_utils import (
     first_present,
     first_present_index,
     first_present_by_index,

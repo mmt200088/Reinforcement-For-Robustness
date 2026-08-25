@@ -1,6 +1,6 @@
 import unittest
 
-from numeric_parse_utils import parse_first_float
+from rfr.common.numeric_parse_utils import parse_first_float
 from tests.source_inspection_utils import function_names, source_text
 
 

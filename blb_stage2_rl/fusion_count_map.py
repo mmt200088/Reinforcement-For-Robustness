@@ -19,7 +19,7 @@ from typing import Dict, List, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
-from json_utils import read_json_file
+from rfr.common.json_utils import read_json_file
 import noise_tables
 
 

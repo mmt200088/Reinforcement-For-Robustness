@@ -29,7 +29,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from json_utils import read_json_file
+from rfr.common.json_utils import read_json_file
 
 
 _SOURCE_CFG_FIELD: Dict[int, str] = {

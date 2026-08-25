@@ -18,7 +18,7 @@ from elastic_gpu import (
     raise_if_elastic_gpu_restart_requested,
     request_elastic_gpu_restart,
 )
-from runtime_error_reporter import run_fire_entrypoint
+from rfr.common.runtime_error_reporter import run_fire_entrypoint
 
 
 class ElasticGPUFailureContractTest(unittest.TestCase):

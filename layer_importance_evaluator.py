@@ -55,8 +55,8 @@ from blb_stage2_rl.runtime_control import (
     uninstall_graceful_stop_handler,
     write_warning_report as _write_warning_report,
 )
-from report_format_utils import format_elapsed as _fmt_elapsed
-from report_format_utils import progress_bar as _progress_bar
+from rfr.common.report_format_utils import format_elapsed as _fmt_elapsed
+from rfr.common.report_format_utils import progress_bar as _progress_bar
 from elastic_gpu import (
     ElasticGPUFailure,
     is_recoverable_gpu_failure,
@@ -83,7 +83,7 @@ def _build_ordinary_two_stage_result(
         final_eval_error: str | None,
         ) -> dict[str, Any]:
     """Build the trusted-environment two-stage comparator summary."""
-    from json_utils import to_jsonable
+    from rfr.common.json_utils import to_jsonable
 
     normalized_backend = str(backend or "")
     stage1_binding = dict(
@@ -2255,7 +2255,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         """
         try:
             import datetime as _dt
-            from config import run_layout as _rl
+            from rfr.common.config import run_layout as _rl
 
             wd = os.path.normpath(str(self.run_output_dir or ""))
             if not wd or wd == ".":
@@ -2365,7 +2365,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         stage1 record 根目录为 ``<root>/stage1/record``。返回 ``(gelu, softmax, source)``。
         """
         import json as _json
-        from config import run_layout as _rl
+        from rfr.common.config import run_layout as _rl
 
         wd = os.path.normpath(str(self.run_output_dir or ""))
         if not wd or wd == ".":
@@ -4850,7 +4850,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         ):
             from dataclasses import replace
 
-            from json_utils import read_json_file
+            from rfr.common.json_utils import read_json_file
             from stage1_rl.search_baselines import (
                 Stage1Constraints,
                 stage1_comparator_search_config,
@@ -5031,7 +5031,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage1_result_path = os.path.join(
                 stage1_output_dir, "result.json",
             )
-            from json_utils import stable_json_hash
+            from rfr.common.json_utils import stable_json_hash
 
             with open(stage1_result_path, "rb") as result_handle:
                 stage1_result_sha256 = hashlib.sha256(

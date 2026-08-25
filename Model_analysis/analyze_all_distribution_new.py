@@ -58,7 +58,7 @@ from glue_data_protocol import (  # noqa: E402
     resolve_glue_protocol_views,
     resolve_model_family,
 )
-from json_utils import write_json_file  # noqa: E402
+from rfr.common.json_utils import write_json_file  # noqa: E402
 
 
 TASK_REGISTRY = {

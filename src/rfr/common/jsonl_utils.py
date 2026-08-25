@@ -7,7 +7,7 @@ import operator
 from pathlib import Path
 from typing import Any, Iterable, Literal, TextIO
 
-from json_utils import json_default, to_jsonable
+from rfr.common.json_utils import json_default, to_jsonable
 
 JsonlErrorMode = Literal["skip", "raise"]
 

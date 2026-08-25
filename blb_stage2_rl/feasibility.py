@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
-from json_utils import write_json_file
+from rfr.common.json_utils import write_json_file
 
 
 def _finite_or_none(value: Any) -> float | None:

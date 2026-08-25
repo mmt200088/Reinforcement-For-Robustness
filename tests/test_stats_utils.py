@@ -2,7 +2,7 @@ import math
 import unittest
 
 from tests.source_inspection_utils import function_names, source_text
-from stats_utils import (
+from rfr.common.stats_utils import (
     fraction_true,
     mean_from_total,
     mean_or_default,
@@ -22,7 +22,7 @@ class StatsUtilsTest(unittest.TestCase):
         self.assertTrue(math.isnan(mean_or_default([], default=float("nan"))))
 
     def test_mean_or_none_streams_without_materializing_float_list(self):
-        text = source_text("stats_utils.py")
+        text = source_text("src/rfr/common/stats_utils.py")
         self.assertNotIn("vals = [float(value) for value in values]", text)
         self.assertNotIn("len(vals)", text)
 

@@ -196,8 +196,8 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         candidate_store = (repo / "blb_stage2_rl" / "candidate_store.py").read_text(encoding="utf-8")
         registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
 
-        self.assertRegex(candidate_store, r"from json_utils import .*\bstable_json_hash\b")
-        self.assertRegex(registry, r"from json_utils import .*\bstable_json_hash\b")
+        self.assertRegex(candidate_store, r"from rfr.common.json_utils import .*\bstable_json_hash\b")
+        self.assertRegex(registry, r"from rfr.common.json_utils import .*\bstable_json_hash\b")
         self.assertNotIn("def _stable_json", candidate_store)
 
 

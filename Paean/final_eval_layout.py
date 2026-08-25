@@ -11,8 +11,8 @@ from typing import List, Sequence, Tuple
 
 import numpy as np
 
-from config import run_layout
-from config.constants import GELU_COST, SOFTMAX_COST
+from rfr.common.config import run_layout
+from rfr.common.config.constants import GELU_COST, SOFTMAX_COST
 
 
 RL_GELU_CHOICES: Tuple[int, ...] = (0, 1, 2, 4)

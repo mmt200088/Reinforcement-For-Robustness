@@ -14,7 +14,7 @@ from glue_data_protocol import (
     SUPPORTED_MODEL_FAMILIES,
     validate_supported_profile,
 )
-from runtime_error_reporter import format_command
+from rfr.common.runtime_error_reporter import format_command
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parent

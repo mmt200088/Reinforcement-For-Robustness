@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cli_parse_utils import parse_broadcast_int_vector  # noqa: E402
-from json_utils import stable_json_hash, write_json_file  # noqa: E402
+from rfr.common.cli_parse_utils import parse_broadcast_int_vector  # noqa: E402
+from rfr.common.json_utils import stable_json_hash, write_json_file  # noqa: E402
 
 
 SEMANTIC_TYPE_BY_KIND = {

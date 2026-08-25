@@ -12,7 +12,7 @@ from glue_data_protocol import (
     GlueDataProtocolContext,
     TrainProbeIdentity,
 )
-from json_utils import read_json_file
+from rfr.common.json_utils import read_json_file
 from layer_importance_evaluator import LayerImportanceEvaluator
 from final_evaluation_module import require_final_evaluation_protocol
 from rl_data_points import write_dataset_protocol

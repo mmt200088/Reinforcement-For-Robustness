@@ -10,7 +10,7 @@ from typing import Any, Mapping
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from json_utils import read_json_file, stable_json_hash, write_json_file
+from rfr.common.json_utils import read_json_file, stable_json_hash, write_json_file
 
 
 PROTOCOL_SCHEMA = "glue_train_probe_protocol_v1"

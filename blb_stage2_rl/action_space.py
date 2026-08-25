@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from json_utils import read_json_file
+from rfr.common.json_utils import read_json_file
 from blb_rl_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,

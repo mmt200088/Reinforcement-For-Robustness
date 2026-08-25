@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from Paean import config as paean_config
-from runtime_error_reporter import format_command as shared_format_command
+from rfr.common.runtime_error_reporter import format_command as shared_format_command
 
 
 class PaeanConfigTest(unittest.TestCase):
@@ -69,7 +69,7 @@ class PaeanConfigTest(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "Paean" / "config.py").read_text(
             encoding="utf-8",
         )
-        self.assertIn("from runtime_error_reporter import format_command", source)
+        self.assertIn("from rfr.common.runtime_error_reporter import format_command", source)
         self.assertNotIn("def format_command(", source)
 
     def test_checked_in_presets_parse_with_the_production_cli(self):

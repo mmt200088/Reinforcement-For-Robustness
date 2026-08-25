@@ -12,7 +12,7 @@ import pytest
 from glue_data_protocol import supported_profiles
 from Paean import config as paean_config
 from Paean import run_final_eval
-from config import run_layout
+from rfr.common.config import run_layout
 
 
 ROOT = Path(__file__).resolve().parents[1]

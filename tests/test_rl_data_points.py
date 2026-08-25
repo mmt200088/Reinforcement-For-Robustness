@@ -12,7 +12,7 @@ from unittest import mock
 import numpy as np
 
 import rl_data_points
-from json_utils import (
+from rfr.common.json_utils import (
     json_default,
     read_json_file,
     stable_json_hash,
@@ -532,7 +532,7 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertEqual(stable_json_hash(a), stable_json_hash(b))
 
     def test_stable_json_hash_streams_without_materializing_key(self):
-        import json_utils
+        from rfr.common import json_utils
 
         payload = {"b": [np.int64(2), Path("x")], "a": {"flag": True}}
         expected = hashlib.sha256(stable_json_key(payload).encode("utf-8")).hexdigest()
@@ -545,7 +545,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(json_utils.stable_json_hash(payload), expected)
 
     def test_bounded_stable_json_hash_matches_streaming_hash(self):
-        import json_utils
+        from rfr.common import json_utils
 
         payload = {
             "path": Path("reports/out.html"),

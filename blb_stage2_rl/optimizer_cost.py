@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from json_utils import bounded_stable_json_hash
+from rfr.common.json_utils import bounded_stable_json_hash
 
 from rescale_optimizer_bridge import (
     _strip_layer_suffix,

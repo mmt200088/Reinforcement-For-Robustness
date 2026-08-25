@@ -9,7 +9,7 @@ import shutil
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from glue_data_protocol import validate_supported_profile
-from config.paths import (
+from rfr.common.config.paths import (
     COMPLETED_MARKER_FILENAME,
     RECORD_SUBDIR,
     RL_RESULTS_ROOT,

@@ -16,8 +16,8 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Optional, TextIO
 
-from json_utils import json_default, read_json_file, to_jsonable
-from jsonl_utils import recover_jsonl_file
+from rfr.common.json_utils import json_default, read_json_file, to_jsonable
+from rfr.common.jsonl_utils import recover_jsonl_file
 
 
 def _safe_slug(raw: str) -> str:

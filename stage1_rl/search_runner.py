@@ -13,13 +13,13 @@ from glue_data_protocol import (
     TRAIN_PROBE_SPLIT,
     validate_dataset_protocol_binding,
 )
-from json_utils import (
+from rfr.common.json_utils import (
     json_default,
     read_json_file,
     to_jsonable,
     write_json_file,
 )
-from jsonl_utils import read_jsonl, recover_jsonl_file, write_jsonl_rows
+from rfr.common.jsonl_utils import read_jsonl, recover_jsonl_file, write_jsonl_rows
 
 from .search_baselines import (
     FIXED_SOFTMAX_DEGREE,
