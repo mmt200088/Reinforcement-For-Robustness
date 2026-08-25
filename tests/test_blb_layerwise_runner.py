@@ -884,7 +884,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_compact_candidate_store_wiring_preserves_f1_and_f4_payload_rules(self):
         source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "layerwise_runner.py"
         )
         source = source_path.read_text(encoding="utf-8")
@@ -988,7 +988,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_branch_routes_promotion_through_shared_search_gate_env(self):
         source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "sequential_runner.py"
         )
         source = source_path.read_text(encoding="utf-8")
@@ -1024,7 +1024,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_branch_wires_restored_diagnostics_into_resumed_best_reward(self):
         source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "sequential_runner.py"
         )
         source = source_path.read_text(encoding="utf-8")
@@ -1059,7 +1059,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_stage2_builds_one_shared_probe_owner(self):
         source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "sequential_runner.py"
         )
         source = source_path.read_text(encoding="utf-8")
@@ -1189,12 +1189,12 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_online_probe_is_fixed_to_256_examples(self):
         runner_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "training.py"
         )
         sequential_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "sequential_runner.py"
         )
         runner_source = runner_path.read_text(encoding="utf-8")
@@ -1278,12 +1278,12 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_layerwise_contract_records_multifidelity_and_honest_stop_statuses(self):
         sequential_source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "sequential_runner.py"
         )
         layerwise_source_path = (
             Path(__file__).resolve().parents[1]
-            / "blb_stage2_rl"
+            / "src/rfr/search/rl/stage2"
             / "layerwise_runner.py"
         )
         source = sequential_source_path.read_text(encoding="utf-8")
