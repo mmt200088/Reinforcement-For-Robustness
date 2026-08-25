@@ -1,6 +1,0 @@
-test_ab_prints_layerwise_production_commands_without_touching_gpus (tests.test_stage2_ngpu_speed_targeted_first.Stage2NgpuSpeedTargetedFirstTests.test_ab_prints_layerwise_production_commands_without_touching_gpus) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.104s
-
-OK

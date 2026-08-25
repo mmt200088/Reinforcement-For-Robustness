@@ -1,7 +1,0 @@
-graphs ['block1_mrpc', 'block2_mrpc', 'block4', 'block5_n1', 'block5_n2', 'block5_n4']
-block1_mrpc options 1 fusion_counts [0]
-block2_mrpc options 2 fusion_counts [0, 1]
-block4 options 2 fusion_counts [0, 1]
-block5_n1 options 2 fusion_counts [0, 1]
-block5_n2 options 2 fusion_counts [0, 1]
-block5_n4 options 2 fusion_counts [0, 1]

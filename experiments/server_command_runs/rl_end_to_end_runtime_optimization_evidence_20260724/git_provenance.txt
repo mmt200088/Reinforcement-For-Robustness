@@ -1,2 +1,0 @@
-ede0896ae0272e86763c1e9d7fa6a7e36ba4f5f8 714c0b35797cf6437c72e9b24a8d09881704423b 2026-07-24T23:32:00+08:00 Revert "test: specify Stage-1 device-resident eval batches"
-accc27d65b6e99435913c3f1bed8629e755742e8 c50ea6652aeda18c84a9ea6dcef5f6fd024ceb12 2026-07-24T15:24:02+08:00 docs: require aggregate server source sync

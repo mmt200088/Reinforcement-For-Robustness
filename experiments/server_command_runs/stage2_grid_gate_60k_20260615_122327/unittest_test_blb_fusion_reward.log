@@ -1,7 +1,0 @@
-/usr/local/lib/python3.11/dist-packages/transformers/utils/hub.py:127: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
-  warnings.warn(
-........................................
-----------------------------------------------------------------------
-Ran 40 tests in 0.116s
-
-OK

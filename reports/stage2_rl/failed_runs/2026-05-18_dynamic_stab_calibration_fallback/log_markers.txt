@@ -1,3 +1,0 @@
-241:   * 稳定阈值校准来源（stab calibration source）：calibration aborted (only 0 valid samples in 25 attempts)  → fallback baseline-derived = 0.0500
-263:   开始 PPO 训练（PPO training start）
-4480:   PPO 窗口摘要 · 截至回合（through episode） 60  ·  时间 2026-05-18 11:17:59

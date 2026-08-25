@@ -1,5 +1,0 @@
-RED implementation: 58e7a3653945aab38b215b08b8718402d0f331e7
-RED test/source support: f3103d999eb6f7f33cc173add439a72cc8ffbefb
-RED: cd /hy-tmp/stage2_ngpu_report_stream_f3103d9_20260710_154047/red/src && /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_stage2_ngpu_ab_compare -v
-GREEN compile: cd /hy-tmp/rfr_runtime_optimization && /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m py_compile scripts/stage2_ngpu_ab_compare.py tests/test_stage2_ngpu_ab_compare.py
-GREEN tests: cd /hy-tmp/rfr_runtime_optimization && /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_stage2_ngpu_ab_compare -v

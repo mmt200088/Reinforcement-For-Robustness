@@ -1,1 +1,0 @@
-elapsed_s=10.62 user_s=178.19 sys_s=2.04 cpu_pct=1696% max_rss_kb=693308

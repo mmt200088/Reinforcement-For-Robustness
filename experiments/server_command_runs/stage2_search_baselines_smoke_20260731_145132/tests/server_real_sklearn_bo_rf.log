@@ -1,5 +1,0 @@
-BO_RF_SKLEARN_OK
-evaluations 8
-termination evaluation_budget
-best ((1, 2), (1, 2)) True 1.0
-phases ['initial_design', 'constrained_ei', 'constrained_ei', 'constrained_ei', 'constrained_ei', 'constrained_ei']

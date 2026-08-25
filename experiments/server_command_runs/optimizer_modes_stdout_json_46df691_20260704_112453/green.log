@@ -1,6 +1,0 @@
-test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_compare_optimizer_modes_static.BLBCompareOptimizerModesStaticTests.test_main_streams_stdout_json_without_json_dumps_string) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.003s
-
-OK

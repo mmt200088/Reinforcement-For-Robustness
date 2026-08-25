@@ -1,2 +1,0 @@
-[resume-eval] action_dir=experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs at 2026-06-11T03:13:43+08:00
-[phase60k] reuse rebuilt maps, run SERVER_COMMAND gate+60k at 2026-06-11T03:17:51+08:00

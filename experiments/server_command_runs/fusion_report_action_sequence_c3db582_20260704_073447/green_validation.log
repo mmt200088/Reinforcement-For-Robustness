@@ -1,8 +1,0 @@
-PY_COMPILE_RC=0
-test_option_slot_summary_indexes_action_sequences_without_list_copy (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_option_slot_summary_indexes_action_sequences_without_list_copy) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.004s
-
-OK
-TEST_RC=0

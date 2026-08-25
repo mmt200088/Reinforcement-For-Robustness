@@ -1,7 +1,0 @@
-test_compact_replan_matches_full_result_without_building_full_output (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
-test_derived_delta_uses_current_slot_sfs (tests.test_blb_fusion_enum_fast.ComboRangeTest) ... ok
-
-----------------------------------------------------------------------
-Ran 2 tests in 0.001s
-
-OK

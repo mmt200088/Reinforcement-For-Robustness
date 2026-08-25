@@ -1,7 +1,0 @@
-test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_eval_action_static.BLBEvalActionStaticTests.test_main_streams_stdout_json_without_json_dumps_string) ... ok
-test_rank_key_artifact_uses_shared_json_writer (tests.test_blb_eval_action_static.BLBEvalActionStaticTests.test_rank_key_artifact_uses_shared_json_writer) ... ok
-
-----------------------------------------------------------------------
-Ran 2 tests in 0.003s
-
-OK

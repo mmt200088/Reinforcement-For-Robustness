@@ -1,9 +1,0 @@
-    PID    PPID STAT     ELAPSED COMMAND
-      1       0 Ss    1-07:26:32 /sbin/docker-init -- /usr/local/sbin/.docker-entrypoint.sh
-    772       1 S     1-07:26:32 tini -- /usr/local/bin/supervisord -c /etc/supervisor/supervisord.conf
-    780     772 S     1-07:26:30 /usr/bin/python3.11 /usr/local/bin/supervisord -c /etc/supervisor/supervisord.conf
-    953     780 S     1-07:26:29 /usr/bin/python3.11 /usr/local/bin/jupyter-lab
-    955     780 S     1-07:26:29 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
-2128615     955 Ss         00:23 sshd: root@pts/0
-2128645 2128615 Ss         00:14 -bash
-2128691 2128645 R+         00:00 ps -eo pid,ppid,stat,etime,args

@@ -1,8 +1,0 @@
-{
-  "stage": 1,
-  "combo": "bert base mrpc",
-  "data_path": "mrpc",
-  "completed_at": "2026-06-05T18:04:23.877754",
-  "episodes": 28800,
-  "stage1_accuracy_tolerance": null
-}

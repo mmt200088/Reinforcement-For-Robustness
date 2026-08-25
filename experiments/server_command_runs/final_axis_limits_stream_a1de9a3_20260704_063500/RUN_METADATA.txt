@@ -1,6 +1,0 @@
-source_commit=a1de9a3
-base_commit=4118300
-branch=jk_standard_rl
-red_dir=/hy-tmp/rfr_axis_limits_stream_red_4118300_20260704_062500
-green_dir=/hy-tmp/rfr_axis_limits_stream_green_4118300_20260704_063500
-workflow=local_edit_git_push_server_temp_verify_artifact_return

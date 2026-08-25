@@ -1,5 +1,0 @@
-window_start=0 episodes=60 rollout_sig=7e5b8bb271a19168
-window_start=120 episodes=60 rollout_sig=8e695b6f5325b275
-window_start=180 episodes=60 rollout_sig=aef351a8f5167582
-window_start=240 episodes=60 rollout_sig=2b7a95cc8ae1538f
-window_start=60 episodes=60 rollout_sig=a64e2df454fbfdde

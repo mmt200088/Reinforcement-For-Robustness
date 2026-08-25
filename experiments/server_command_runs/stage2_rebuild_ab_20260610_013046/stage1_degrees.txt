@@ -1,4 +1,0 @@
-bert base mrpc 1 20260610 gelu = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1] | 含 degree0: False
-bert base rte 1 20260608 gelu = [1, 1, 1, 4, 1, 1, 2, 1, 1, 1, 1, 1] | 含 degree0: False
-bert base rte 2 20260610 gelu = [4, 1, 1, 1, 4, 4, 4, 4, 2, 2, 1, 1] | 含 degree0: False
-bert base rte 3 20260610 gelu = [4, 1, 1, 1, 4, 4, 4, 4, 2, 2, 1, 1] | 含 degree0: False

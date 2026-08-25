@@ -1,7 +1,0 @@
-commit 013022febfc48333c1c9da83225ec9849c3b03a1
-Author:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
-AuthorDate: Mon Jul 13 23:50:22 2026 +0800
-Commit:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
-CommitDate: Mon Jul 13 23:50:22 2026 +0800
-
-    test: align Paean regressions with shared replan contract

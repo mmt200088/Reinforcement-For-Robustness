@@ -1,9 +1,0 @@
-{
-  "schema_version": "paean_action_batch_v1",
-  "candidates": [
-    {
-      "name": "one_hot_block2_mrpc",
-      "action_config": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/one_hot_block2_mrpc/inputs/one_hot_block2_mrpc.json"
-    }
-  ]
-}

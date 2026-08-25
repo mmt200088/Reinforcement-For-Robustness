@@ -1,8 +1,0 @@
-{
-  "run_id": "stage2_ngpu_ab_compare_verify_20260703_124814",
-  "source_commit": "c578c50",
-  "test_command": "python3 -m unittest tests.test_stage2_ngpu_ab_compare -v",
-  "test_rc": 0,
-  "server_work_dir": "/hy-tmp/stage2_ngpu_ab_compare_verify_20260703_124814",
-  "source_transport": "git_archive_minimal"
-}

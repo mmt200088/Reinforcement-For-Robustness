@@ -1,8 +1,0 @@
-test_cli_generates_bundle_manifest_and_reports (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_cli_generates_bundle_manifest_and_reports) ... ok
-test_tar_writer_does_not_resolve_each_payload_file (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_tar_writer_does_not_resolve_each_payload_file) ... ok
-test_tar_writer_streams_files_without_sorting_full_tree (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_tar_writer_streams_files_without_sorting_full_tree) ... ok
-
-----------------------------------------------------------------------
-Ran 3 tests in 0.240s
-
-OK

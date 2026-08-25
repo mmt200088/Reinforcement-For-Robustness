@@ -1,8 +1,0 @@
-runroot=/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255
-source_path=/hy-tmp/stage1_no_degree0_mrpc_strict0_41a0b32_20260605_123543/src
-source_sync_commit=41a0b32
-started_at=2026-06-05T20:52:55+08:00
-config=/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/mrpc_stage1_strict0_config.json
-output=/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/submission
-mode=stage1_only_no_noise_mrpc_current_strict0_best
-command=python generate_glue_submission.py --config /hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/mrpc_stage1_strict0_config.json --no_noise --tasks mrpc --model_type bert-base --output_dir /hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/submission --device cpu --allow_cpu --batch_size 32

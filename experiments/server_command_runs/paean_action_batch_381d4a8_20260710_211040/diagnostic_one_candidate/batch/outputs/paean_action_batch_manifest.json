@@ -1,9 +1,0 @@
-{
-  "schema_version": "paean_action_batch_v1",
-  "candidates": [
-    {
-      "name": "all_fusion0",
-      "action_config": "/hy-tmp/paean_action_batch_897b273_20260710_211040/diagnostic_one_candidate/inputs/all_fusion0.json"
-    }
-  ]
-}

@@ -1,7 +1,0 @@
-source_commit=8101feb
-base_commit=e73d171
-red_run=/hy-tmp/rfr_final_summary_running_red_e73d171_20260704_042000
-green_run=/hy-tmp/rfr_final_summary_running_green_e73d171_20260704_042900
-red_command=python -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_random_summary_uses_running_stats_without_np_materialization -v
-green_commands=python -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py; python -m unittest tests.test_final_evaluation_config_cache -v; source guard for running random summary stats
-purpose=verify UnifiedFinalEvaluationModule._summarize_random_results uses running counters/stats instead of repeated np.mean/np.std over materialized lists

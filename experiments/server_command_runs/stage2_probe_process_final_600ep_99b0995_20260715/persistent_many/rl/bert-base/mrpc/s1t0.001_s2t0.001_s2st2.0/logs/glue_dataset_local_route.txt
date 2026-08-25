@@ -1,9 +1,0 @@
-[glue_dataset_local_route]
-time_utc=2026-07-14T19:25:01+00:00
-task=mrpc
-route=local_parquet
-path=/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc
-detail={"test": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/test-00000-of-00001.parquet", "train": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/train-00000-of-00001.parquet", "validation": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/validation-00000-of-00001.parquet"}
-primary_loader=load_dataset('nyu-mll/glue', task)
-primary_error=ConnectionError: Couldn't reach the Hugging Face Hub for dataset 'nyu-mll/glue': Offline mode is enabled.
-

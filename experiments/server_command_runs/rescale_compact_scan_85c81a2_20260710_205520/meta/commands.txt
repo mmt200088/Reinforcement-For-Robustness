@@ -1,8 +1,0 @@
-RED: PYTHONPATH=Rescale_optimizer /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests.test_compact_config_propagates_each_stage_without_nodes_between -v
-BASELINE: block4 build_new_compact_config 100000 x 3; full dict+compact replan 50000 x 3; cProfile 10000
-GREEN valid rerun commits: red=57f67d91ae16cb90eb39342b1091946f5b7b5837 green=85c81a25bb7feb8cd834998ce3be26ff354b534f
-GREEN compile: /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m py_compile Rescale_optimizer/rescale_optimizer/replan_interface.py tests/test_rescale_optimizer_hotpaths.py
-GREEN focused: PYTHONPATH=Rescale_optimizer /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests.test_compact_config_propagates_each_stage_without_nodes_between -v
-GREEN core: PYTHONPATH=Rescale_optimizer /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_rescale_optimizer_hotpaths tests.test_rescale_optimizer_bridge_cache tests.test_rescale_replan_what_if tests.test_blb_fused_rescale_install tests.test_blb_optimizer_cost_consistency tests.test_blb_precision_boost_multiprofile -v
-GREEN fusion map baseline-aware: PYTHONPATH=Rescale_optimizer /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m unittest tests.test_blb_fusion_count_map -v
-AFTER: all-graph compact parity; block4 compact 100000 x 3; full dict+compact replan 50000 x 3; cProfile 10000

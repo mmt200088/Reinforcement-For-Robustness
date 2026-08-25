@@ -1,8 +1,0 @@
-rows=16832
-episode=16831
-timestamp=1783967824.209335
-priority=1
-reward=-3.5
-recent100_priorities={'2': 9, '1': 42, '3': 49}
-recent100_loss_caps=0
-recent100_invalid=0

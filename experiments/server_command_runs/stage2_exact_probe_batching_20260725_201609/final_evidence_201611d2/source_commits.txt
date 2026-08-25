@@ -1,6 +1,0 @@
-control_source_head=05b6863e8cea82cce80a223133eebbab6b925205
-control_source_tree=c7294df829461544304fd911798c5c309fae1ca5
-edgefix_source_head=201611d27cf191d4a2953ae963fa64289cbbf9ab
-edgefix_source_tree=a390f5c26746de23fcfbff598ac14e6e97c998cd
-server_cuda_visible_devices=0,1,2,3
-physical_usable_gpu_indices=0,1,2,4

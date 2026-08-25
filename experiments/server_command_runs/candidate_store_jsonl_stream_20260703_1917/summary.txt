@@ -1,6 +1,0 @@
-red_rc=0
-green_rc=0
-ls_remote_rc=0
-red_log=/hy-tmp/rfr_candidate_store_jsonl_f6a51e8_20260703_1917/red.log
-green_log=/hy-tmp/rfr_candidate_store_jsonl_f6a51e8_20260703_1917/green.log
-server_ls_remote_log=/hy-tmp/rfr_candidate_store_jsonl_f6a51e8_20260703_1917/server_ls_remote.log

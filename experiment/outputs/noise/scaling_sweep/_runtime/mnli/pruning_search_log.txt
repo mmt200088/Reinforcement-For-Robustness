@@ -1,2 +1,0 @@
-=== PPO RL Optimization Log Started ===
-[Info] PPO LR resolved from rl_lr=None -> 5e-05 (default)

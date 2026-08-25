@@ -1,6 +1,0 @@
-test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion (tests.test_paean_blb_action_eval_static.PaeanBLBActionEvalStaticTest.test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.001s
-
-OK

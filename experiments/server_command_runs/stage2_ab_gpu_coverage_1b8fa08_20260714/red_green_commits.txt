@@ -1,2 +1,0 @@
-04f2b2e2 test: require real GPU coverage in stage2 A/B
-1b8fa084 perf: harden Stage-2 GPU coverage gate

@@ -1,6 +1,0 @@
-index, name, uuid, memory.total [MiB], memory.used [MiB], utilization.gpu [%], utilization.memory [%], temperature.gpu, power.draw [W]
-0, NVIDIA GeForce RTX 5090, GPU-3837dba4-4bef-0480-350f-b8e23c97a0e1, 32607 MiB, 3245 MiB, 3 %, 1 %, 58, 214.00 W
-1, NVIDIA GeForce RTX 5090, GPU-56b9415d-0b9e-bb58-722f-61ddd15dfd7a, 32607 MiB, 3065 MiB, 38 %, 36 %, 55, 194.95 W
-2, NVIDIA GeForce RTX 5090, GPU-adb48e87-ba88-5373-d551-310b108e92f6, 32607 MiB, 3065 MiB, 37 %, 35 %, 50, 197.42 W
-3, NVIDIA GeForce RTX 5090, GPU-cbe4e862-d9c2-6306-7483-7d583b1768bc, 32607 MiB, 3065 MiB, 42 %, 40 %, 56, 197.13 W
-4, NVIDIA GeForce RTX 5090, GPU-1bcdfc79-6e2a-18c6-dd5b-0eeb0305328d, 32607 MiB, 3065 MiB, 32 %, 29 %, 59, 212.96 W

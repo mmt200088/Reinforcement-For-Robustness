@@ -1,7 +1,0 @@
-README.md
-RUN_METADATA.json
-MANIFEST.txt
-server_logs/red.log
-server_logs/green.log
-source_snapshot/report_fusion_count_map.py
-source_snapshot/test_report_fusion_count_map.py

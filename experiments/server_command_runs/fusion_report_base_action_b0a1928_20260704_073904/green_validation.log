@@ -1,8 +1,0 @@
-PY_COMPILE_RC=0
-test_build_report_payload_passes_base_action_sequence_without_copy (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_build_report_payload_passes_base_action_sequence_without_copy) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.004s
-
-OK
-TEST_RC=0

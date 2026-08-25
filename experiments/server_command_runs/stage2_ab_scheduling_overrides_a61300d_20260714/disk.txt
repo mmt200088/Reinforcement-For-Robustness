@@ -1,3 +1,0 @@
-Filesystem             Size  Used Avail Use% Mounted on
-overlay                 30G  774M   30G   3% /
-/dev/mapper/vg-vg--lv   50G   11G   40G  21% /hy-tmp

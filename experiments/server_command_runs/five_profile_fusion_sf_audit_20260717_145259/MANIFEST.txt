@@ -1,6 +1,0 @@
-SOURCE_SYNC_COMMIT=aeee216e3c9fbb4a978e47cdf0bfa5ff258e2555
-MAP_BUILD_COMMIT=c3ab14dd650d6ad1cd8295929f0af7760bdcb58c
-CURRENT_REPLAY_COMMIT=aeee216e3c9fbb4a978e47cdf0bfa5ff258e2555
-MAPS_ALREADY_PRESENT=1
-REBUILD_REQUIRED=0
-ARTIFACTS=map_gate.json,actual_sf_audit.json,five_profile_fusion_count_actual_sf.html,final_verification.json,logs/*

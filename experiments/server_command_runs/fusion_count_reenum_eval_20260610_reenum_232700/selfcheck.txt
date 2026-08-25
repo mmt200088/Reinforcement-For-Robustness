@@ -1,3 +1,0 @@
-has_MIN_SF_FLOOR False
-sf30_desc [30, 28, 26, 24, 22, 20, 19, 18, 17, 16]
-distinct_F20 [0, 5, 6, 7, 8, 9]

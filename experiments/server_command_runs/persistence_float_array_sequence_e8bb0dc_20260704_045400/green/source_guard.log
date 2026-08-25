@@ -1,2 +1,0 @@
-58:_FLOAT_ARRAY_DIRECT_SEQUENCE_TYPES = (list, tuple, range)
-795:    if isinstance(values, _FLOAT_ARRAY_DIRECT_SEQUENCE_TYPES):

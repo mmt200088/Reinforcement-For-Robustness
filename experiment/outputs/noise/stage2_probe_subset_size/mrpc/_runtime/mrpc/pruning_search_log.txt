@@ -1,3 +1,0 @@
-=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===
-[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr=None 解析为 -> 5e-05 (default) | Stage-2 PPO学习率（LR）从 stage2_rl_lr=None 解析为 -> 5e-05 (default)
-[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 40000

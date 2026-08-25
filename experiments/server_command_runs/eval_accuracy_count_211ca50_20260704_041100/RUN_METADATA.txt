@@ -1,6 +1,0 @@
-source_commit=211ca50
-base_commit=8bf11a1
-red_run=/hy-tmp/rfr_accuracy_count_red_8bf11a1_20260704_041000
-green_run=/hy-tmp/rfr_accuracy_count_green_8bf11a1_20260704_041100
-red_command=python -m unittest tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_accuracy_from_labels_uses_direct_match_count -v
-green_commands=python -m py_compile blb_stage2_rl/eval_metrics.py; python -m unittest tests.test_blb_eval_metrics_shared -v; source guard for count_nonzero accuracy path without np.mean

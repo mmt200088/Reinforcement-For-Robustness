@@ -1,8 +1,0 @@
-BLB_STRICT=0 python -m unittest \
-  tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test \
-  tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock2RotationTest \
-  tests.test_blb_chain_integrity.SyncBlock2QKBindingTest \
-  tests.test_blb_chain_integrity.SampleGaussianLiveReadTest \
-  tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests \
-  tests.test_blb_stage2_rl_regressions.BLBActionDescriptionRegressionTests \
-  -v

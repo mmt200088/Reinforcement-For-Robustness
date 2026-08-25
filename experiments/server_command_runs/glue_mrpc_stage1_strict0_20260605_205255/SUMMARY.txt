@@ -1,7 +1,0 @@
-GLUE MRPC Stage-1 strict-0 current-best submission generated.
-runroot=/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255
-zip=/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/submission/submission.zip
-config=GELU [1,2,1,1,1,1,1,1,2,1,1,1], Softmax [6]*12
-noise=off
-real_task=MRPC only; other GLUE files are placeholders from generate_glue_submission.py
-completed_at=2026-06-05T20:55:43+08:00

@@ -1,6 +1,0 @@
-test_normalized_delta_override_dict_is_reused_without_reparsing (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.010s
-
-OK

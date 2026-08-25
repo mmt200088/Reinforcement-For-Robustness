@@ -1,7 +1,0 @@
-test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_compare_optimizer_modes_static.BLBCompareOptimizerModesStaticTests.test_main_streams_stdout_json_without_json_dumps_string) ... ok
-test_markdown_writer_streams_without_joined_write_text (tests.test_blb_compare_optimizer_modes_static.BLBCompareOptimizerModesStaticTests.test_markdown_writer_streams_without_joined_write_text) ... ok
-
-----------------------------------------------------------------------
-Ran 2 tests in 0.005s
-
-OK

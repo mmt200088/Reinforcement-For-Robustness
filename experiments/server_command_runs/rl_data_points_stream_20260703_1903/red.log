@@ -1,3 +1,0 @@
-RED expected failure manifest_summary: training data JSON artifacts should stream writes
-RED expected failure jsonl: JSONL writer should stream through iterencode
-RED checks caught old implementation

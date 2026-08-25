@@ -1,8 +1,0 @@
-source_sha=9099cfa38453b264a50e5d99fb7aaa67cc38acd8
-excluded_new_diagnostic_fields=['terminal_probe_clear_skipped', 'terminal_probe_install_skipped']
-quality_effect_equality=True
-quality_diffs=[]
-ppo_equality=True
-ppo_diffs=[]
-episode_counts=170,170
-ppo_counts=2,2

@@ -1,6 +1,0 @@
-test_json_artifact_scripts_use_shared_reader (tests.test_rl_data_points.RLDataPointWriterTest.test_json_artifact_scripts_use_shared_reader) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.004s
-
-OK

@@ -1,3 +1,0 @@
-source_commit=6097a6a
-pythonpath=.
-paean=copied

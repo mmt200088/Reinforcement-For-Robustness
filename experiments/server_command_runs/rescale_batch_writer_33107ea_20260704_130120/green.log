@@ -1,8 +1,0 @@
-test_batch_archive_writer_streams_output_file (tests.test_rescale_config_discovery.RescaleConfigDiscoveryTest.test_batch_archive_writer_streams_output_file) ... ok
-test_batch_discovery_scans_directory_without_path_glob (tests.test_rescale_config_discovery.RescaleConfigDiscoveryTest.test_batch_discovery_scans_directory_without_path_glob) ... ok
-test_headroom_main_scans_directory_without_path_glob (tests.test_rescale_config_discovery.RescaleConfigDiscoveryTest.test_headroom_main_scans_directory_without_path_glob) ... ok
-
-----------------------------------------------------------------------
-Ran 3 tests in 0.034s
-
-OK

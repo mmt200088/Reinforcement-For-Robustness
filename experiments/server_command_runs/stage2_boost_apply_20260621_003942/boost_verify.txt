@@ -1,9 +1,0 @@
-FusionCountMap.load('mrpc') OK - all maps still load, option0==baseline.
-  block1_mrpc.json options=1 boosted=0
-  block2_mrpc.json options=2 boosted=1
-  block4.json      options=2 boosted=1
-  block5_n0.json   options=2 boosted=0
-  block5_n1.json   options=2 boosted=0
-  block5_n2.json   options=2 boosted=1
-  block5_n4.json   options=2 boosted=1
-[ok] 4 boosted options total, all carry explicit_field_values.

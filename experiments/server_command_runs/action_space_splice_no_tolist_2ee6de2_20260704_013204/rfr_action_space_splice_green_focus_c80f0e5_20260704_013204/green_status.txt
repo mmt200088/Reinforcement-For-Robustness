@@ -1,3 +1,0 @@
-py_compile_rc=0
-source_guard_rc=0
-functional_rc=0

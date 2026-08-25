@@ -1,7 +1,0 @@
-source_sync_commit=ec121a8
-started=2026-07-02T02:15:24+08:00
-host=I29629d094400801792
-profiles=mrpc rte sst2 mrpc_large rte_large sst2_large
-workers=160
-reason=block4 config and block4 static skeleton are identical across all six profiles; build once and copy with profile provenance
-finished=2026-07-02T02:52:54+08:00

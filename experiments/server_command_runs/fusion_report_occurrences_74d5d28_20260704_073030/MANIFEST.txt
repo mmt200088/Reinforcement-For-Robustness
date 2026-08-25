@@ -1,7 +1,0 @@
-README.md
-RUN_METADATA.json
-MANIFEST.txt
-red_unittest.log
-green_validation.log
-source_snapshot/report_fusion_count_map.py
-source_snapshot/test_report_fusion_count_map.py

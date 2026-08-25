@@ -1,6 +1,0 @@
-source_commit=da02fca
-base_commit=0b04ea3
-red_run=/hy-tmp/rfr_eval_metric_weights_red_0b04ea3_20260704_030520
-green_run=/hy-tmp/rfr_eval_metric_weights_green_0b04ea3_20260704_030610
-red_command=python -m unittest tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_weighted_probe_batch_means_reuses_count_weights -v
-green_commands=python -m py_compile blb_stage2_rl/eval_metrics.py; python -m unittest tests.test_blb_eval_metrics_shared -v; source guard for weighted_probe_batch_means reusing count weights

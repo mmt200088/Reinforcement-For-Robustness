@@ -1,9 +1,0 @@
-{
-  "command": "python3 -m unittest tests.test_aggregate_seeds -v",
-  "expected_head": "7f97a22e4a34e47ea7f6edeecf5ffa3974a4441c",
-  "git_ls_remote_rc": 128,
-  "remote_head_confirmed": false,
-  "run_id": "aggregate_seed_md_stream_verify_20260703_183230",
-  "source_mode": "archive_from_pushed_head",
-  "test_rc": 0
-}
