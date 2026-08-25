@@ -50,7 +50,7 @@ _PARENT_DIR = os.path.dirname(_THIS_DIR)
 if _PARENT_DIR not in sys.path:
     sys.path.insert(0, _PARENT_DIR)
 
-from glue_data_protocol import (  # noqa: E402
+from rfr.preparation.data.protocol import (  # noqa: E402
     GLUE_DATASET_REVISION,
     GlueDataProtocolContext,
     TRAIN_PROBE_SIZE,

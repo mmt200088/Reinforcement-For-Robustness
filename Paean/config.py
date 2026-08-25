@@ -9,7 +9,7 @@ import shlex
 import time
 from typing import List, Optional, Sequence, Tuple
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     SUPPORTED_DATASETS,
     SUPPORTED_MODEL_FAMILIES,
     validate_supported_profile,

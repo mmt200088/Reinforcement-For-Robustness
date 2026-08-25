@@ -28,7 +28,7 @@ from rfr.common.cli_parse_utils import (
     parse_stage1_episode_limit,
     parse_stage2_episode_limit,
 )
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     GLUE_DATASET_REVISION,
     GlueDataProtocolContext,
     load_train_probe_fixture,
@@ -37,7 +37,7 @@ from glue_data_protocol import (
     validate_dataset,
     validate_supported_profile,
 )
-from mrpc_reproducibility import (
+from rfr.preparation.data.mrpc_reproducibility import (
     MRPC_FULL_EXAMPLE_COUNT,
     MRPCReproducibilityContext,
     MRPCReproducibilityError,

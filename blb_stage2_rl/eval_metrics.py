@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from glue_data_protocol import dataset_from_profile
+from rfr.preparation.data.protocol import dataset_from_profile
 
 
 def logits_to_classes(logits: Any) -> np.ndarray:

@@ -7,7 +7,7 @@ import pytest
 import subprocess
 import sys
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     GLUE_DATASET_REVISION,
     GlueDataProtocolError,
     SUPPORTED_DATASETS,
@@ -192,7 +192,7 @@ def test_train_probe_fixture_rejects_tampering(tmp_path, mutation, message):
 
 
 def test_fixture_builder_loads_all_tasks_at_pinned_revision(tmp_path):
-    from scripts.build_glue_train_probe_fixture import build_fixture
+    from rfr.preparation.data.build_probe_fixture import build_fixture
 
     calls = []
 
@@ -217,7 +217,8 @@ def test_fixture_builder_runs_as_a_direct_script():
     completed = subprocess.run(
         [
             sys.executable,
-            "scripts/build_glue_train_probe_fixture.py",
+            "-m",
+            "rfr.preparation.data.build_probe_fixture",
             "--help",
         ],
         cwd=root,

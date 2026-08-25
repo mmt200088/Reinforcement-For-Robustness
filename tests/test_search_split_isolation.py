@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     GLUE_DATASET_REVISION,
     PROTOCOL_SCHEMA,
     TRAIN_PROBE_SIZE,

@@ -20,7 +20,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequenc
 
 import numpy as np
 
-from glue_data_protocol import TRAIN_PROBE_SPLIT
+from rfr.preparation.data.protocol import TRAIN_PROBE_SPLIT
 
 
 Stage1Action = tuple[int, ...]

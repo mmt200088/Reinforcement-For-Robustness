@@ -8,7 +8,7 @@ import random
 import numpy as np
 import torch
 
-from glue_data_protocol import PROTOCOL_SCHEMA, validate_dataset_protocol_binding
+from rfr.preparation.data.protocol import PROTOCOL_SCHEMA, validate_dataset_protocol_binding
 
 
 STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"

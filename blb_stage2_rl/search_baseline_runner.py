@@ -10,7 +10,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     TRAIN_PROBE_SPLIT,
     validate_dataset_protocol_binding,
 )

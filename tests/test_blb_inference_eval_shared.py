@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 
-from glue_data_protocol import SUPPORTED_DATASETS
+from rfr.preparation.data.protocol import SUPPORTED_DATASETS
 
 
 class SupportedMetricContractTest(unittest.TestCase):

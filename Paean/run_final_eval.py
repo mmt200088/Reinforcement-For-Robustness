@@ -7,7 +7,7 @@ import sys
 import time
 from typing import Callable, Dict, List
 
-from glue_data_protocol import validate_supported_profile
+from rfr.preparation.data.protocol import validate_supported_profile
 from .config import (
     PRESET_DIR,
     REPO_ROOT,

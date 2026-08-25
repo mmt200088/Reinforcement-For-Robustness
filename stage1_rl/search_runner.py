@@ -8,7 +8,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     PROTOCOL_SCHEMA,
     TRAIN_PROBE_SPLIT,
     validate_dataset_protocol_binding,

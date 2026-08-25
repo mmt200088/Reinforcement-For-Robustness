@@ -19,7 +19,7 @@ from elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
-from glue_data_protocol import PROTOCOL_SCHEMA, TRAIN_PROBE_SPLIT
+from rfr.preparation.data.protocol import PROTOCOL_SCHEMA, TRAIN_PROBE_SPLIT
 from rl_data_points import (
     RLDataPointWriter,
     make_unique_run_id,
@@ -492,7 +492,7 @@ def _build_layerwise_candidate_identity_context(
         ) -> Dict[str, Any]:
     """Bind layerwise evidence to the ordinary scientific run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
-    from glue_data_protocol import (
+    from rfr.preparation.data.protocol import (
         PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
         TRAIN_PROBE_SPLIT as SEARCH_EVIDENCE_SPLIT,
     )
@@ -3251,7 +3251,7 @@ def _build_search_invocation_contract(
         ) -> dict[str, Any]:
     import hashlib as _hashlib
 
-    from glue_data_protocol import (
+    from rfr.preparation.data.protocol import (
         PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
         validate_dataset_protocol_binding,
     )
@@ -4033,7 +4033,7 @@ def _preflight_pending_strict_search_resume(
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
     """Restore ordinary pending-strict evidence before model setup."""
-    from glue_data_protocol import validate_dataset_protocol_binding
+    from rfr.preparation.data.protocol import validate_dataset_protocol_binding
     from rfr.common.json_utils import read_json_file
 
     from .search_baselines import normalize_search_backend
@@ -4139,7 +4139,7 @@ def _preflight_completed_search_resume(
         fixed_source: Any,
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
-    from glue_data_protocol import validate_dataset_protocol_binding
+    from rfr.preparation.data.protocol import validate_dataset_protocol_binding
     from rfr.common.json_utils import read_json_file
 
     from .search_baseline_runner import (

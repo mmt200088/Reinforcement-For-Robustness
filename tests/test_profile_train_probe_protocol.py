@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     SUPPORTED_DATASETS,
     TRAIN_PROBE_SIZE,
 )

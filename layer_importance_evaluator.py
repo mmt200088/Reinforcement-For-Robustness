@@ -38,8 +38,8 @@ from function_handler import (
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
-from glue_data_protocol import TRAIN_PROBE_SPLIT, validate_dataset
-from mrpc_reproducibility import (
+from rfr.preparation.data.protocol import TRAIN_PROBE_SPLIT, validate_dataset
+from rfr.preparation.data.mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
     validate_mrpc_evaluation_setup,
 )

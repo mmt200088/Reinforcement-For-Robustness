@@ -9,12 +9,12 @@ import types
 import unittest
 from unittest import mock
 
-from glue_data_protocol import (
+from rfr.preparation.data.protocol import (
     GLUE_DATASET_REVISION,
     GlueDataProtocolError,
     SUPPORTED_DATASETS,
 )
-from mrpc_reproducibility import (
+from rfr.preparation.data.mrpc_reproducibility import (
     MRPC_DATASET_REVISION,
     MRPCReproducibilityContext,
     MRPCReproducibilityError,

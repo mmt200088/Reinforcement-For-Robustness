@@ -8,7 +8,7 @@ from final_evaluation_module import (
     UnifiedFinalEvaluationModule,
     require_final_evaluation_protocol,
 )
-from glue_data_protocol import FINAL_EVAL_SPLIT
+from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT
 
 from .config import (
     DEFAULT_PRESET,

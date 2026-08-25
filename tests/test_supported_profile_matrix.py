@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from glue_data_protocol import supported_profiles
+from rfr.preparation.data.protocol import supported_profiles
 from Paean import config as paean_config
 from Paean import run_final_eval
 from rfr.common.config import run_layout
@@ -99,7 +99,7 @@ def test_active_entrypoint_sources_have_no_unsupported_dispatch_literals():
         "llama_7B_LayerImportance.sh",
         "Paean/config.py",
         "Paean/run_final_eval.py",
-        "glue_data_protocol.py",
+        "src/rfr/preparation/data/protocol.py",
         "rl_tune.py",
     )
     forbidden = (
@@ -123,7 +123,7 @@ def test_production_entrypoints_remain_syntax_valid():
     for relative_path in (
         "Paean/config.py",
         "Paean/run_final_eval.py",
-        "glue_data_protocol.py",
+        "src/rfr/preparation/data/protocol.py",
         "rl_tune.py",
     ):
         ast.parse(

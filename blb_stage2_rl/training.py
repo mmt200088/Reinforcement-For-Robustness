@@ -11,7 +11,7 @@ from typing import Any, Mapping, Optional
 import numpy as np
 import torch
 
-from glue_data_protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
+from rfr.preparation.data.protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
 from rescale_optimizer_bridge import (
     RescaleOptimizerBridge,
     build_rescale_invoker,
