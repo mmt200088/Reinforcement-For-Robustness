@@ -406,7 +406,7 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
         try:
             quiet = io.StringIO()
             with contextlib.redirect_stdout(quiet):
-                function_handler._print_blb_install("hidden by default")
+                model_handler._print_blb_install("hidden by default")
             self.assertEqual(quiet.getvalue(), "")
         finally:
             if previous is not None:
@@ -420,13 +420,13 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
             os.environ["BLB_NOISE_INSTALL_LOGS"] = "0"
             quiet = io.StringIO()
             with contextlib.redirect_stdout(quiet):
-                function_handler._print_blb_install("hidden")
+                model_handler._print_blb_install("hidden")
             self.assertEqual(quiet.getvalue(), "")
 
             os.environ["BLB_NOISE_INSTALL_LOGS"] = "1"
             loud = io.StringIO()
             with contextlib.redirect_stdout(loud):
-                function_handler._print_blb_install("shown")
+                model_handler._print_blb_install("shown")
             self.assertEqual(loud.getvalue(), "shown\n")
         finally:
             if previous is None:
