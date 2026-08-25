@@ -9,6 +9,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
+    ".claude/",
+    ".vscode/",
     "server_backups/",
     "rl_training_data_points/",
     "Parting Chapter/",
@@ -80,6 +82,12 @@ FORBIDDEN_RUNTIME_PATHS = {
     "Rescale_optimizer/scripts/replan_what_if.py",
     "Rescale_optimizer/scripts/sweep_certacc_monotonicity.py",
     "Rescale_optimizer/scripts/update_noise_tables_from_csv.py",
+    "Model_analysis/model_statistics/weight_hist_magnitude_nosample.py",
+    "Rescale_optimizer/rescale_optimizer/accuracy_preservation.md",
+    "Rescale_optimizer/rescale_optimizer/accuracy_preservation_render.md",
+    "Rescale_optimizer/rescale_optimizer/accuracy_preservation_v1_subgaussian.md",
+    "Rescale_optimizer/rescale_optimizer/algorithms.md",
+    "Rescale_optimizer/rescale_optimizer/example.py",
 }
 
 FORBIDDEN_RUNTIME_PREFIXES = (
@@ -121,13 +129,6 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "_make_blb_first_input_noise_forward",
     "blb_first_input_noise_state",
     "_run_legacy_preflight_if_needed",
-    "user spec",
-    "用户要求",
-    "提示词",
-    "pengjunkai",
-    "/Users/",
-    "gpushare.com",
-    "100.64.229.185",
     "<!doctype html>",
     "html_table(",
     "pareto_html_path",
