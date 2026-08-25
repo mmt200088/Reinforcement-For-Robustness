@@ -1,7 +1,0 @@
-==== [gate] 判读 ====
-[gate][PASS] rollout_sig 逐窗逐字相同（1卡 == 5卡）
-[gate] episodes.jsonl 数值逐项对比: PASS（完全一致）  n=300/300
-[gate] probe@ep80: mode=forced_fusion_probe_b2 fusion_count=12 -> OK (期望 b2, fc>=10)
-[gate] probe@ep280: mode=forced_fusion_probe_b5 fusion_count=12 -> OK (期望 b5, fc>=10)
-1-GPU : 1148 ep/h (941s)
-5-GPU : 4154 ep/h (260s)  speedup=3.62x (ideal 5x)

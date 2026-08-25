@@ -1,8 +1,0 @@
-PY_COMPILE_RC=0
-test_scatter_plot_scans_result_rows_once_per_group (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_scatter_plot_scans_result_rows_once_per_group) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 1.821s
-
-OK
-TEST_RC=0

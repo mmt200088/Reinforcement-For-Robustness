@@ -1,6 +1,0 @@
-README.md
-RUN_METADATA.json
-green_validation.log
-red_unittest.log
-source_snapshot/function_handler_layer_cache_excerpt.txt
-source_snapshot/test_stage1_eval_accel.py

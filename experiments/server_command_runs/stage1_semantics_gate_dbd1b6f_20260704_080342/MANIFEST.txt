@@ -1,9 +1,0 @@
-README.md
-RUN_METADATA.json
-MANIFEST.txt
-initial_stage1_semantics_red.log
-stage1_failure_probe.log
-loss_average_param_red.log
-intermediate_green_metric_red.log
-precommit_green_validation.log
-green_validation.log

@@ -1,2 +1,0 @@
-{"label":"one","devices":"0","workers_per_device":1,"launch_rc":0,"rc":0,"wall_seconds":642}
-{"label":"many","devices":"0,1,2,3,4","workers_per_device":1,"launch_rc":0,"rc":0,"wall_seconds":331}

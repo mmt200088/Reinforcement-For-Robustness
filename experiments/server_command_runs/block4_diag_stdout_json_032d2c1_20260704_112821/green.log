@@ -1,6 +1,0 @@
-test_main_streams_stdout_json_without_json_dumps_string (tests.test_diagnose_block4_fusion_install_static.DiagnoseBlock4FusionInstallStaticTests.test_main_streams_stdout_json_without_json_dumps_string) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.002s
-
-OK

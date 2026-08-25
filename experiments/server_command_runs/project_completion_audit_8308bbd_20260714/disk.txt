@@ -1,2 +1,0 @@
-Filesystem             Size  Used Avail Use% Mounted on
-/dev/mapper/vg-vg--lv   50G   10G   41G  20% /hy-tmp

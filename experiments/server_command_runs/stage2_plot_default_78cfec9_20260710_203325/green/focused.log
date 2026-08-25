@@ -1,6 +1,0 @@
-test_plot_rendering_defaults_to_offline_but_explicit_true_wins (tests.test_blb_stage2_outputs.UpgradedCurvesTest) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.000s
-
-OK

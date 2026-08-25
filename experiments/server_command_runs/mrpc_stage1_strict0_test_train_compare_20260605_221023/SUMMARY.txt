@@ -1,9 +1,0 @@
-MRPC strict0 best vs original baseline compare complete.
-runroot=/hy-tmp/mrpc_stage1_strict0_test_train_compare_20260605_221023
-source_sync_commit=ae6f4acd2c9f739821de1e9a64b9eaee4d3ad53a
-test_examples=1725
-test_agreement=1684 (0.976232)
-test_disagreement=41 (0.023768)
-train_loss_improvement_pct=1.768662
-train_accuracy_change_pct=0.028241
-train_weighted_f1_change_pct=0.035586

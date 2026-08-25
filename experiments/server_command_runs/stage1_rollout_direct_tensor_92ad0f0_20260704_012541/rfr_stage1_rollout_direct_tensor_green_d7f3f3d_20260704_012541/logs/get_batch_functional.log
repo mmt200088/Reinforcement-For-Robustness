@@ -1,1 +1,0 @@
-get_batch_direct_tensor_ok cuda:0 torch.Size([2, 3, 3]) cuda:0 cuda:0

@@ -1,9 +1,0 @@
-test_all_max_action_index_scans_k_levels_once_without_copy (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_all_max_action_index_scans_k_levels_once_without_copy) ... ok
-test_build_registry_payload_reuses_field_offsets (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_build_registry_payload_reuses_field_offsets) ... ok
-test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_main_streams_stdout_json_without_json_dumps_string) ... ok
-test_module_import_is_dependency_light (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_module_import_is_dependency_light) ... ok
-
-----------------------------------------------------------------------
-Ran 4 tests in 0.064s
-
-OK

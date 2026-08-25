@@ -1,6 +1,0 @@
-test_register_json_output_streams_without_json_dumps (tests.test_experiments_log.ExperimentsLogTest.test_register_json_output_streams_without_json_dumps) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.003s
-
-OK

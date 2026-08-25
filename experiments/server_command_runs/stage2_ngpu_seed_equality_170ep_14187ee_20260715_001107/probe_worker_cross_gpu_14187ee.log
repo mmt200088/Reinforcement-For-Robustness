@@ -1,9 +1,0 @@
-/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-results [(0.9047113656997681, 0.5, 0.4874874874874875), (0.9047113656997681, 0.5, 0.4874874874874875)]
-replays [(0.9047113656997681, 0.5, 0.4874874874874875), (0.9047113656997681, 0.5, 0.4874874874874875)]
-CROSS_GPU_EXACT=1

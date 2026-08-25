@@ -1,3 +1,0 @@
-checkpoint_semantic_equal=True
-excluded_top_level_keys=['candidate_store_size', 'diagnostics_jsonl_sizes', 'store_file_fingerprints', 'structured_run_id']
-diff_count=0

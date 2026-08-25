@@ -1,9 +1,0 @@
-{
-  "command": "python3 -m unittest tests.test_stage2_first10k_monitor -v",
-  "expected_head": "c67cc1d5d165e6031494bc6c5775fc9700ef86a1",
-  "git_ls_remote_rc": 0,
-  "remote_head_confirmed": true,
-  "run_id": "stage2_monitor_json_stream_verify_20260703_162519",
-  "source_mode": "archive_from_pushed_head",
-  "test_rc": 0
-}

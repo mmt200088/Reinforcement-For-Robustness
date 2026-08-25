@@ -1,6 +1,0 @@
-test_delta_state_restore_does_not_deepcopy_scalar_fields (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.007s
-
-OK

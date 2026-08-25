@@ -1,8 +1,0 @@
-original_path	archive_path	head	branch	status_rows	tracked_files	tracked_tree_sha256	payload_extra_files
-/hy-tmp/RFR_k6_13_eb19c6af_20260727	hy-tmp/RFR_k6_13_eb19c6af_20260727	54dfeaa085fc2aa8da9523fb4707451fbde01634	codex/all-agents-k6-13-integrated-20260727	0	8137	01a0618ff209d3535a52f58582fcc6ae0d4c726ee7c5102cbb2b92648835f389	0
-/hy-tmp/RFR_stage2_18group_ff7e7526	hy-tmp/RFR_stage2_18group_ff7e7526	ad810c1724da759d23ef4ed6f1077dc2b24d3b52	(detached)	0	8191	5e56d66393a0f66d6b8f755872f23330fd814d1847da23ca5c19cbb9934bbf83	0
-/hy-tmp/RFR_stage2_presets_2dbc2934	hy-tmp/RFR_stage2_presets_2dbc2934	6f5ea845380b8746f8aed6fc19c2c2af23221378	(detached)	6	8193	0d06083c6d679a55c865b63233920b6a3a739e4497e40f6486fd1bc2a3a85b55	6
-/hy-tmp/Reinforcement-For-Robustness	hy-tmp/Reinforcement-For-Robustness	264e4002860818e87c1933006df678af8464d1c2	codex/bert-large-mrpc-exact-probe-scheduling-20260725	203	8093	88a55ceec302ba655e85a6f3bf9707b485554e8a418646d597fe25ba8fa583e1	222
-/hy-tmp/rfr-elastic-diff-premerge-823108bd	hy-tmp/rfr-elastic-diff-premerge-823108bd	823108bdad53d67e096c99ba656d2f7cfe2e4e9f	(detached)	0	8103	6df2ee113f1e2b0303247eaecc2ca2743767df8002aaa869bf0e1fc9a21e5245	0
-/hy-tmp/rfr-elastic-diff-upstream-efc7e105	hy-tmp/rfr-elastic-diff-upstream-efc7e105	efc7e1055ce95f119e374187f8ad563c24e5c848	(detached)	0	8095	e6daaabba6b4524663725ab7aa9ea5a89b0f82d7e587e888c960058f6b03b39d	0
-/hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726	hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726	1f32a793cda54b72e19319fa172eb51c458d7198	(detached)	34	8123	086e197d29c801aee90a17b5401ded0ed946ac7c313c3cbf31e11b9c7dd14fb5	34

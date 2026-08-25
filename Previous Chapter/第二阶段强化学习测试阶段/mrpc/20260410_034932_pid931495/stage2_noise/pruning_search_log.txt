@@ -1,6 +1,0 @@
-══════════════════════════════════════════════════════════════════════
-  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
-══════════════════════════════════════════════════════════════════════
-  [信息] PPO 学习率 learning rate：由 rl_lr=20 解析为 2e-05（模式 mode=legacy-micro）
-  [信息] 一阶段 RL 回合 stage-1 episodes=15000  ·  二阶段噪声 RL 回合 stage-2 episodes=30000
-  [信息] 本次运行根目录 run_output_dir=rl_results/layer_importance_runs/mrpc/20260410_034932_pid931495

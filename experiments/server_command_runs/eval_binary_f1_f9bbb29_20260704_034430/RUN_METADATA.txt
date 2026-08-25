@@ -1,6 +1,0 @@
-source_commit=f9bbb29
-base_commit=b743386
-red_run=/hy-tmp/rfr_binary_f1_red_b743386_20260704_034330
-green_run=/hy-tmp/rfr_binary_f1_green_b743386_20260704_034430
-red_command=python -m unittest tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_binary_weighted_f1_skips_union_sort -v
-green_commands=python -m py_compile blb_stage2_rl/eval_metrics.py; python -m unittest tests.test_blb_eval_metrics_shared -v; source guard for binary weighted-F1 fast path before union fallback

@@ -12,7 +12,7 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-PRESERVED_RESULT_ROOTS = (
+FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
     "server_backups/",
     "rl_training_data_points/",
     "Parting Chapter/",
@@ -27,9 +27,28 @@ PRESERVED_RESULT_ROOTS = (
     "reports/",
     "Model_analysis/model_statistics/weight_hist_out/",
     "Rescale_optimizer/diagnose_certacc_output/",
+    "docs/assets/",
+    "docs/evidence/",
 )
 
-PRESERVED_RESULT_FILES = {
+FORBIDDEN_TRACKED_ARTIFACT_FILES = {
+    "commonsense_170k.json",
+    "pruning_search_log_eval.txt",
+    "rl_agent_checkpoint_BertForSequenceClassification.pt",
+}
+
+FORBIDDEN_WEIGHT_SUFFIXES = {
+    ".bin",
+    ".ckpt",
+    ".onnx",
+    ".pt",
+    ".pth",
+    ".safetensors",
+}
+
+ALLOWED_RESULT_FILES = {
+    "examples/representative_rl_log/README.md",
+    "examples/representative_rl_log/stage2_mrpc_600ep.jsonl",
     "glue_final_configs_best_genetic.json",
     "glue_final_configs_best_ppo.json",
 }
@@ -116,7 +135,13 @@ FORBIDDEN_RUNTIME_REFERENCES = (
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}
-NON_RUNTIME_SOURCE_ROOTS = ("tests/", "docs/", "agent_handoffs/")
+NON_RUNTIME_SOURCE_ROOTS = (
+    "agent_handoffs/",
+    "docs/",
+    "examples/",
+    "local_assets/",
+    "tests/",
+)
 
 
 def _git(*args: str) -> bytes:
@@ -136,17 +161,15 @@ def tracked_paths() -> tuple[str, ...]:
     )
 
 
-def is_preserved_result(path: str) -> bool:
-    return path in PRESERVED_RESULT_FILES or path.startswith(
-        PRESERVED_RESULT_ROOTS
-    )
+def is_allowed_result(path: str) -> bool:
+    return path in ALLOWED_RESULT_FILES
 
 
 def active_source_paths(paths: Iterable[str]) -> tuple[str, ...]:
     return tuple(
         path
         for path in paths
-        if not is_preserved_result(path)
+        if not is_allowed_result(path)
         and path != "scripts/production_surface_guard.py"
         and not path.startswith(NON_RUNTIME_SOURCE_ROOTS)
         and Path(path).suffix in ACTIVE_SUFFIXES
@@ -169,10 +192,17 @@ def audit() -> dict[str, object]:
         for path in paths
         if any(path.startswith(prefix) for prefix in FORBIDDEN_RUNTIME_PREFIXES)
     ))
+    tracked_artifact_paths = sorted(
+        path
+        for path in paths
+        if path in FORBIDDEN_TRACKED_ARTIFACT_FILES
+        or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
+        or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+    )
     backup_paths = sorted(
         path
         for path in paths
-        if not is_preserved_result(path)
+        if not is_allowed_result(path)
         and (".bak" in path or "legacy_results" in path)
     )
     reference_hits: list[dict[str, str]] = []
@@ -182,8 +212,9 @@ def audit() -> dict[str, object]:
             if token in source:
                 reference_hits.append({"path": path, "token": token})
     return {
-        "ok": not forbidden_paths and not backup_paths and not reference_hits,
+        "ok": not forbidden_paths and not tracked_artifact_paths and not backup_paths and not reference_hits,
         "forbidden_paths": forbidden_paths,
+        "tracked_artifact_paths": tracked_artifact_paths,
         "backup_paths": backup_paths,
         "reference_hits": reference_hits,
     }
@@ -197,7 +228,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        for key in ("forbidden_paths", "backup_paths", "reference_hits"):
+        for key in ("forbidden_paths", "tracked_artifact_paths", "backup_paths", "reference_hits"):
             values = result[key]
             if values:
                 print(f"{key}:")

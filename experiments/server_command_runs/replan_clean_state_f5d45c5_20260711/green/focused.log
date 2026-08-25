@@ -1,6 +1,0 @@
-test_replan_session_skips_redundant_clean_state_restore (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.011s
-
-OK

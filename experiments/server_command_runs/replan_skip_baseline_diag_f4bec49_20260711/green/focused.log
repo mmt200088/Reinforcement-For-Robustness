@@ -1,6 +1,0 @@
-test_only_full_replan_requests_baseline_delta_diagnostics (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.011s
-
-OK

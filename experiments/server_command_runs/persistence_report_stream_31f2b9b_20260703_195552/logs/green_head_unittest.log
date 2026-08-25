@@ -1,6 +1,0 @@
-test_persistence_report_writers_stream_line_outputs (tests.test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_persistence_report_writers_stream_line_outputs) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.021s
-
-OK

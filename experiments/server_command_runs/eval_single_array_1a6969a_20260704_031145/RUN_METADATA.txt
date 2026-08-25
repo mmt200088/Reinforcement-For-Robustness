@@ -1,6 +1,0 @@
-source_commit=1a6969a
-base_commit=5616253
-red_run=/hy-tmp/rfr_eval_single_array_red2_5616253_20260704_031130
-green_run=/hy-tmp/rfr_eval_single_array_green2_5616253_20260704_031145
-red_command=python -m unittest tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_finalize_probe_trial_metrics_reuses_single_packed_arrays -v
-green_commands=python -m py_compile blb_stage2_rl/eval_metrics.py; python -m unittest tests.test_blb_eval_metrics_shared -v; source guard for _flatten_probe_arrays single-array fast path

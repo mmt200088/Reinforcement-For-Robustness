@@ -1,6 +1,0 @@
-test_compact_json_streams_dict_items_without_full_list_copy (tests.test_rescale_replan_what_if.ReplanWhatIfJsonTest.test_compact_json_streams_dict_items_without_full_list_copy) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.034s
-
-OK

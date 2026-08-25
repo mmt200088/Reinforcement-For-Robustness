@@ -66,6 +66,7 @@ extend-exclude = [
     "Model_analysis/model_statistics/weight_hist_out",
     "Rescale_optimizer/diagnose_certacc_output",
     "Rescale_optimizer/configs",
+    "local_assets",
 ]
 
 [tool.ruff.lint]

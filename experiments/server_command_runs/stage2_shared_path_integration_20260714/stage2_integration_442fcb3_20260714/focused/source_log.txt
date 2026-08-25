@@ -1,7 +1,0 @@
-commit 442fcb307cf0f74710474aaa4bbc834fab42f50c
-Author:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
-AuthorDate: Tue Jul 14 00:17:08 2026 +0800
-Commit:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
-CommitDate: Tue Jul 14 00:17:08 2026 +0800
-
-    perf: restore shared Stage-2 evaluation paths

@@ -1,2 +1,0 @@
-RESULT_GATE_PASS
-groups=2 repeat=5 probe_size=408 aggregation_exact=true invalid=false fusion_totals=0,24

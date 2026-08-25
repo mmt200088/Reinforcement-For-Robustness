@@ -1,8 +1,0 @@
-PY_COMPILE_RC=0
-test_results_plot_scans_candidate_rows_once (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_results_plot_scans_candidate_rows_once) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 1.837s
-
-OK
-TEST_RC=0

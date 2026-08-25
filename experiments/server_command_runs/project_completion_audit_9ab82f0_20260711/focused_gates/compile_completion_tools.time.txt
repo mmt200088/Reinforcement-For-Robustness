@@ -1,1 +1,0 @@
-elapsed_s=0.01 user_s=0.01 sys_s=0.00 max_rss_kb=10240

@@ -8,7 +8,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-PRESERVED_RESULT_ROOTS = (
+FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
     "server_backups/",
     "rl_training_data_points/",
     "Parting Chapter/",
@@ -23,7 +23,31 @@ PRESERVED_RESULT_ROOTS = (
     "reports/",
     "Model_analysis/model_statistics/weight_hist_out/",
     "Rescale_optimizer/diagnose_certacc_output/",
+    "docs/assets/",
+    "docs/evidence/",
 )
+
+FORBIDDEN_TRACKED_ARTIFACT_FILES = {
+    "commonsense_170k.json",
+    "pruning_search_log_eval.txt",
+    "rl_agent_checkpoint_BertForSequenceClassification.pt",
+}
+
+FORBIDDEN_WEIGHT_SUFFIXES = {
+    ".bin",
+    ".ckpt",
+    ".onnx",
+    ".pt",
+    ".pth",
+    ".safetensors",
+}
+
+ALLOWED_RESULT_FILES = {
+    "examples/representative_rl_log/README.md",
+    "examples/representative_rl_log/stage2_mrpc_600ep.jsonl",
+    "glue_final_configs_best_genetic.json",
+    "glue_final_configs_best_ppo.json",
+}
 
 FORBIDDEN_RUNTIME_PATHS = {
     "noise_rl_module_v2.py",
@@ -123,18 +147,15 @@ def tracked_paths() -> tuple[str, ...]:
     )
 
 
-def is_preserved_result(path: str) -> bool:
-    return path in {
-        "glue_final_configs_best_genetic.json",
-        "glue_final_configs_best_ppo.json",
-    } or path.startswith(PRESERVED_RESULT_ROOTS)
+def is_allowed_result(path: str) -> bool:
+    return path in ALLOWED_RESULT_FILES
 
 
 def active_source_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
         path
         for path in paths
-        if not is_preserved_result(path)
+        if not is_allowed_result(path)
         and path != "scripts/production_surface_guard.py"
         and not path.startswith(("tests/", "docs/", "agent_handoffs/"))
         and Path(path).suffix in ACTIVE_SUFFIXES
@@ -174,10 +195,31 @@ class ProductionSurfaceTests(unittest.TestCase):
         offenders = [
             path
             for path in tracked_paths()
-            if not is_preserved_result(path)
+            if not is_allowed_result(path)
             and (".bak" in path or "legacy_results" in path)
         ]
         self.assertEqual(sorted(offenders), [])
+
+    def test_generated_artifacts_are_not_tracked(self):
+        offenders = [
+            path
+            for path in tracked_paths()
+            if path in FORBIDDEN_TRACKED_ARTIFACT_FILES
+            or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
+            or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+        ]
+        self.assertEqual(sorted(offenders), [])
+
+    def test_required_compact_results_are_tracked(self):
+        paths = set(tracked_paths())
+        self.assertTrue(ALLOWED_RESULT_FILES.issubset(paths))
+
+    def test_representative_log_is_bounded(self):
+        log_path = REPO_ROOT / "examples/representative_rl_log/stage2_mrpc_600ep.jsonl"
+        self.assertGreaterEqual(log_path.stat().st_size, 5 * 1024 * 1024)
+        self.assertLessEqual(log_path.stat().st_size, 10 * 1024 * 1024)
+        with log_path.open("rb") as handle:
+            self.assertEqual(sum(1 for _ in handle), 600)
 
     def test_obsolete_runtime_references_are_absent(self):
         offenders: list[tuple[str, str]] = []

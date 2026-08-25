@@ -1,7 +1,0 @@
-source_commit=643ae60
-base_commit=3f3db4f
-red_run=/hy-tmp/rfr_jsonl_resolve_red_3f3db4f_20260704_043430
-green_run=/hy-tmp/rfr_jsonl_resolve_green_3f3db4f_20260704_034331
-red_command=python -m unittest tests.test_jsonl_utils.JsonlUtilsTest.test_iter_jsonl_records_resolves_path_once -v
-green_commands=python -m py_compile jsonl_utils.py; python -m unittest tests.test_jsonl_utils -v; source guard for resolved JSONL open path
-purpose=verify jsonl_utils.iter_jsonl_records resolves .jsonl/.jsonl.gz path once and opens the resolved path directly

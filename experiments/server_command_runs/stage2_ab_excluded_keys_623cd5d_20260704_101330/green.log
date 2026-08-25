@@ -1,6 +1,0 @@
-test_compare_rows_materializes_excluded_keys_once (tests.test_stage2_ngpu_ab_compare.Stage2NgpuCompareTests.test_compare_rows_materializes_excluded_keys_once) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.000s
-
-OK

@@ -1,9 +1,0 @@
-==== [gate] 判读 ====
-[gate][FAIL] rollout_sig 不一致或为空 → 看 sig_diff.txt
-[gate] episodes.jsonl 数值逐项对比: FAIL（存在差异）  n=300/300
-  first diff @ 13 (13, -0.43883245037783425, 1.7741051608460672, 3, 0.33988943696022034, 0.01673804030239324, 0.86953125, 0.86953125, 16, 10697) vs (13, -0.43911799694174003, 1.7738196142821614, 3, 0.33988943696022034, 0.01673804030239324, 0.86953125, 0.86953125, 16, 10697)
-[gate] forced_fusion_probe episodes in gate run: []
-[gate] probe presence/rotation/fc check: FAIL
-[gate][FAIL] fusion 探针未按计划出现
-1-GPU : 783 ep/h (1380s)
-5-GPU : 2842 ep/h (380s)  speedup=3.63x (ideal 5x)

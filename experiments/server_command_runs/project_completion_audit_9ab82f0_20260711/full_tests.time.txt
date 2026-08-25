@@ -1,2 +1,0 @@
-Command exited with non-zero status 1
-elapsed_s=18.71 user_s=78.22 sys_s=15.00 max_rss_kb=1385404

@@ -83,8 +83,18 @@ Rescale materialization path.
 - Stage 1: `Parting Chapter/stage1/<model task>/`
 - Stage 2: `Parting Chapter/persistent/rl/<model>/<task>/<constraints>/`
 - Comparators: `Parting Chapter/persistent/<algorithm>/...`
-- Structured training data: `rl_training_data_points/`
+- Structured records: `rl_training_data_points/`
 - Paean final evaluation: `Paean/outputs/`
+
+Generated outputs are intentionally ignored by Git. Historical training
+artifacts are stored on `codex/archive-training-artifacts-20260825`; unrelated
+experiments and generated reports are on
+`codex/experiment-unrelated-artifacts-20260825`. The repository keeps the final
+configuration JSON files and one compact example under
+`examples/representative_rl_log/`.
+
+Place externally supplied model weights in `local_assets/models/` and datasets
+in `local_assets/datasets/`. Their contents remain local and are never tracked.
 
 Use `bash llama_7B_LayerImportance.sh --list-presets` to list available
 production presets.

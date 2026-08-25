@@ -1,3 +1,0 @@
-1165:        arr_cache: Dict[int, Optional[_np.ndarray]] = {}
-1171:            if key in arr_cache:
-1173:            values = _float_array(seq)

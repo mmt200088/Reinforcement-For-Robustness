@@ -1,7 +1,0 @@
-FusionCountMap.load('mrpc') OK
-block1_mrpc n_options 1 fusion_counts [0]
-block2_mrpc n_options 2 fusion_counts [0, 1]
-block4 n_options 2 fusion_counts [0, 1]
-block5_n1 n_options 2 fusion_counts [0, 1]
-block5_n2 n_options 2 fusion_counts [0, 1]
-block5_n4 n_options 2 fusion_counts [0, 1]

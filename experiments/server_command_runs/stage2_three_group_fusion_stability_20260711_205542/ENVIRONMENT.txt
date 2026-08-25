@@ -1,7 +1,0 @@
-CUDA_VISIBLE_DEVICES=0
-HF_HOME=/var/tmp/root-home/.cache/huggingface
-TRANSFORMERS_CACHE=/var/tmp/root-home/.cache/huggingface/hub
-HF_DATASETS_CACHE=/var/tmp/root-home/.cache/huggingface/datasets
-HF_ENDPOINT=https://hf-mirror.com
-HF_HUB_DISABLE_XET=1
-TOKENIZERS_PARALLELISM=false

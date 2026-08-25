@@ -1,9 +1,0 @@
-[glue_dataset_local_route]
-time_utc=2026-05-17T15:29:21+00:00
-task=mrpc
-route=local_saved_to_disk
-path=/var/tmp/root-home/datasets/glue_local/mrpc
-detail=
-primary_loader=load_dataset('nyu-mll/glue', task)
-primary_error=RuntimeError: synthetic primary failure for local fallback smoke
-

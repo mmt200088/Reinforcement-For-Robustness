@@ -1,1 +1,0 @@
-grep -F no hot-path gather-list calls

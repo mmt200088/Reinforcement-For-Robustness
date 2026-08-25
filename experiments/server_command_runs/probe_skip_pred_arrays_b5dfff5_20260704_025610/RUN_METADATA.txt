@@ -1,6 +1,0 @@
-source_commit=b5dfff5
-base_commit=5804a7f
-red_run=/hy-tmp/rfr_probe_skip_pred_arrays_red_5804a7f_20260704_025520
-green_run=/hy-tmp/rfr_probe_skip_pred_arrays_green_5804a7f_20260704_025610
-red_command=python -m unittest tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles -v
-green_commands=python -m py_compile blb_stage2_rl/inference_eval.py; python -m unittest tests.test_blb_inference_eval_shared -v; source guard for need_prediction_arrays gating pred/label tensor retention and numpy transfer

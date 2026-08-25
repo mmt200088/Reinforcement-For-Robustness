@@ -1,6 +1,0 @@
-test_json_formatter_reuses_encoder_per_record (tests.test_logging_helpers_static.LoggingHelpersStaticTest.test_json_formatter_reuses_encoder_per_record) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.000s
-
-OK

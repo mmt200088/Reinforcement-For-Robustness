@@ -1,5 +1,0 @@
-source_commit=408da9e684d7dfa36124ef6b2db28de806ad2e7f
-tests_rc=1
-ERROR: paired behavior test: PolynomialGELU had no _poly_pair method
-FAIL: source gate: _GELU_PAIRED_POLY_MIN_NUMEL and gated paired path were absent
-Ran 2 tests; FAILED (failures=1, errors=1)

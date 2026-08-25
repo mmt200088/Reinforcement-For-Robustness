@@ -1,2 +1,0 @@
-PID=37882  run_dir=Parting Chapter/stage2/bert base mrpc  started=2026-06-12T01:02:15+08:00
-[60k] training process exited at 2026-06-12T15:03:51+08:00

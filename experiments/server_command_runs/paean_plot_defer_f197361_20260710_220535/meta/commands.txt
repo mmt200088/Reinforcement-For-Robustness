@@ -1,4 +1,0 @@
-BASELINE: five direct Paean result-plot plus scatter renders over two accepted MRPC candidates
-RED: two focused deferred-rendering contract tests at 4b08e19
-GREEN: py_compile plus seven related unittest modules at f197361, 60 tests
-E2E: two MRPC fixed actions, repeat=1, batch_size=128, cost-match-count=0

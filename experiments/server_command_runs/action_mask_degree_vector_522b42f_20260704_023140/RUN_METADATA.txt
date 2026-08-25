@@ -1,6 +1,0 @@
-source_commit=522b42f
-base_commit=6ae92f1
-red_run=/hy-tmp/rfr_action_mask_degree_vector_red2_6ae92f1_20260704_023035
-green_run=/hy-tmp/rfr_action_mask_degree_vector_green2_6ae92f1_20260704_023140
-red_command=python -m unittest tests.test_sequential_smoke.ForbiddenActionMaskTest.test_degree_vector_accepts_ndarray_without_list_materialization -v
-green_commands=python -m py_compile blb_stage2_rl/action_mask.py; python -m unittest tests.test_sequential_smoke.ForbiddenActionMaskTest.test_degree_vector_accepts_ndarray_without_list_materialization tests.test_sequential_smoke.ForbiddenActionMaskTest.test_roundtrip_via_minimal_import_shim -v; source guard for ndarray branch

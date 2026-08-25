@@ -1,1 +1,0 @@
-8308bbdb (grafted, HEAD) test: align Stage-2 integration fixtures

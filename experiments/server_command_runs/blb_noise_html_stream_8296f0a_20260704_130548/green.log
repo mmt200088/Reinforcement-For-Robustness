@@ -1,8 +1,0 @@
-test_html_reports_stream_parts_without_full_document_list (tests.test_blb_verify_noise_install.BLBVerifyNoiseInstallTest.test_html_reports_stream_parts_without_full_document_list) ... ok
-test_lookup_variance_uses_cached_table_shape (tests.test_blb_verify_noise_install.BLBVerifyNoiseInstallTest.test_lookup_variance_uses_cached_table_shape) ... ok
-test_noise_variance_table_is_cached_after_first_source_parse (tests.test_blb_verify_noise_install.BLBVerifyNoiseInstallTest.test_noise_variance_table_is_cached_after_first_source_parse) ... ok
-
-----------------------------------------------------------------------
-Ran 3 tests in 0.001s
-
-OK

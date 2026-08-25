@@ -1,8 +1,0 @@
-{
-  "zip_path": "D:\\Desktop\\隐私计算LLM\\Local_program\\reports\\blb_phase1b_optimizer_consistency_registry_mask_handoff_for_gpt55pro.zip",
-  "zip_sha256": "8b1dad0f984f417357fd2407c0b536ca61c7e8faf4a9d4f860510d33b5c3ff15",
-  "zip_size_bytes": 977688,
-  "file_count_from_manifest": 85,
-  "external_taskbook_included": true,
-  "external_taskbook_path": "D:\\Desktop\\google下载\\codex_phase1b_optimizer_consistency_registry_mask_taskbook_v1.md"
-}
