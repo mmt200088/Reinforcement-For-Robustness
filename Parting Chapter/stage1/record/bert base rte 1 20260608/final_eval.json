@@ -1,9 +1,0 @@
-{
-  "source": "training_best_validation_full",
-  "note": "basic single-eval snapshot (训练中记录的 validation_full 明文最优档); 重型同-cost 51 组对比见独立 final-eval 工具。",
-  "metric1": 0.7436823104693141,
-  "metric2": 0.7436823104693141,
-  "loss": 0.727777898311615,
-  "best_reward": 0.23846130414054859,
-  "best_cost": 51.5
-}

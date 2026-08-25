@@ -1,2 +1,0 @@
-{"created_at": "2026-08-01T13:08:23.313329+00:00", "cuda_verified_tokens": ["0", "2", "3", "4"], "cuda_visible_devices": ["GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3", "GPU-c87864a0-3df8-176b-5233-6af60ad11110", "GPU-9443792e-0956-5bec-eb86-adec16d63e66", "GPU-fe933141-2102-5a42-a198-230d8c55ac3b"], "event": "launch", "healthy_tokens": ["0", "2", "3", "4"], "logical_device_spec": "0,1,2,3", "quarantined_tokens": [], "restart_count": 0, "resume": false}
-{"created_at": "2026-08-01T13:08:28.805802+00:00", "event": "exit", "restart_count": 0, "return_code": 1}

@@ -1,327 +1,0 @@
-/usr/local/lib/python3.11/dist-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
-  warnings.warn(
-Using the latest cached version of the dataset since nyu-mll/glue couldn't be found on the Hugging Face Hub (offline mode is enabled).
-Found the latest cached dataset configuration 'sst2' at /root/.cache/huggingface/datasets/nyu-mll___glue/sst2/0.0.0/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (last modified on Sat Aug  1 21:09:39 2026).
-[dataset] task='sst2' → route=hf_remote endpoint=nyu-mll/glue
-[PPO] ppo_update_interval=120 (batch=1440 steps, details chunk=360 episodes)
-Finetuning model with params:
-base_model: yoshitomo-matsubara/bert-large-uncased-sst2
-data_path: sst2
-output_dir: Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801
-batch_size: 64
-micro_batch_size: 64
-num_epochs: 1
-learning_rate: 0.0002
-rl_lr: 0.0001
-stage1_rl_lr: 0.0001
-stage2_rl_lr: 5e-05
-cutoff_len: 256
-val_set_size: 120
-use_gradient_checkpointing: False
-lora_r: 8
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_modules: None
-Wdecompose_target_modules: None
-bottleneck_size: 256
-non_linearity: tanh
-adapter_dropout: 0.0
-use_parallel_adapter: True
-use_adapterp: False
-train_on_inputs: True
-scaling: 1.0
-adapter_name: lora
-target_modules: ['q_proj', 'k_proj', 'v_proj', 'up_proj', 'down_proj']
-final_eval_config_source: search
-final_eval_config_path: glue_final_configs_best_ppo.json
-manual_stage1_gelu: 
-manual_stage1_softmax: 
-manual_stage2_noise: 
-stage1_rl_episodes: 51000
-stage1_entropy_stop_threshold: None
-stage2_rl_episodes: 50000
-stage1_rl_episodes_specified: False
-stage2_rl_episodes_specified: True
-skip_noise_rl: False
-final_eval_repeat_n: 50
-final_eval_preset: default
-final_eval_output_root: 
-final_eval_run_name: 
-final_eval_random_enabled: False
-final_eval_action_config: 
-final_eval_action_ranges: 
-final_eval_action_fixed: 
-final_eval_require_rescale_optimizer: False
-skip_stage1_rl: True
-skip_final_eval: True
-final_eval_only: False
-group_by_length: False
-wandb_project: 
-wandb_run_name: 
-wandb_watch: 
-wandb_log_model: 
-resume_from_checkpoint: None
-resume_run_dir: 
-stage2_rl_variant: blb_v3
-blb_v3_rescale_invoker_kind: in_process
-blb_v3_inproc_rescale_optimizer_root: Rescale_optimizer
-blb_v3_warmstart_anchor_episodes: None
-blb_v3_warmstart_neighbor_ramp_episodes: None
-blb_v3_warmstart_neighbor_max_mutations: None
-blb_v3_warmstart_neighbor_max_radius: None
-blb_v3_warmstart_neighbor_sampling: None
-blb_v3_guarded_radius2_enabled: None
-blb_v3_guarded_radius2_min_episode: None
-blb_v3_guarded_radius2_stall_window: None
-blb_v3_guarded_radius2_max_mutations: None
-blb_v3_guarded_radius2_episode_fraction: None
-blb_v3_guarded_radius2_cooldown_episodes: None
-blb_v3_static_invalid_level_mask_enabled: None
-blb_v3_warmstart_baseline_bias: None
-blb_v3_warmstart_bias_gain: None
-blb_v3_ent_coef: None
-blb_v3_ent_coef_anchor: None
-blb_v3_ent_coef_ramp_episodes: None
-blb_v3_action_mask_enabled: False
-blb_v3_action_mask_mode: none
-blb_v3_action_mask_file: 
-blb_v3_action_mask_baseline_logit_bonus: 0.0
-blb_v3_action_mask_source: 
-
-Auto-detected num_labels=2 for dataset 'sst2'
-BertForSequenceClassification(
-  (bert): BertModel(
-    (embeddings): BertEmbeddings(
-      (word_embeddings): Embedding(30522, 1024, padding_idx=0)
-      (position_embeddings): Embedding(512, 1024)
-      (token_type_embeddings): Embedding(2, 1024)
-      (LayerNorm): LayerNorm((1024,), eps=1e-12, elementwise_affine=True)
-      (dropout): Dropout(p=0.1, inplace=False)
-    )
-    (encoder): BertEncoder(
-      (layer): ModuleList(
-        (0-23): 24 x BertLayer(
-          (attention): BertAttention(
-            (self): BertSdpaSelfAttention(
-              (query): Linear(in_features=1024, out_features=1024, bias=True)
-              (key): Linear(in_features=1024, out_features=1024, bias=True)
-              (value): Linear(in_features=1024, out_features=1024, bias=True)
-              (dropout): Dropout(p=0.1, inplace=False)
-            )
-            (output): BertSelfOutput(
-              (dense): Linear(in_features=1024, out_features=1024, bias=True)
-              (LayerNorm): LayerNorm((1024,), eps=1e-12, elementwise_affine=True)
-              (dropout): Dropout(p=0.1, inplace=False)
-            )
-          )
-          (intermediate): BertIntermediate(
-            (dense): Linear(in_features=1024, out_features=4096, bias=True)
-            (intermediate_act_fn): GELUActivation()
-          )
-          (output): BertOutput(
-            (dense): Linear(in_features=4096, out_features=1024, bias=True)
-            (LayerNorm): LayerNorm((1024,), eps=1e-12, elementwise_affine=True)
-            (dropout): Dropout(p=0.1, inplace=False)
-          )
-        )
-      )
-    )
-    (pooler): BertPooler(
-      (dense): Linear(in_features=1024, out_features=1024, bias=True)
-      (activation): Tanh()
-    )
-  )
-  (dropout): Dropout(p=0.1, inplace=False)
-  (classifier): Linear(in_features=1024, out_features=2, bias=True)
-)
-Loading dataset: Dataset({
-    features: ['sentence', 'label', 'idx'],
-    num_rows: 872
-})
-Map:   0%|          | 0/67349 [00:00<?, ? examples/s]Map:   1%|          | 588/67349 [00:00<00:11, 5835.17 examples/s]Map:   2%|▏         | 1494/67349 [00:00<00:11, 5970.55 examples/s]Map:   3%|▎         | 2142/67349 [00:00<00:10, 6168.39 examples/s]Map:   4%|▍         | 2838/67349 [00:00<00:10, 6448.31 examples/s]Map:   6%|▌         | 3819/67349 [00:00<00:09, 6482.98 examples/s]Map:   7%|▋         | 4795/67349 [00:00<00:09, 6487.39 examples/s]Map:   8%|▊         | 5685/67349 [00:00<00:09, 6288.60 examples/s]Map:  10%|▉         | 6646/67349 [00:01<00:09, 6261.39 examples/s]Map:  11%|█         | 7508/67349 [00:01<00:09, 6090.56 examples/s]Map:  13%|█▎        | 8461/67349 [00:01<00:09, 6170.58 examples/s]Map:  14%|█▍        | 9437/67349 [00:01<00:09, 6272.92 examples/s]Map:  15%|█▌        | 10397/67349 [00:01<00:09, 6308.56 examples/s]Map:  17%|█▋        | 11242/67349 [00:01<00:09, 6101.64 examples/s]Map:  18%|█▊        | 11925/67349 [00:01<00:08, 6263.45 examples/s]Map:  19%|█▉        | 12877/67349 [00:02<00:08, 6288.11 examples/s]Map:  20%|██        | 13768/67349 [00:02<00:08, 6176.31 examples/s]Map:  22%|██▏       | 14615/67349 [00:02<00:08, 6004.02 examples/s]Map:  23%|██▎       | 15259/67349 [00:02<00:08, 6101.74 examples/s]Map:  24%|██▎       | 15940/67349 [00:02<00:08, 6274.14 examples/s]Map:  25%|██▍       | 16575/67349 [00:02<00:08, 6292.03 examples/s]Map:  26%|██▌       | 17562/67349 [00:02<00:07, 6394.32 examples/s]Map:  27%|██▋       | 18345/67349 [00:03<00:09, 4922.88 examples/s]Map:  28%|██▊       | 19000/67349 [00:03<00:09, 5226.90 examples/s]Map:  29%|██▉       | 19700/67349 [00:03<00:08, 5630.55 examples/s]Map:  30%|███       | 20345/67349 [00:03<00:08, 5749.21 examples/s]Map:  31%|███       | 21000/67349 [00:03<00:07, 5916.50 examples/s]Map:  32%|███▏      | 21683/67349 [00:03<00:07, 6159.83 examples/s]Map:  34%|███▎      | 22614/67349 [00:03<00:07, 6172.32 examples/s]Map:  35%|███▌      | 23587/67349 [00:03<00:06, 6276.92 examples/s]Map:  36%|███▋      | 24460/67349 [00:04<00:07, 6124.35 examples/s]Map:  38%|███▊      | 25329/67349 [00:04<00:06, 6015.48 examples/s]Map:  39%|███▊      | 26000/67349 [00:04<00:06, 6094.96 examples/s]Map:  40%|███▉      | 26646/67349 [00:04<00:06, 6183.76 examples/s]Map:  41%|████      | 27567/67349 [00:04<00:06, 6165.85 examples/s]Map:  42%|████▏     | 28522/67349 [00:04<00:06, 6228.47 examples/s]Map:  44%|████▎     | 29391/67349 [00:04<00:06, 6083.89 examples/s]Map:  45%|████▌     | 30314/67349 [00:04<00:06, 6000.86 examples/s]Map:  46%|████▌     | 30933/67349 [00:05<00:06, 6041.70 examples/s]Map:  47%|████▋     | 31838/67349 [00:05<00:05, 6036.01 examples/s]Map:  48%|████▊     | 32470/67349 [00:05<00:05, 6100.73 examples/s]Map:  50%|████▉     | 33377/67349 [00:05<00:05, 6078.83 examples/s]Map:  50%|█████     | 34000/67349 [00:05<00:05, 6061.09 examples/s]Map:  52%|█████▏    | 34699/67349 [00:05<00:05, 6295.43 examples/s]Map:  52%|█████▏    | 35343/67349 [00:05<00:05, 6291.78 examples/s]Map:  53%|█████▎    | 36000/67349 [00:05<00:05, 6263.25 examples/s]Map:  54%|█████▍    | 36688/67349 [00:05<00:04, 6434.95 examples/s]Map:  56%|█████▌    | 37660/67349 [00:06<00:04, 6328.85 examples/s]Map:  57%|█████▋    | 38552/67349 [00:06<00:04, 6192.31 examples/s]Map:  58%|█████▊    | 39330/67349 [00:06<00:06, 4234.92 examples/s]Map:  59%|█████▉    | 39961/67349 [00:06<00:05, 4617.19 examples/s]Map:  60%|██████    | 40547/67349 [00:06<00:05, 4874.64 examples/s]Map:  61%|██████▏   | 41362/67349 [00:06<00:05, 5045.04 examples/s]Map:  62%|██████▏   | 41964/67349 [00:07<00:04, 5263.56 examples/s]Map:  63%|██████▎   | 42599/67349 [00:07<00:04, 5527.46 examples/s]Map:  64%|██████▍   | 43201/67349 [00:07<00:04, 5651.43 examples/s]Map:  65%|██████▌   | 43841/67349 [00:07<00:04, 5850.85 examples/s]Map:  66%|██████▌   | 44611/67349 [00:07<00:04, 5565.07 examples/s]Map:  67%|██████▋   | 45220/67349 [00:07<00:03, 5696.10 examples/s]Map:  68%|██████▊   | 45902/67349 [00:07<00:03, 5995.85 examples/s]Map:  70%|██████▉   | 46811/67349 [00:07<00:03, 6018.78 examples/s]Map:  71%|███████   | 47705/67349 [00:08<00:03, 5997.29 examples/s]Map:  72%|███████▏  | 48328/67349 [00:08<00:03, 6028.00 examples/s]Map:  73%|███████▎  | 48947/67349 [00:08<00:03, 6066.54 examples/s]Map:  74%|███████▍  | 49867/67349 [00:08<00:02, 6088.50 examples/s]Map:  75%|███████▌  | 50790/67349 [00:08<00:02, 6106.64 examples/s]Map:  77%|███████▋  | 51717/67349 [00:08<00:02, 6128.05 examples/s]Map:  78%|███████▊  | 52351/67349 [00:08<00:02, 6174.07 examples/s]Map:  79%|███████▊  | 52987/67349 [00:08<00:02, 6217.11 examples/s]Map:  80%|████████  | 53909/67349 [00:09<00:02, 6188.84 examples/s]Map:  81%|████████▏ | 54872/67349 [00:09<00:01, 6263.30 examples/s]Map:  82%|████████▏ | 55504/67349 [00:09<00:01, 6274.43 examples/s]Map:  83%|████████▎ | 56229/67349 [00:09<00:02, 4515.24 examples/s]Map:  84%|████████▍ | 56889/67349 [00:09<00:02, 4934.17 examples/s]Map:  85%|████████▌ | 57477/67349 [00:09<00:01, 5145.01 examples/s]Map:  86%|████████▌ | 58048/67349 [00:09<00:01, 5280.11 examples/s]Map:  87%|████████▋ | 58673/67349 [00:09<00:01, 5527.92 examples/s]Map:  88%|████████▊ | 59264/67349 [00:10<00:01, 5628.39 examples/s]Map:  89%|████████▉ | 59869/67349 [00:10<00:01, 5741.92 examples/s]Map:  90%|█████████ | 60732/67349 [00:10<00:01, 5740.43 examples/s]Map:  91%|█████████ | 61348/67349 [00:10<00:01, 5847.20 examples/s]Map:  92%|█████████▏| 62000/67349 [00:10<00:00, 5926.10 examples/s]Map:  93%|█████████▎| 62637/67349 [00:10<00:00, 6047.32 examples/s]Map:  94%|█████████▍| 63481/67349 [00:10<00:00, 5884.27 examples/s]Map:  96%|█████████▌| 64381/67349 [00:10<00:00, 5920.91 examples/s]Map:  97%|█████████▋| 65000/67349 [00:11<00:00, 5906.57 examples/s]Map:  97%|█████████▋| 65596/67349 [00:11<00:00, 5917.68 examples/s]Map:  98%|█████████▊| 66208/67349 [00:11<00:00, 5969.36 examples/s]Map:  99%|█████████▉| 66870/67349 [00:11<00:00, 6148.44 examples/s]Map: 100%|██████████| 67349/67349 [00:11<00:00, 5897.78 examples/s]
-Map:   0%|          | 0/872 [00:00<?, ? examples/s]Map:  63%|██████▎   | 550/872 [00:00<00:00, 5464.17 examples/s]Map: 100%|██████████| 872/872 [00:00<00:00, 4823.30 examples/s]
-/usr/local/lib/python3.11/dist-packages/transformers/training_args.py:1525: FutureWarning: `evaluation_strategy` is deprecated and will be removed in version 4.46 of 🤗 Transformers. Use `eval_strategy` instead
-  warnings.warn(
-I2a2654173700201162:4082132:4082132 [0] NCCL INFO cudaDriverVersion 13000
-I2a2654173700201162:4082132:4082132 [0] NCCL INFO Bootstrap: Using eth0:172.17.0.4<0>
-I2a2654173700201162:4082132:4082132 [0] NCCL INFO NCCL version 2.27.5+cuda12.9
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so. 
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Failed to open libibverbs.so[.1]
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO NET/Socket : Using [0]eth0:172.17.0.4<0>
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Initialized NET plugin Socket
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Assigned NET plugin Socket to comm
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Using network Socket
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Assigned NET plugin Socket to comm
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Using network Socket
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Assigned NET plugin Socket to comm
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Using network Socket
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Assigned NET plugin Socket to comm
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Using network Socket
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO ncclCommInitAll comm 0x197798a0 rank 1 nranks 4 cudaDev 1 nvmlDev 2 busId 61000 commId 0x1fe0fd1edbec2d07 - Init START
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO ncclCommInitAll comm 0x1999cca0 rank 3 nranks 4 cudaDev 3 nvmlDev 4 busId c1000 commId 0x1fe0fd1edbec2d07 - Init START
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO ncclCommInitAll comm 0x1966a3c0 rank 0 nranks 4 cudaDev 0 nvmlDev 0 busId 25000 commId 0x1fe0fd1edbec2d07 - Init START
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO ncclCommInitAll comm 0x1988b200 rank 2 nranks 4 cudaDev 2 nvmlDev 3 busId 81000 commId 0x1fe0fd1edbec2d07 - Init START
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO RAS client listening socket at ::1<28028>
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Bootstrap timings total 0.042392 (create 0.000055, send 0.000196, recv 0.000877, ring 0.000607, delay 0.000000)
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Bootstrap timings total 0.042331 (create 0.000087, send 0.000266, recv 0.000322, ring 0.000251, delay 0.000000)
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Bootstrap timings total 0.042237 (create 0.000103, send 0.000273, recv 0.041207, ring 0.000177, delay 0.000000)
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Bootstrap timings total 0.042269 (create 0.000084, send 0.000260, recv 0.000414, ring 0.000623, delay 0.000000)
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Setting affinity for GPU 0 to 0-47,96-143
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Setting affinity for GPU 2 to 0-47,96-143
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Setting affinity for GPU 4 to 48-95,144-191
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO NVLS multicast support is not available on dev 3 (NVLS_NCHANNELS 0)
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Setting affinity for GPU 3 to 48-95,144-191
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO NVLS multicast support is not available on dev 2 (NVLS_NCHANNELS 0)
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO comm 0x1988b200 rank 2 nRanks 4 nNodes 1 localRanks 4 localRank 2 MNNVL 0
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO comm 0x197798a0 rank 1 nRanks 4 nNodes 1 localRanks 4 localRank 1 MNNVL 0
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Trees [0] 3/-1/-1->2->1 [1] 3/-1/-1->2->1
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO P2P Chunksize set to 131072
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO comm 0x1999cca0 rank 3 nRanks 4 nNodes 1 localRanks 4 localRank 3 MNNVL 0
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO comm 0x1966a3c0 rank 0 nRanks 4 nNodes 1 localRanks 4 localRank 0 MNNVL 0
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Trees [0] 2/-1/-1->1->0 [1] 2/-1/-1->1->0
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO P2P Chunksize set to 131072
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Trees [0] -1/-1/-1->3->2 [1] -1/-1/-1->3->2
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO P2P Chunksize set to 131072
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Channel 00/02 : 0 1 2 3
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Channel 01/02 : 0 1 2 3
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO P2P Chunksize set to 131072
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
-I2a2654173700201162:4082132:4082406 [2] NCCL INFO [Proxy Service] Device 2 CPU core 56
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
-I2a2654173700201162:4082132:4082408 [2] NCCL INFO [Proxy Service UDS] Device 2 CPU core 72
-I2a2654173700201162:4082132:4082407 [1] NCCL INFO [Proxy Service] Device 1 CPU core 44
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 1
-I2a2654173700201162:4082132:4082410 [3] NCCL INFO [Proxy Service] Device 3 CPU core 156
-I2a2654173700201162:4082132:4082409 [1] NCCL INFO [Proxy Service UDS] Device 1 CPU core 16
-I2a2654173700201162:4082132:4082412 [0] NCCL INFO [Proxy Service] Device 0 CPU core 136
-I2a2654173700201162:4082132:4082411 [3] NCCL INFO [Proxy Service UDS] Device 3 CPU core 52
-I2a2654173700201162:4082132:4082413 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 132
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO CC Off, workFifoBytes 1048576
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so. Using internal tuner plugin.
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO ncclCommInitAll comm 0x1999cca0 rank 3 nranks 4 cudaDev 3 nvmlDev 4 busId c1000 commId 0x1fe0fd1edbec2d07 - Init COMPLETE
-I2a2654173700201162:4082132:4082403 [3] NCCL INFO Init timings - ncclCommInitAll: rank 3 nranks 4 total 0.57 (kernels 0.45, alloc 0.01, bootstrap 0.04, allgathers 0.00, topo 0.04, graphs 0.00, connections 0.02, rest 0.00)
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO ncclCommInitAll comm 0x197798a0 rank 1 nranks 4 cudaDev 1 nvmlDev 2 busId 61000 commId 0x1fe0fd1edbec2d07 - Init COMPLETE
-I2a2654173700201162:4082132:4082401 [1] NCCL INFO Init timings - ncclCommInitAll: rank 1 nranks 4 total 0.57 (kernels 0.45, alloc 0.01, bootstrap 0.04, allgathers 0.00, topo 0.04, graphs 0.00, connections 0.01, rest 0.01)
-I2a2654173700201162:4082132:4082400 [0] NCCL INFO ncclCommInitAll comm 0x1966a3c0 rank 0 nranks 4 cudaDev 0 nvmlDev 0 busId 25000 commId 0x1fe0fd1edbec2d07 - Init COMPLETE
-I2a2654173700201162:4082132:4082400/usr/local/lib/python3.11/dist-packages/torch/nn/parallel/_functions.py:71: UserWarning: Was asked to gather along dimension 0, but all input tensors were scalars; will instead unsqueeze and return a vector.
-  warnings.warn(
-After tokenize: {'sentence': 'it gets onto the screen just about as much of the novella as one could reasonably expect , and is engrossing and moving in its own right . ', 'label': 1, 'idx': 726, 'input_ids': [101, 2009, 4152, 3031, 1996, 3898, 2074, 2055, 2004, 2172, 1997, 1996, 20674, 2004, 2028, 2071, 16286, 5987, 1010, 1998, 2003, 25540, 25725, 2075, 1998, 3048, 1999, 2049, 2219, 2157, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
-After add label: {'sentence': 'it gets onto the screen just about as much of the novella as one could reasonably expect , and is engrossing and moving in its own right . ', 'labels': 1, 'idx': 726, 'input_ids': [101, 2009, 4152, 3031, 1996, 3898, 2074, 2055, 2004, 2172, 1997, 1996, 20674, 2004, 2028, 2071, 16286, 5987, 1010, 1998, 2003, 25540, 25725, 2075, 1998, 3048, 1999, 2049, 2219, 2157, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
-After format: Dataset({
-    features: ['sentence', 'labels', 'idx', 'input_ids', 'token_type_ids', 'attention_mask'],
-    num_rows: 872
-})
-Train data size: 67349
-Validation data size: 872
-Reinforcement Learning to evaluate layer sensitivity to approximation
-[信息] 数据集（Dataset）'sst2' 检测为 CLASSIFICATION 任务
-[信息] 使用指标（Using metrics）: Accuracy
-[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=872  （统一使用 validation_full，不再拆分 search/holdout/proxy）
-Model compile started
-Model compile finished
-Starting evaluation...
-Round 0 of evaluation
-{'labels': tensor(1), 'input_ids': tensor([  101,  2009,  4152,  3031,  1996,  3898,  2074,  2055,  2004,  2172,
-         1997,  1996, 20674,  2004,  2028,  2071, 16286,  5987,  1010,  1998,
-         2003, 25540, 25725,  2075,  1998,  3048,  1999,  2049,  2219,  2157,
-         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1])}
-{'labels': tensor(1), 'input_ids': tensor([  101,  2009,  4152,  3031,  1996,  3898,  2074,  2055,  2004,  2172,
-         1997,  1996, 20674,  2004,  2028,  2071, 16286,  5987,  1010,  1998,
-         2003, 25540, 25725,  2075,  1998,  3048,  1999,  2049,  2219,  2157,
-         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1])}
-  0%|          | 0/4 [00:00<?, ?it/s] 50%|█████     | 2/4 [00:01<00:01,  1.98it/s] 75%|███████▌  | 3/4 [00:02<00:00,  1.35it/s]100%|██████████| 4/4 [00:03<00:00,  1.17it/s]
-============================================================
-开始配置评估（STARTING CONFIGURATION EVALUATION）
-最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
-[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。
-============================================================
-
---- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
-[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。
-
-============================================================
-最终评估报告（FINAL EVALUATION REPORT）（验证集）
-============================================================
-[Info] Stage-2 固定 GELU/Softmax 来源：Stage-1 config (manual; softmax fixed deg6) (source=manual)
-  Stage-2 GELU   : [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 4, 1, 1, 4, 1, 1, 1]
-  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
-
-════════════════════════════════════════════════════════════════════
-  阶段 5 · 二阶段噪声强化学习（BLB v3 · 24-step layerwise robust）
-════════════════════════════════════════════════════════════════════
-  * 模式（mode）：horizon=24 layerwise，max_step_dim=2
-  * 固定 GELU/Softmax 来源（source）：manual    标签（label）：Stage-1 config (manual; softmax fixed deg6)
-  * GELU 离散阶数向量:   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 4, 1, 1, 4, 1, 1, 1]
-  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
-  * 训练概览：profile='sst2_large'    total_episodes=50000    PPO 更新间隔（rollout_size）= 120    seed=42
-  * BLB 持久化目录：Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/progress
-  * 详细诊断：Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
-  * 奖励暴跌警告：Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
-已替换 21 层的GELU函数（GELU function）
-已替换 1 层的GELU函数（GELU function）
-已替换 2 层的GELU函数（GELU function）
-已替换 24 层的Softmax函数（Softmax function）
-  * 评估子集：batch 数 = 4
-  * Rescale_optimizer 根目录：Rescale_optimizer
-  * Rescale optimizer 模式：in_process_real
-  * calibrated static_skeletons baseline loaded from /hy-tmp/RFR_sst2_stage2_1b34e949/Rescale_optimizer/configs/sst2_large/static_skeletons_sst2_large.json (sha256=817f3e4e3b43724c1cc4372fccda57df84d08e6d9635c1ad5aa88b989026fcad)
-  [multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]
-  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
-  [multi-gpu] [probe-runner] backend=process
-  [multi-gpu] [probe-runner] worker 1: cuda:1 (persistent process pid=4082531)
-  [multi-gpu] [probe-runner] worker 2: cuda:2 (persistent process pid=4082661)
-  [multi-gpu] [probe-runner] worker 3: cuda:3 (persistent process pid=4082793)
-  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
-  * F4 authoritative validation: split=validation_full examples=872 batches=14 devices=[0, 1, 2, 3]
-  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.9122  m2(noisy)=0.9122  loss_mean(noisy)=0.2831  std(loss/m1/m2)=0.0051/0.0041/0.0041
-  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.9113  m2_threshold=0.9113  loss_threshold=0.2834  std_thresholds(loss/m1/m2)=0.0102/0.0083/0.0083  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
-  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
-  * Multi-GPU BLB install cache：enabled (devices=[0, 1, 2, 3]; wrappers/hooks stay installed and cfgs update in-place)
-
-  【基线信号（baseline cost / reward / metrics）】
-  ────
-  · 成本基线（baseline cost）：total_bits=31331, fusion=0, avg_k=13.00
-  · 指标基线（baseline metrics）：loss=0.2831, m1=0.9122, m2=0.9122
-  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.9122
-  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.9113, m2_threshold=0.9113, loss_threshold=0.2834, std_thresholds(loss/m1/m2)=0.0102/0.0083/0.0083
-  · static_skeletons archive：/hy-tmp/RFR_sst2_stage2_1b34e949/Rescale_optimizer/configs/sst2_large/static_skeletons_sst2_large.json
-  ────
-  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
-  * Fusion-count action ENABLED：map graphs=5, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
-  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,999, shared=676,032, actor_only=8,646, critic_only=8,321)
-  * [data-points] layerwise Stage-2 → /hy-tmp/RFR_sst2_stage2_1b34e949/rl_training_data_points/stage2/bert-large/sst2_large/Parting_Chapter_persistent_rl_bert-large_sst2_s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801__20260801T131315828231Z__pid4082132
-  * [graceful-stop] Ctrl+C or create Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
-  [graceful-stop] checkpoint saved at episode 35280 -> Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt; launch again with the same parameters to resume.
- [0] NCCL INFO Init timings - ncclCommInitAll: rank 0 nranks 4 total 0.57 (kernels 0.45, alloc 0.01, bootstrap 0.04, allgathers 0.00, topo 0.04, graphs 0.00, connections 0.02, rest 0.01)
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO ncclCommInitAll comm 0x1988b200 rank 2 nranks 4 cudaDev 2 nvmlDev 3 busId 81000 commId 0x1fe0fd1edbec2d07 - Init COMPLETE
-I2a2654173700201162:4082132:4082402 [2] NCCL INFO Init timings - ncclCommInitAll: rank 2 nranks 4 total 0.57 (kernels 0.45, alloc 0.01, bootstrap 0.04, allgathers 0.00, topo 0.04, graphs 0.00, connections 0.01, rest 0.01)
-I2a2654173700201162:4082132:4082415 [2] NCCL INFO Channel 00 : 2[3] -> 3[4] via SHM/direct/direct
-I2a2654173700201162:4082132:4082416 [1] NCCL INFO Channel 00 : 1[2] -> 2[3] via SHM/direct/direct
-I2a2654173700201162:4082132:4082417 [0] NCCL INFO Channel 00 : 0[0] -> 1[2] via SHM/direct/direct
-I2a2654173700201162:4082132:4082415 [2] NCCL INFO Channel 01 : 2[3] -> 3[4] via SHM/direct/direct
-I2a2654173700201162:4082132:4082414 [3] NCCL INFO Channel 00 : 3[4] -> 0[0] via SHM/direct/direct
-I2a2654173700201162:4082132:4082416 [1] NCCL INFO Channel 01 : 1[2] -> 2[3] via SHM/direct/direct
-I2a2654173700201162:4082132:4082417 [0] NCCL INFO Channel 01 : 0[0] -> 1[2] via SHM/direct/direct
-I2a2654173700201162:4082132:4082414 [3] NCCL INFO Channel 01 : 3[4] -> 0[0] via SHM/direct/direct
-I2a2654173700201162:4082132:4082414 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
-I2a2654173700201162:4082132:4082415 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
-I2a2654173700201162:4082132:4082417 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
-I2a2654173700201162:4082132:4082416 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
-100%|██████████| 4/4 [26:34:02<00:00, 23910.71s/it]
