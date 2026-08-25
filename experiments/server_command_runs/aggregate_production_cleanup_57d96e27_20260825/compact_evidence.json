@@ -1,0 +1,28 @@
+{
+  "aggregate_source": {
+    "commit": "57d96e27a9b865b98b9d1d00bd7ea9054926c3a4",
+    "tree": "cc7d8e066a5b4c0818791f469af1f6cbaf6b218b"
+  },
+  "production_surface_guard": {
+    "pass": true
+  },
+  "pytest_gpu": {
+    "pass": true,
+    "passed": 1659,
+    "skipped": 3,
+    "subtests_passed": 267
+  },
+  "schema": "aggregate_production_cleanup_server_evidence_v1",
+  "source_delta": [
+    "agent_handoffs/tasks/production-code-cleanup-20260825.json"
+  ],
+  "task_result": {
+    "branch": "codex/result-production-code-cleanup-final-20260825",
+    "commit": "ac48b62cbccb9eb16185b17f802303a509c2ebdf"
+  },
+  "task_source": {
+    "commit": "15877d6ab94f07552da645c8d6ac916cfb0fee68",
+    "tree": "ed0d066e2a51678ea63fe44c4b4ff14ce76010b6"
+  },
+  "tracked_clean": true
+}
