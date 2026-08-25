@@ -2639,7 +2639,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
     def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
         source = Path("run_search.sh").read_text(encoding="utf-8")
         persistent_dir = source.index(
-            'RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/'
+            'RUN_ROOT="$PERSISTENT_ROOT/rl/$MODEL_TYPE/$DATASET/stage2/'
             '$CONSTRAINT_SLUG"'
         )
         lock = source.index('flock -n 9', persistent_dir)

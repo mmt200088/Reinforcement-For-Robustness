@@ -37,7 +37,9 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
         )
 
     def test_formal_mrpc_preset_pins_hml_action_and_equal_network_weights(self):
-        preset_path = _REPO_ROOT / "presets" / "bert-base-mrpc-stage2-rl.conf"
+        preset_path = (
+            _REPO_ROOT / "configs/presets/bert-base-mrpc-stage2-rl.conf"
+        )
         text = preset_path.read_text(encoding="utf-8")
 
         self.assertIn("--stage2-stability-multiplier 2.0", text)

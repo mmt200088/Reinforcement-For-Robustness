@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = REPO_ROOT / "scripts" / "blb_make_run_manifest.py"
+MANIFEST_PATH = REPO_ROOT / "src/rfr/cli/make_run_manifest.py"
 
 
 def _load_manifest_module():

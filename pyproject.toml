@@ -64,9 +64,7 @@ extend-exclude = [
     "gelu_analysis",
     "glue_submission",
     "reports",
-    "Model_analysis/model_statistics/weight_hist_out",
-    "Rescale_optimizer/diagnose_certacc_output",
-    "Rescale_optimizer/configs",
+    "configs/preparation/rescale",
     "local_assets",
 ]
 
@@ -86,11 +84,11 @@ allowed-confusables = ["’", "‘"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F401", "F841", "E402"]
-"layer_importance_evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
+"src/rfr/search/common/evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
 "src/rfr/cli/run.py" = ["F841", "E402"]
 ".github/*" = ["ALL"]
 "scripts/*" = ["F401", "F841"]
-"Rescale_optimizer/**" = ["ALL"]
+"src/rfr/preparation/rescale/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["rfr"]

@@ -23,7 +23,7 @@ class Stage1LauncherDefaultTest(unittest.TestCase):
         source = LAUNCHER.read_text(encoding="utf-8")
 
         self.assertIn('BATCH_SIZE="128"', source)
-        for preset in (ROOT / "presets").glob("*-stage1-rl.conf"):
+        for preset in (ROOT / "configs/presets").glob("*-stage1-rl.conf"):
             self.assertIn("--batch-size 512", preset.read_text(encoding="utf-8"))
 
 

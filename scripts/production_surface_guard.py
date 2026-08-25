@@ -59,6 +59,17 @@ ALLOWED_RESULT_FILES = {
 }
 
 FORBIDDEN_RUNTIME_PATHS = {
+    "llama_7B_LayerImportance.sh",
+    "rl_tune.py",
+    "layer_importance_evaluator.py",
+    "function_handler.py",
+    "blb_rl_bridge.py",
+    "device_utils.py",
+    "elastic_gpu.py",
+    "noise_tables.py",
+    "noise_targets_registry.py",
+    "rl_data_points.py",
+    "rl_local_optimum.py",
     "noise_rl_module_v2.py",
     "general_policy_module.py",
     "rl_tune_general.py",
@@ -98,8 +109,35 @@ FORBIDDEN_RUNTIME_PATHS = {
 }
 
 FORBIDDEN_RUNTIME_PREFIXES = (
+    "Model_analysis/",
+    "Paean/",
+    "Rescale_optimizer/",
+    "blb_stage2_rl/",
+    "config/",
+    "presets/",
     "Rescale_optimizer/replan_configs/",
+    "stage1_rl/",
+    "tools/",
 )
+
+REQUIRED_RUNTIME_PATHS = {
+    "run_search.sh",
+    "src/rfr/cli/run.py",
+    "src/rfr/cli/evaluate.py",
+    "src/rfr/preparation/data/protocol.py",
+    "src/rfr/preparation/fusion/count_map.py",
+    "src/rfr/preparation/rescale/optimizer/replan_interface.py",
+    "src/rfr/search/rl/stage1/parallel_runner.py",
+    "src/rfr/search/rl/stage2/training.py",
+    "src/rfr/search/comparators/bo_rf/stage1.py",
+    "src/rfr/search/comparators/bo_rf/stage2.py",
+    "src/rfr/search/comparators/greedy/stage1.py",
+    "src/rfr/search/comparators/greedy/stage2.py",
+    "src/rfr/search/comparators/coinn_ga/stage1.py",
+    "src/rfr/search/comparators/coinn_ga/stage2.py",
+    "src/rfr/evaluation/action_eval.py",
+    "outputs/README.md",
+}
 
 FORBIDDEN_RUNTIME_REFERENCES = (
     "legacy_v2",
@@ -193,6 +231,7 @@ def tracked_text(path: str) -> str:
 def audit() -> dict[str, object]:
     paths = tracked_paths()
     path_set = set(paths)
+    missing_required_paths = sorted(REQUIRED_RUNTIME_PATHS - path_set)
     forbidden_paths = sorted(path_set & FORBIDDEN_RUNTIME_PATHS)
     forbidden_paths.extend(sorted(
         path
@@ -202,9 +241,12 @@ def audit() -> dict[str, object]:
     tracked_artifact_paths = sorted(
         path
         for path in paths
-        if path in FORBIDDEN_TRACKED_ARTIFACT_FILES
-        or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
-        or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+        if not is_allowed_result(path)
+        and (
+            path in FORBIDDEN_TRACKED_ARTIFACT_FILES
+            or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
+            or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+        )
     )
     backup_paths = sorted(
         path
@@ -219,7 +261,14 @@ def audit() -> dict[str, object]:
             if token in source:
                 reference_hits.append({"path": path, "token": token})
     return {
-        "ok": not forbidden_paths and not tracked_artifact_paths and not backup_paths and not reference_hits,
+        "ok": (
+            not missing_required_paths
+            and not forbidden_paths
+            and not tracked_artifact_paths
+            and not backup_paths
+            and not reference_hits
+        ),
+        "missing_required_paths": missing_required_paths,
         "forbidden_paths": forbidden_paths,
         "tracked_artifact_paths": tracked_artifact_paths,
         "backup_paths": backup_paths,
@@ -235,7 +284,13 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        for key in ("forbidden_paths", "tracked_artifact_paths", "backup_paths", "reference_hits"):
+        for key in (
+            "missing_required_paths",
+            "forbidden_paths",
+            "tracked_artifact_paths",
+            "backup_paths",
+            "reference_hits",
+        ):
             values = result[key]
             if values:
                 print(f"{key}:")

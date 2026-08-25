@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import unittest
 
+from scripts import production_surface_guard
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -211,15 +213,22 @@ class ProductionSurfaceTests(unittest.TestCase):
         offenders = [
             path
             for path in tracked_paths()
-            if path in FORBIDDEN_TRACKED_ARTIFACT_FILES
-            or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
-            or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+            if not is_allowed_result(path)
+            and (
+                path in FORBIDDEN_TRACKED_ARTIFACT_FILES
+                or any(path.startswith(prefix) for prefix in FORBIDDEN_TRACKED_ARTIFACT_ROOTS)
+                or Path(path).suffix.lower() in FORBIDDEN_WEIGHT_SUFFIXES
+            )
         ]
         self.assertEqual(sorted(offenders), [])
 
     def test_required_compact_results_are_tracked(self):
         paths = set(tracked_paths())
         self.assertTrue(ALLOWED_RESULT_FILES.issubset(paths))
+
+    def test_required_runtime_paths_are_tracked(self):
+        paths = set(tracked_paths())
+        self.assertTrue(production_surface_guard.REQUIRED_RUNTIME_PATHS.issubset(paths))
 
     def test_local_noise_table_is_ignored(self):
         completed = subprocess.run(
