@@ -1,0 +1,7 @@
+source_commit=2922823b774a519d7cce2cd546e0f797da1da31c
+source_tree=ca7497d8e4912e67cd874c1327ae7d6cafd16358
+tracked_files=392
+tracked_bytes=12488816
+representative_log_sha256=aa065bc468dfcf6a19396ffcca193fb40cf5a7325e3953a953bcdcad4cce8968
+representative_log_rows=600
+representative_log_bytes=6158778
