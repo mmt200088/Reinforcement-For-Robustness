@@ -1605,7 +1605,7 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertLess(checkpoint_pos, deferred_pos)
         self.assertLess(deferred_pos, recovery_pos)
 
-    def test_stage2_diagnostics_streams_human_report_writes(self):
+    def test_stage2_diagnostics_streams_markdown_report_writes(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_rl.blb_stage2_diagnostics_report_stream_for_test",
             REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
@@ -1642,10 +1642,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             )
             recorder._close_primary_jsonl()
 
-            report_paths = {
-                recorder.summary_md_path + ".tmp",
-                recorder.pareto_html_path + ".tmp",
-            }
+            report_paths = {recorder.summary_md_path + ".tmp"}
             handles = {}
             original_open = open
 
@@ -1669,12 +1666,11 @@ class RLDataPointWriterTest(unittest.TestCase):
                 mock.patch.object(module.os, "replace") as replace_mock,
             ):
                 recorder._write_summary_md()
-                recorder._write_pareto_html([{"episode": 0, "total_reward": 1.0}])
 
             self.assertEqual(set(handles), report_paths)
             for handle in handles.values():
                 self.assertGreater(handle.write.call_count, 1)
-            self.assertEqual(replace_mock.call_count, 2)
+            self.assertEqual(replace_mock.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ Files written
                               quality/cost objectives. Rewritten on every
                               periodic flush.
 * ``pareto_frontier.json``  – compact metadata plus the same frontier rows.
-* ``pareto_frontier.html``  – lightweight table for browser inspection.
 * ``first_invalid_counts.json`` – Counter of ``"L<ii>-B<b>"`` → how many
                               episodes hit their *first* invalid step at that
                               (layer, block) tile. Identifies persistent
@@ -397,7 +396,6 @@ class RLDiagnosticsRecorder:
         self.top_path = os.path.join(self.output_dir, "top_candidates.jsonl")
         self.pareto_jsonl_path = os.path.join(self.output_dir, "pareto_frontier.jsonl")
         self.pareto_json_path = os.path.join(self.output_dir, "pareto_frontier.json")
-        self.pareto_html_path = os.path.join(self.output_dir, "pareto_frontier.html")
         self.first_inv_path = os.path.join(self.output_dir, "first_invalid_counts.json")
         self.action_hist_path = os.path.join(self.output_dir, "action_histogram.npz")
         self.summary_md_path = os.path.join(self.output_dir, "diagnostics_summary.md")
@@ -1397,73 +1395,6 @@ class RLDiagnosticsRecorder:
             "count": int(len(rows)),
             "frontier": rows,
         })
-        self._write_pareto_html(rows)
-
-    def _write_pareto_html(self, rows: List[Mapping[str, Any]]) -> None:
-        def esc(value: Any) -> str:
-            return (
-                str(value)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-            )
-
-        cols = [
-            "pareto_rank",
-            "episode",
-            "terminal_priority",
-            "invalid_steps",
-            "terminal_metric1_mean",
-            "terminal_metric2_mean",
-            "terminal_loss_mean",
-            "terminal_fusion_gain",
-            "terminal_k_gain",
-            "terminal_bits_gain",
-            "terminal_cost_score",
-            "terminal_cost_rank_score",
-            "terminal_cost_rank_fusion",
-            "terminal_cost_rank_truncation",
-            "terminal_cost_rank_bits",
-            "terminal_p3_metric_margin_reward",
-            "terminal_cost_fusion_bonus",
-            "terminal_cost_truncation_bonus",
-            "terminal_cost_bits_tiebreaker",
-            "terminal_cost_truncation_step_gain",
-            "terminal_pareto_event_kind",
-            "total_bits",
-            "total_reward",
-        ]
-        lines = [
-            "<!doctype html>",
-            "<html><head><meta charset=\"utf-8\">",
-            "<title>BLB Stage-2 Pareto Frontier</title>",
-            "<style>",
-            "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:24px;color:#111827}",
-            "table{border-collapse:collapse;font-size:13px}th,td{border:1px solid #d1d5db;padding:6px 8px;text-align:right}",
-            "th{background:#f3f4f6;position:sticky;top:0}td:nth-child(2),th:nth-child(2){text-align:left}",
-            "code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}",
-            "</style></head><body>",
-            "<h1>BLB Stage-2 Pareto Frontier</h1>",
-            "<p>Non-dominated runtime candidates across quality, stability, and cost objectives.</p>",
-            "<table><thead><tr>",
-        ]
-        lines.extend(f"<th>{esc(c)}</th>" for c in cols)
-        lines.append("</tr></thead><tbody>")
-        for row in rows:
-            lines.append("<tr>")
-            for col in cols:
-                value = row.get(col, "")
-                if isinstance(value, float):
-                    value = f"{value:.6g}"
-                lines.append(f"<td>{esc(value)}</td>")
-            lines.append("</tr>")
-        lines.extend(["</tbody></table>", "</body></html>"])
-        tmp = self.pareto_html_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            _write_joined_lines_stream(f, lines)
-        os.replace(tmp, self.pareto_html_path)
-
     def _write_summary_md(self) -> None:
         last = self._last_episode_stats
         if last is None:
@@ -1806,7 +1737,6 @@ class RLDiagnosticsRecorder:
         lines.append(f"| `top_candidates.jsonl` | Top-{self.top_k} 训练期 best：含每条候选的完整 `slots` 列表（人类可读） |")
         lines.append("| `pareto_frontier.jsonl` | 训练期非支配候选（质量 / 稳定性 / cost 多目标） |")
         lines.append("| `pareto_frontier.json` | Pareto frontier 元数据 + 完整候选列表 |")
-        lines.append("| `pareto_frontier.html` | 可直接用浏览器打开的 Pareto frontier 表格 |")
         lines.append("| `first_invalid_counts.json` | (L, B) → 首次 invalid 计数 |")
         lines.append("| `action_histogram.npz` | (num_slots, max_levels) 频次矩阵 |")
         lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")

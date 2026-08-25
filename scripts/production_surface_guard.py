@@ -132,6 +132,9 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "/Users/",
     "gpushare.com",
     "100.64.229.185",
+    "<!doctype html>",
+    "html_table(",
+    "pareto_html_path",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}

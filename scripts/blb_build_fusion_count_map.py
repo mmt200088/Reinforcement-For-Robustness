@@ -11,15 +11,13 @@ products are partitioned across worker processes.
 
 Usage:
     python scripts/blb_build_fusion_count_map.py --profile mrpc \
-        --out-dir blb_stage2_rl/fusion_maps/mrpc \
-        --report reports/blb_opt/fusion_maps/build_<ts>.html --workers 16
+        --out-dir blb_stage2_rl/fusion_maps/mrpc --workers 16
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import html
 import multiprocessing as mp
 from pathlib import Path
 import sys
@@ -444,30 +442,6 @@ def build_one_block_type(
     }
 
 
-def write_report(out_html: Path, profile: str, results: List[Dict[str, Any]]) -> None:
-    out_html.parent.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for r in results:
-        m = r["build_meta"]
-        rows.append(
-            f"<tr><td><code>{html.escape(r['graph_key'])}</code></td>"
-            f"<td>{m['enum_total_combos']}</td><td>{m['valid_configs']}</td>"
-            f"<td>{m['num_options']}</td><td>{html.escape(str(m['fusion_counts']))}</td>"
-            f"<td>{len(m['pinned_positions'])}</td>"
-            f"<td>{'yes' if m['k_independence']['k_independent'] else 'NO'}</td>"
-            f"<td>{m['wall_seconds']}s</td></tr>"
-        )
-    out_html.write_text(
-        "<!doctype html><meta charset='utf-8'><title>fusion-count map build</title>"
-        f"<h1>fusion-count map build — {html.escape(profile)}</h1>"
-        "<table border=1 cellpadding=4><thead><tr>"
-        "<th>graph_key</th><th>enum combos</th><th>valid</th><th>#options</th>"
-        "<th>fusion_counts</th><th>pinned</th><th>K-indep</th><th>wall</th>"
-        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>",
-        encoding="utf-8",
-    )
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build the Stage-2 fusion-count map")
     ap.add_argument("--profile", default="mrpc")
@@ -512,7 +486,6 @@ def main() -> int:
         default=2000,
         help="random samples (plus the all-min corner) used by the over-budget degeneracy probe",
     )
-    ap.add_argument("--report", default="")
     args = ap.parse_args()
 
     only = {s.strip() for s in args.only.split(",") if s.strip()}
@@ -570,9 +543,6 @@ def main() -> int:
         "per_type": {r["graph_key"]: r["build_meta"] for r in results},
     }
     write_json_file(out_dir / "_summary.json", summary)
-    if args.report:
-        write_report(Path(args.report), args.profile, results)
-
     print("\n=== SUMMARY ===")
     print(f"max_num_options={max_num_options}")
     for r in results:
