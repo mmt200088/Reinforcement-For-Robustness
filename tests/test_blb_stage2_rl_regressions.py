@@ -1815,7 +1815,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
 
 class BLBPersistencePathRegressionTests(unittest.TestCase):
-    def test_blb_progress_stays_under_stage2_noise_progress(self):
+    def test_blb_progress_stays_under_stage2_progress(self):
         from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
 
         class DummyEvaluator:
@@ -1827,7 +1827,7 @@ class BLBPersistencePathRegressionTests(unittest.TestCase):
             path = Path(resolve_blb_persistence_dir(ev))
 
         self.assertEqual(path.name, "progress")
-        self.assertEqual(path.parent.name, "stage2_noise")
+        self.assertEqual(path.parent.name, "stage2")
 
 
 if __name__ == "__main__":

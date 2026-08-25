@@ -37,14 +37,14 @@ def resolve_blb_persistence_dir(evaluator: Any) -> str:
         if getattr(evaluator, "decoupled_layout", False):
             output_dir = os.path.join(run_dir, "progress")
         else:
-            output_dir = os.path.join(run_dir, "stage2_noise", "progress")
+            output_dir = os.path.join(run_dir, "stage2", "progress")
     else:
         output_dir = os.path.join(
             _repo_root(),
-            "Parting Chapter",
-            "persistent",
-            "blb_stage2_default_run",
-            "stage2_noise",
+            "outputs",
+            "rl",
+            "stage2",
+            "default",
             "progress",
         )
     os.makedirs(output_dir, exist_ok=True)

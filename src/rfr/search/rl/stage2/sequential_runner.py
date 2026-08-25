@@ -1882,7 +1882,7 @@ def _run_layerwise_training_branch(
         num_layers=layerwise_horizon,
     )
     stage2_data_writer = RLDataPointWriter(
-        root_dir=os.path.join(repo_root, "rl_training_data_points"),
+        root_dir=os.path.join(blb_progress_dir, "records"),
         run_id=structured_run_id,
         stage="stage2",
         model_type=layerwise_model_type,

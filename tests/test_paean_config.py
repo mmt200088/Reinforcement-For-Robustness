@@ -66,7 +66,10 @@ class PaeanConfigTest(unittest.TestCase):
             paean_config.format_command(["python", "x y"]),
             "python 'x y'",
         )
-        source = (Path(__file__).resolve().parents[1] / "Paean" / "config.py").read_text(
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "src/rfr/cli/evaluation_config.py"
+        ).read_text(
             encoding="utf-8",
         )
         self.assertIn("from rfr.common.runtime_error_reporter import format_command", source)

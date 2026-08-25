@@ -406,7 +406,13 @@ def final_eval_output_run_dir(
     else:
         run_id = "default"
 
-    return root / settings.dataset / settings.algorithm / run_id
+    return (
+        root
+        / settings.algorithm
+        / settings.model_type
+        / settings.dataset
+        / run_id
+    )
 
 
 def final_eval_results_dir(
@@ -419,4 +425,4 @@ def final_eval_results_dir(
         settings,
         source_run_dir=source_run_dir,
         timestamp_if_needed=timestamp_if_needed,
-    ) / "final_eval"
+    ) / "evaluation"

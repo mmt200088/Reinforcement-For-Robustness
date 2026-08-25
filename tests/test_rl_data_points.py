@@ -793,14 +793,14 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertIn("stage1_data_writer.write_step", source)
         self.assertIn("stage1_data_writer.write_episode", source)
         self.assertIn("stage1_data_writer.write_ppo_update", source)
-        self.assertIn("rl_training_data_points", source)
+        self.assertIn('"records"', source)
 
     def test_stage2_loop_integrates_structured_data_writer(self):
         source = (REPO_ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text()
         self.assertIn("RLDataPointWriter", source)
         self.assertIn("stage2_data_writer", source)
         self.assertIn("data_point_writer=stage2_data_writer", source)
-        self.assertIn("rl_training_data_points", source)
+        self.assertIn('"records"', source)
 
     def test_stage2_diagnostics_can_mirror_to_structured_data_writer(self):
         spec = importlib.util.spec_from_file_location(

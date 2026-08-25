@@ -803,7 +803,7 @@ def train(
     )
     run_output_dir = str(output_dir or "").strip()
     trainer_output_dir = (
-        os.path.join(run_output_dir, "trainer_output")
+        os.path.join(run_output_dir, "checkpoints", "trainer")
         if run_output_dir
         else "./inference_output"
     )

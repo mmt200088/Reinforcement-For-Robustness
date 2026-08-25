@@ -1447,9 +1447,9 @@ def write_blb_final_report(
 
     lines.append("---")
     lines.append("")
-    lines.append("> 持久化目录：`Parting Chapter/<run>/stage2_noise/progress/`。"
-                 "live checkpoint / final checkpoint / best_cfg.pkl / 状态板 / "
-                 "训练曲线（PNG + NPZ）/ 本报告 都在该目录下。")
+    lines.append("> Persistent directory: `outputs/rl/<model>/<task>/stage2/<run>/stage2/progress/`. "
+                 "Live and final checkpoints, best_cfg.pkl, status data, "
+                 "training curves, and this report are stored there.")
 
     with open(path, "w", encoding="utf-8") as f:
         _write_joined_lines_stream(f, lines)

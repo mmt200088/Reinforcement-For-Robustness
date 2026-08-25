@@ -201,7 +201,7 @@ MODE=""
 LOGFILE="training.log"
 BATCH_SIZE="128"
 STAGE2_INFERENCE_BATCH_SIZE="64"
-PERSISTENT_ROOT="Parting Chapter/persistent"
+PERSISTENT_ROOT="outputs"
 RUN_TAG=""
 RESUME_FROM=""
 STAGE1_RUN_ID=""
@@ -459,10 +459,11 @@ if [ -n "$RUN_TAG" ]; then
 fi
 
 if [ "$ALGORITHM" = "rl" ] && [ "$MODE" = "stage1-only" ]; then
-  COMBO="${MODEL_TYPE//-/ } ${DATASET}"
-  RUN_ROOT="$(dirname "$PERSISTENT_ROOT")/stage1/$COMBO"
+  RUN_ROOT="$PERSISTENT_ROOT/rl/$MODEL_TYPE/$DATASET/stage1/$CONSTRAINT_SLUG"
+elif [ "$ALGORITHM" = "rl" ]; then
+  RUN_ROOT="$PERSISTENT_ROOT/rl/$MODEL_TYPE/$DATASET/stage2/$CONSTRAINT_SLUG"
 else
-  RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/$CONSTRAINT_SLUG"
+  RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/two_stage/$CONSTRAINT_SLUG"
 fi
 
 if [ "$MODE" != "stage1-only" ]; then
@@ -511,7 +512,7 @@ PY
 fi
 
 CMD=(
-  python3 -m rfr.cli.run
+  python -m rfr.cli.run
   --base_model "$BASE_MODEL"
   --data_path "$DATASET"
   --output_dir "$RUN_ROOT"

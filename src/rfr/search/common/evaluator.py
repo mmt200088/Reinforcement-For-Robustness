@@ -305,8 +305,8 @@ SEARCH_LOG_HEADER = "=== PPO强化学习优化日志已启动（PPO RL Optimizat
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
-DEFAULT_FINAL_EVAL_DIR = os.path.join("Parting Chapter", "final_eval")
-DEFAULT_NOISE_PROGRESS_DIR = os.path.join("Parting Chapter", "noise_rl_progress")
+DEFAULT_FINAL_EVAL_DIR = os.path.join("outputs", "rl", "evaluation")
+DEFAULT_NOISE_PROGRESS_DIR = os.path.join("outputs", "rl", "stage2", "progress")
 
 
 def ensure_parent_dir(path: str) -> None:
@@ -386,9 +386,9 @@ def resolve_run_output_layout(run_output_dir, flattened=False):
         stage2_noise_dir = run_output_dir
     else:
         stage1_dir = os.path.join(run_output_dir, "stage1")
-        stage2_noise_dir = os.path.join(run_output_dir, "stage2_noise")
+        stage2_noise_dir = os.path.join(run_output_dir, "stage2")
     stage2_noise_progress_dir = os.path.join(stage2_noise_dir, "progress")
-    final_eval_dir = os.path.join(run_output_dir, "final_eval")
+    final_eval_dir = os.path.join(run_output_dir, "evaluation")
 
     layout = {
         "run_output_dir": run_output_dir,
@@ -3632,7 +3632,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
             BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
         ):
-            for progress_dir_name in ("stage2_noise", "blb_stage2"):
+            for progress_dir_name in ("stage2",):
                 path = os.path.join(
                     self.resume_run_dir,
                     progress_dir_name,
@@ -3828,7 +3828,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         """final_eval_only=True 时，从 resume_run_dir 或 run_output_dir 读取之前 RL 搜索得到的最优配置。
 
         - Stage-1：从 ``{dir}/stage1/stage1_rl_checkpoint.pt`` 读取 ``best_config``（含 gelu/softmax）。
-        - Stage-2：从 ``{dir}/stage2_noise/progress/noise_rl_checkpoint.pt`` 读取
+        - Stage-2: read checkpoints from ``{dir}/stage2/progress/``.
           ``best_noise_config``（含各 *_scaling_factors）。
 
         仅读取文件、不写入；不调用任何 graceful-stop 接口；不修改 checkpoint 内容。
@@ -3900,7 +3900,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                         BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
                 ):
-                    for progress_dir_name in ("stage2_noise", "blb_stage2"):
+                    for progress_dir_name in ("stage2",):
                         path = os.path.join(
                             _dir, progress_dir_name, "progress", filename,
                         )
@@ -5256,7 +5256,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 else make_unique_run_id(_stage1_run_id_base)
             )
             stage1_data_writer = RLDataPointWriter(
-                root_dir="rl_training_data_points",
+                root_dir=os.path.join(
+                    os.path.dirname(self.stage1_step_info_file),
+                    "records",
+                ),
                 run_id=_stage1_run_id,
                 stage="stage1",
                 model_type=_stage1_model_type,

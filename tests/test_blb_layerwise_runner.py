@@ -2497,7 +2497,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             return
         with tempfile.TemporaryDirectory() as td:
             run_dir = Path(td) / "mrpc" / "constraint"
-            progress_dir = run_dir / "stage2_noise" / "progress"
+            progress_dir = run_dir / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             with lock_type(progress_dir) as first:
                 self.assertFalse(str(first.path).startswith(str(run_dir) + os.sep))

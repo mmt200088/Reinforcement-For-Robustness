@@ -166,7 +166,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir = pathlib.Path(tmp_dir) / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             (progress_dir / final_name).write_bytes(b"invalid-contract")
             (progress_dir / live_name).write_bytes(b"valid-contract")
@@ -218,7 +218,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir = pathlib.Path(tmp_dir) / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             (progress_dir / final_name).write_bytes(b"incomplete-comparator")
             evaluator = types.SimpleNamespace(
@@ -273,7 +273,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir = pathlib.Path(tmp_dir) / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             (progress_dir / final_name).write_bytes(b"completed-comparator")
             evaluator = types.SimpleNamespace(
@@ -320,7 +320,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir = pathlib.Path(tmp_dir) / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             (progress_dir / final_name).write_bytes(b"corrupt")
             evaluator = types.SimpleNamespace(
@@ -363,7 +363,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir = pathlib.Path(tmp_dir) / "stage2" / "progress"
             progress_dir.mkdir(parents=True)
             (progress_dir / final_name).write_bytes(b"malformed-group")
             evaluator = types.SimpleNamespace(

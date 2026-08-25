@@ -172,7 +172,7 @@ class UnifiedFinalEvaluationModule:
         self.repeat_n = max(1, int(repeat_n))
 
         default_results_dir = getattr(
-            evaluator, "final_eval_dir", os.path.join("rl_results", "final_eval")
+            evaluator, "final_eval_dir", os.path.join("outputs", "rl", "evaluation")
         )
         self.results_dir = results_dir or default_results_dir
 

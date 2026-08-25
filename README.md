@@ -8,93 +8,108 @@ BERT sequence-classification models.
 - Models: `bert-base`, `bert-large`
 - GLUE tasks: `mrpc`, `rte`, `sst2`
 
-All searches use a fixed, stratified 256-example subset of the GLUE training
-split. The full validation split is reserved for final evaluation.
+Every search uses the same fixed, stratified 256-example subset of the GLUE
+training split. Full GLUE validation is reserved for final evaluation.
+
+## Layout
+
+```text
+src/rfr/preparation/   Probe data, fusion maps, and Rescale baselines
+src/rfr/search/        RL, BO-RF, Greedy, COINN-GA, and GPU runtime
+src/rfr/evaluation/    Full-validation evaluation
+src/rfr/cli/           Command-line entrypoints
+configs/               Presets and immutable production configuration
+outputs/               Generated artifacts grouped by algorithm
+```
 
 ## Requirements
 
 - Python 3.10+
-- PyTorch with CUDA support
-- Hugging Face Transformers and Datasets
-- scikit-learn, NumPy, and the dependencies in `requirements.txt`
-- A generated train-probe fixture and fusion maps for the selected profile
+- CUDA-enabled PyTorch
+- Dependencies from `requirements.txt`
+- Model weights and datasets available through Hugging Face or `local_assets/`
 
-The Stage-2 path uses the real in-process Rescale optimizer. GPU assignment is
-elastic: every healthy visible GPU is used for deterministic reward trials.
+## Search Preparation
+
+The checked-in probe fixture, fusion maps, and Rescale configs are ready for
+the supported profiles. Regenerate them only when their source inputs change.
+
+```bash
+PYTHONPATH=src python -m rfr.preparation.data.build_probe_fixture
+
+PYTHONPATH=src python -m rfr.preparation.fusion.build_map \
+  --profile mrpc \
+  --out-dir configs/preparation/fusion/maps/mrpc
+```
 
 ## Stage 1
 
-Start a new run:
+Start a fresh PPO search:
 
 ```bash
-bash llama_7B_LayerImportance.sh run rl \
-  --preset bert-base-mrpc-stage1-rl --fresh
+bash run_search.sh run rl \
+  --preset bert-base-mrpc-stage1-rl \
+  --fresh
 ```
 
-Resume the same run by omitting `--fresh`:
-
-```bash
-bash llama_7B_LayerImportance.sh run rl \
-  --preset bert-base-mrpc-stage1-rl
-```
-
-Replace `bert-base-mrpc` with any supported model/task pair.
+Run the same command without `--fresh` to resume. Replace the preset with any
+supported model/task pair.
 
 ## Stage 2
 
-Start a new layerwise PPO run:
-
 ```bash
-bash llama_7B_LayerImportance.sh run rl \
-  --preset bert-base-mrpc-stage2-rl --fresh
+bash run_search.sh run rl \
+  --preset bert-base-mrpc-stage2-rl \
+  --fresh
 ```
 
-Resume by running the same command without `--fresh`. The production preset
-uses 150,000 maximum episodes, PPO rollout 120, learning rate `5e-5`, precision
-tolerance `0.001`, stability multiplier `2.0`, three online trials, baseline
-`5x3`, and three independent 15-trial search-gate banks.
+The production preset uses the fixed Stage-1 prerequisite, layerwise fusion
+plus H/M/L precision actions, robust constraints, strict A/B/C validation
+banks, and elastic assignment across every healthy visible GPU.
 
 ## Comparators
 
-The formal comparators use BERT-base MRPC and run their own Stage 1, bind that
-result into Stage 2, and perform strict top-5 selection.
+The formal comparators run their own Stage 1, bind that result into Stage 2,
+and perform strict top-5 validation.
 
 ```bash
-bash llama_7B_LayerImportance.sh run bo_rf --fresh
-bash llama_7B_LayerImportance.sh run greedy --fresh
-bash llama_7B_LayerImportance.sh run coinn_ga --fresh
+bash run_search.sh run bo_rf --fresh
+bash run_search.sh run greedy --fresh
+bash run_search.sh run coinn_ga --fresh
 ```
 
 Use `--comparator-stage1-only` to stop after Stage 1. Omit `--fresh` to resume.
 
-## Final Evaluation
+## Validation Evaluation
 
 ```bash
-bash llama_7B_LayerImportance.sh eval \
+bash run_search.sh eval \
   --preset mrpc-final-eval-only \
-  --resume-from "Parting Chapter/persistent/rl/bert-base/mrpc/<run>"
+  --resume-from outputs/rl/bert-base/mrpc/stage2/<run>
 ```
 
-Paean reuses the selected action, the calibrated fusion map, and the in-process
-Rescale materialization path.
+The evaluator consumes the selected materialized action and runs on the full
+GLUE validation split. It does not use the GLUE test split or create a GLUE
+submission archive.
 
-## Outputs
+## Run Control and Outputs
 
-- Stage 1: `Parting Chapter/stage1/<model task>/`
-- Stage 2: `Parting Chapter/persistent/rl/<model>/<task>/<constraints>/`
-- Comparators: `Parting Chapter/persistent/<algorithm>/...`
-- Structured records: `rl_training_data_points/`
-- Paean final evaluation: `Paean/outputs/`
+Send `SIGINT` to the recorded PID for a graceful stop. Durable checkpoints and
+observation journals are written before exit and are reused on resume.
 
-Generated outputs are intentionally ignored by Git. Historical training
-artifacts are stored on `codex/archive-training-artifacts-20260825`; unrelated
-experiments and generated reports are on
-`codex/experiment-unrelated-artifacts-20260825`. The repository keeps the final
-configuration JSON files and one compact example under
-`examples/representative_rl_log/`.
+Generated files are organized under:
 
-Place externally supplied model weights in `local_assets/models/` and datasets
-in `local_assets/datasets/`. Their contents remain local and are never tracked.
+```text
+outputs/<algorithm>/<model>/<dataset>/
+```
 
-Use `bash llama_7B_LayerImportance.sh --list-presets` to list available
-production presets.
+RL uses `stage1/<run>` and `stage2/<run>`. Comparators use
+`two_stage/<run>`. Each run owns its logs, checkpoints, structured records,
+stage artifacts, and validation results. Generated outputs, model weights, and
+datasets are ignored by Git.
+
+List available presets with:
+
+```bash
+bash run_search.sh --list-presets
+```

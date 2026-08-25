@@ -12,7 +12,7 @@
     "    --action-config configs/evaluation/actions/manual_blb_v3_full_slots_template.json",
     "To get a real starting point with all 877 slots already filled in,",
     "copy the file written by your latest RL run:",
-    "  <persistent_run>/stage2_noise/progress/blb_stage2_best_action_full.json",
+    "  <persistent_run>/stage2/progress/blb_stage2_best_action_full.json",
     "then prune to just the slots you want to change.",
     "Schema docs: see Paean/action_grid.py::load_action_grid_config and",
     "             blb_stage2_rl/action_io.py::slots_payload_to_action_vec."

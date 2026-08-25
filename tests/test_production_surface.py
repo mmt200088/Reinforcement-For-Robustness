@@ -18,6 +18,7 @@ FORBIDDEN_TRACKED_ARTIFACT_ROOTS = (
     "Previous Chapter/",
     "Previous Chapter Server Reserve/",
     "Paean/outputs/",
+    "outputs/",
     "experiment/outputs/",
     "experiments/",
     "gelu_analysis/",
@@ -48,6 +49,7 @@ FORBIDDEN_WEIGHT_SUFFIXES = {
 ALLOWED_RESULT_FILES = {
     "examples/representative_rl_log/README.md",
     "examples/representative_rl_log/stage2_mrpc_600ep.jsonl",
+    "outputs/README.md",
     "configs/reference/coinn_ga.json",
     "configs/reference/rl.json",
 }

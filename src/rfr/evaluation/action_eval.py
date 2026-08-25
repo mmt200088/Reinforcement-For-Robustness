@@ -123,7 +123,7 @@ class BLBActionFinalEvaluationModule:
         self.cost_match_count = max(0, int(cost_match_count))
         self.cost_match_max_attempts = max(0, int(cost_match_max_attempts))
         default_results_dir = getattr(
-            evaluator, "final_eval_dir", os.path.join("rl_results", "final_eval")
+            evaluator, "final_eval_dir", os.path.join("outputs", "rl", "evaluation")
         )
         self.results_dir = results_dir or default_results_dir
         self.action_config_path = str(action_config_path or "").strip()

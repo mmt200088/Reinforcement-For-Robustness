@@ -23,21 +23,19 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
         )
         (fake_bin / "flock").chmod(0o755)
-        python_stub = textwrap.dedent(
-            f"""\
+        (fake_bin / "python").write_text(
+            textwrap.dedent(
+                f"""\
                 #!/usr/bin/env bash
                 tmp={str(capture)!r}.tmp.$$
                 printf '%s\\0' "$@" > "$tmp"
                 mv "$tmp" {str(capture)!r}
                 exit 0
                 """
+            ),
+            encoding="utf-8",
         )
-        for executable in ("python", "python3"):
-            (fake_bin / executable).write_text(
-                python_stub,
-                encoding="utf-8",
-            )
-            (fake_bin / executable).chmod(0o755)
+        (fake_bin / "python").chmod(0o755)
         return fake_bin
 
     def _capture(
@@ -115,7 +113,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "--num_epochs",
         ):
             self.assertNotIn(removed, source)
-        self.assertIn("python3 -m rfr.cli.run", source)
+        self.assertIn("python -m rfr.cli.run", source)
         for backend in ("bo_rf", "greedy", "coinn_ga"):
             self.assertIn(f'SEARCH_BACKEND="{backend}"', source)
 
@@ -137,7 +135,10 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             self._value(stage1_argv, "--stage2_rl_episodes_specified"),
             "false",
         )
-        self.assertEqual(stage1_path.parts[-2:], ("stage1", "bert base mrpc"))
+        self.assertEqual(
+            stage1_path.parts[-5:-1],
+            ("rl", "bert-base", "mrpc", "stage1"),
+        )
         self.assertEqual(stage1_meta["policy_network_variant"], "shared_gtrxl_small_v1")
 
         stage2_argv, stage2_path, stage2_meta = self._capture(
@@ -155,7 +156,10 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(
             self._value(stage2_argv, "--stage2_fixed_config_source"), "all4"
         )
-        self.assertEqual(stage2_path.parts[-4:-1], ("rl", "bert-base", "mrpc"))
+        self.assertEqual(
+            stage2_path.parts[-5:-1],
+            ("rl", "bert-base", "mrpc", "stage2"),
+        )
         self.assertEqual(stage2_meta["stage2_stability_multiplier"], 2.0)
 
     def test_stage2_auto_mode_uses_elastic_supervisor_and_reward_auto(self):
@@ -192,7 +196,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             with self.subTest(algorithm=algorithm):
                 argv, path, metadata = self._capture(algorithm)
                 self.assertEqual(
-                    path.parts[-4:-1], (algorithm, "bert-base", "mrpc")
+                    path.parts[-5:-1],
+                    (algorithm, "bert-base", "mrpc", "two_stage"),
                 )
                 self.assertEqual(metadata["algorithm"], algorithm)
                 self.assertEqual(self._value(argv, "--batch_size"), "16")

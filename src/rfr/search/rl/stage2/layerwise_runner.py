@@ -95,7 +95,7 @@ def stage2_run_lock_path(progress_dir: Any) -> str:
         parent = os.path.dirname(path)
         run_dir = (
             os.path.dirname(parent)
-            if os.path.basename(parent) == "stage2_noise"
+            if os.path.basename(parent) == "stage2"
             else parent
         )
     else:
