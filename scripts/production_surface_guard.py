@@ -58,7 +58,18 @@ FORBIDDEN_RUNTIME_PATHS = {
     "bert-test.py",
     "commonsense_evaluate.py",
     "moe_sample.py",
+    "distribution_stats.py",
+    "scripts/blb_phase0_preflight.py",
+    "Rescale_optimizer/scripts/check_compress_headroom.py",
+    "Rescale_optimizer/scripts/diagnose_certacc.py",
+    "Rescale_optimizer/scripts/replan_what_if.py",
+    "Rescale_optimizer/scripts/sweep_certacc_monotonicity.py",
+    "Rescale_optimizer/scripts/update_noise_tables_from_csv.py",
 }
+
+FORBIDDEN_RUNTIME_PREFIXES = (
+    "Rescale_optimizer/replan_configs/",
+)
 
 FORBIDDEN_RUNTIME_REFERENCES = (
     "legacy_v2",
@@ -83,6 +94,10 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "transformers.models.gpt2",
     "_GPT2_PATHS",
     "_gpt2_qkv",
+    "block5_n0",
+    "STAGE1_ENABLE_DIFFERENTIAL_REWARD",
+    "RL_OPT_FLAGS",
+    "BLB_TRUNCATION_K_LEVELS",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}
@@ -134,6 +149,11 @@ def audit() -> dict[str, object]:
     paths = tracked_paths()
     path_set = set(paths)
     forbidden_paths = sorted(path_set & FORBIDDEN_RUNTIME_PATHS)
+    forbidden_paths.extend(sorted(
+        path
+        for path in paths
+        if any(path.startswith(prefix) for prefix in FORBIDDEN_RUNTIME_PREFIXES)
+    ))
     backup_paths = sorted(
         path
         for path in paths
