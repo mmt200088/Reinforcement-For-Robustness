@@ -1,0 +1,6 @@
+commit=c0f09fb89097ac0ad6de41b788819dbcf52e8115
+tree=0ec4927891c5efa2714d29dfee6837f62f8288b3
+Python 3.10.19
+torch 2.9.1+cu128
+cuda True 1
+NVIDIA GeForce RTX 4090
