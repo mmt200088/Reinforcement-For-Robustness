@@ -34,7 +34,7 @@ from .search_baselines import (
     normalize_search_backend,
     run_search,
 )
-from .seed_utils import derive_layerwise_online_evaluation_seeds
+from rfr.search.rl.stage2.seed_utils import derive_layerwise_online_evaluation_seeds
 
 
 STAGE2_FORMAL_GA_GENERATIONS = 200

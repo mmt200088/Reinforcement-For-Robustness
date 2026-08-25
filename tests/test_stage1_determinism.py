@@ -6,16 +6,12 @@ so Stage-1 results don't change with the server's GPU count. The torch-free
 ``seed_utils`` core is what makes this checkable without a GPU box.
 """
 import pathlib
-import sys
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
-if str(_REPO / "stage1_rl") not in sys.path:
-    sys.path.insert(0, str(_REPO / "stage1_rl"))
-
-import seed_utils
+from rfr.search.rl.stage1 import seed_utils
 
 assign_global_episodes = seed_utils.assign_global_episodes
 derive_episode_seed = seed_utils.derive_episode_seed
