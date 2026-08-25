@@ -1,0 +1,55 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "94d4e2c2b34768c652352bf86c1c2969ca9c270b",
+  "base_tree": "ce4df7e892f1fbd7d4f10373157252a3792480f2",
+  "branch": "codex/task-english-comments-readme-20260826",
+  "branch_role": "task",
+  "changed_scopes": [
+    "README.md",
+    "configs/preparation/fusion/max_sfs/default.json",
+    "src/rfr/common",
+    "src/rfr/evaluation",
+    "src/rfr/preparation",
+    "src/rfr/search"
+  ],
+  "completed_at": "2026-08-26T03:46:08+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-english-comments-readme-20260826:evidence/english_comments_readme_620e56b_20260826/"
+  ],
+  "source_commit": "620e56b2a350dfd3fff43f3a3e60f934e8b78ea2",
+  "source_tree": "a185ba06a32115f775857d7aff1d6a41103c23f0",
+  "started_at": "2026-08-26T03:31:23+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "english-comments-readme-20260826",
+  "verification": [
+    {
+      "command": "strip docstrings and compare Python ASTs against base 94d4e2c; compare default max-SF JSON after removing _comment",
+      "evidence": "130 tracked Python files had zero executable AST differences; JSON data was identical after excluding its documentation field",
+      "outcome": "passed"
+    },
+    {
+      "command": "tokenize and AST-scan all tracked Python comments/docstrings plus README",
+      "evidence": "68 line comments and 1,065 docstrings scanned; non-English hits=0 and prompt-like hits=0; README hits=0",
+      "outcome": "passed"
+    },
+    {
+      "command": "local compileall, shell syntax, preset validation, production-surface guard, and diff checks",
+      "evidence": "compileall and shell syntax passed; all 14 preset files validated; production surface ok=true; git diff --check passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "exact-source server import and command verification",
+      "evidence": "126 rfr modules imported; 12 RL preset dry-runs, 3 comparator dry-runs, 2 preparation help commands, and the README final-eval search-source dry-run passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "repo_sync_guard.py result-check --require-remote and SHA-256 verification",
+      "evidence": "result commit cf6d03c1916a5811884195688e4469244f359d77, tree b8297b54429c38afc5c109e02e28ba26b2454fa2; artifact-only scope, remote parity, and SHA256SUMS passed",
+      "outcome": "passed"
+    }
+  ]
+}
