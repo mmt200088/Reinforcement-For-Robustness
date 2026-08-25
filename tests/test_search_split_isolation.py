@@ -133,7 +133,7 @@ def test_stage2_search_artifacts_name_only_train_probe_evidence():
     layerwise = Path("src/rfr/search/rl/stage2/layerwise_runner.py").read_text(
         encoding="utf-8"
     )
-    baseline = Path("blb_stage2_rl/search_baseline_runner.py").read_text(
+    baseline = Path("src/rfr/search/comparators/common/stage2_runner.py").read_text(
         encoding="utf-8"
     )
 

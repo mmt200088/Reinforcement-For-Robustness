@@ -36,7 +36,7 @@ from rfr.search.runtime.probe_runner import (
     _normalize_probe_trial_result,
     diagnostics_payload,
 )
-from .reward import (
+from rfr.search.rl.stage2.reward import (
     BaselineCostStats,
     EpisodeMetrics,
     RewardBreakdown,
@@ -784,7 +784,7 @@ class BLBStage2Env:
             )
         )
         if grouped_probe_enabled:
-            from .seed_utils import derive_probe_trial_seed
+            from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
             decoded_actions = [
                 prepared_items[index]["decoded"] for index in forward_indices
@@ -1534,7 +1534,7 @@ class BLBStage2Env:
             trial_indices: Sequence[int],
             ) -> tuple[List[Tuple[float, float, float]], List[int]]:
         from rfr.search.runtime.model_handler import noise_rng_scope, reseed_noise_rng_for_device
-        from .seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         indices = tuple(int(trial_index) for trial_index in trial_indices)
         if any(trial_index < 0 for trial_index in indices):

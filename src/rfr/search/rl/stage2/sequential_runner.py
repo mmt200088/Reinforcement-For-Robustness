@@ -29,7 +29,7 @@ from rfr.search.common.data_points import (
 
 from rfr.search.common.action_space import K_LEVELS
 from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_model_type
-from .sequential_policy import (
+from rfr.search.rl.stage2.sequential_policy import (
     BLBStage2SequentialPolicy,
     SequentialPolicyConfig,
     SequentialPPOConfig,
@@ -327,7 +327,7 @@ def _collect_robust_baseline_reference(
         group_index_start: int = 0,
         ) -> Tuple["BaselineReference", Dict[str, Any]]:
     """Collect deterministic grouped baseline trials for robust constraints."""
-    from .seed_utils import derive_baseline_group_probe_seed
+    from rfr.search.rl.stage2.seed_utils import derive_baseline_group_probe_seed
     from rfr.search.common.statistical_constraints import (
         DegenerateBaselineVariance,
         TrialSeries,
@@ -503,7 +503,7 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_DECODE_VERSION,
         layerwise_action_space_version,
     )
-    from .layerwise_runner import bind_layerwise_candidate_identity
+    from rfr.search.rl.stage2.layerwise_runner import bind_layerwise_candidate_identity
 
     stage1_degrees = {
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
@@ -755,8 +755,8 @@ def _run_layerwise_training_branch(
         max_communication_saving_units,
         max_compute_saving_units,
     )
-    from .layerwise_env import BLBStage2LayerwiseEnv
-    from .layerwise_runner import (
+    from rfr.search.rl.stage2.layerwise_env import BLBStage2LayerwiseEnv
+    from rfr.search.rl.stage2.layerwise_runner import (
         _PROBABILITY_FIELDS,
         DEFAULT_CONVERGENCE_MIN_EPISODES,
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
@@ -774,7 +774,7 @@ def _run_layerwise_training_branch(
         validate_layerwise_checkpoint_metadata,
         validate_layerwise_episode_limit_extension,
     )
-    from .policy_network import (
+    from rfr.search.rl.stage2.policy_network import (
         POLICY_NETWORK_ID,
         POLICY_RL_VARIANT,
         bind_policy_network_contract,
@@ -789,7 +789,7 @@ def _run_layerwise_training_branch(
         network_axis_weights,
         validate_communication_importance_ratio,
     )
-    from .training import _build_best_noise_config
+    from rfr.search.rl.stage2.training import _build_best_noise_config
 
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
@@ -882,7 +882,7 @@ def _run_layerwise_training_branch(
             "layerwise F1 probe must contain exactly 256 stratified examples; "
             f"received {online_probe_example_count}"
         )
-    from .search_baselines import normalize_search_backend
+    from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     search_backend = normalize_search_backend(
         getattr(train_cfg, "search_backend", "ppo")
@@ -895,7 +895,7 @@ def _run_layerwise_training_branch(
                 f"Stage-2: expected fixed_source={expected_stage1_source!r}, "
                 f"got {str(fixed_source)!r}"
             )
-        from .search_baseline_runner import (
+        from rfr.search.comparators.common.stage2_runner import (
             STAGE2_FORMAL_GA_EVALUATIONS,
             STAGE2_FORMAL_GA_GENERATIONS,
             canonical_strict_validation,
@@ -3257,9 +3257,9 @@ def _build_search_invocation_contract(
         validate_dataset_protocol_binding,
     )
     from rfr.common.json_utils import stable_json_hash, to_jsonable
-    from stage1_rl.search_runner import load_completed_search_result
+    from rfr.search.comparators.common.stage1_runner import load_completed_search_result
 
-    from .search_baselines import normalize_search_backend
+    from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     backend = normalize_search_backend(
         getattr(train_cfg, "search_backend", "ppo")
@@ -3471,7 +3471,7 @@ def _build_search_invocation_contract(
 def _selected_action_identity_payload(
         evaluation: Any,
         ) -> dict[str, Any]:
-    from .search_baseline_runner import (
+    from rfr.search.comparators.common.stage2_runner import (
         _selected_action_identity_payload as canonical_selected_identity,
     )
 
@@ -3502,7 +3502,7 @@ def _build_completed_search_resume_result(
         ) -> dict[str, Any]:
     from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
     from rfr.search.common.layerwise_action import describe_layerwise_action_matrix
-    from .training import _build_best_noise_config
+    from rfr.search.rl.stage2.training import _build_best_noise_config
 
     manifest = dict(inner_run.get("manifest") or {})
     selected = inner_run.get("selected")
@@ -3780,7 +3780,7 @@ def _write_completed_search_resume(
         ) -> None:
     from rfr.common.json_utils import read_json_file
 
-    from .search_baseline_runner import _atomic_json
+    from rfr.search.comparators.common.stage2_runner import _atomic_json
 
     invocation_path = os.path.join(search_output_dir, "invocation.json")
     if (
@@ -3851,7 +3851,7 @@ def _episode_metrics_resume_payload(metrics: Any) -> dict[str, Any]:
 
 def _episode_metrics_from_resume_payload(payload: Mapping[str, Any]) -> Any:
     """Authenticate and restore one clean-probe EpisodeMetrics payload."""
-    from .reward import EpisodeMetrics
+    from rfr.search.rl.stage2.reward import EpisodeMetrics
 
     required = {"schema_version", *_EPISODE_METRICS_RESUME_FIELDS}
     if not isinstance(payload, Mapping) or set(payload) != required:
@@ -3884,7 +3884,7 @@ def _restore_pending_strict_resume_evidence(
         authoritative_example_count: int,
         ) -> dict[str, Any]:
     """Restore and validate every baseline reference used by strict resume."""
-    from .layerwise_runner import LayerwiseValidationBanks
+    from rfr.search.rl.stage2.layerwise_runner import LayerwiseValidationBanks
     from rfr.search.common.statistical_constraints import baseline_reference_from_resume_payload
 
     if not isinstance(context, Mapping):
@@ -3993,7 +3993,7 @@ def _write_pending_strict_resume_context(
     """Persist the baseline evidence needed to restart strict validation."""
     from rfr.common.json_utils import read_json_file
 
-    from .search_baseline_runner import _atomic_json
+    from rfr.search.comparators.common.stage2_runner import _atomic_json
 
     payload = {
         "schema_version": "stage2_pending_strict_resume_context_v2",
@@ -4037,7 +4037,7 @@ def _preflight_pending_strict_search_resume(
     from rfr.preparation.data.protocol import validate_dataset_protocol_binding
     from rfr.common.json_utils import read_json_file
 
-    from .search_baselines import normalize_search_backend
+    from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     backend = normalize_search_backend(
         getattr(train_cfg, "search_backend", "ppo")
@@ -4143,11 +4143,11 @@ def _preflight_completed_search_resume(
     from rfr.preparation.data.protocol import validate_dataset_protocol_binding
     from rfr.common.json_utils import read_json_file
 
-    from .search_baseline_runner import (
+    from rfr.search.comparators.common.stage2_runner import (
         _atomic_json,
         _load_plain_completed_search_run,
     )
-    from .search_baselines import normalize_search_backend
+    from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     backend = normalize_search_backend(
         getattr(train_cfg, "search_backend", "ppo")
@@ -4279,8 +4279,8 @@ def _build_stage2_materialization_env(
         load_calibrated_stage2_action_context,
         validate_calibrated_stage2_action_context,
     )
-    from .env import BLBStage2Env, BLBStage2EnvConfig
-    from .reward import BaselineCostStats, RewardWeights
+    from rfr.search.rl.stage2.env import BLBStage2Env, BLBStage2EnvConfig
+    from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
 
     ev = runner.evaluator
     gelu = np.asarray(fixed_gelu, dtype=int)
@@ -4407,8 +4407,8 @@ def run_sequential_via_runner(
         ) -> Dict[str, Any]:
     """Lock the complete Stage-2 run before any probe or persistent write."""
     validate_exact_k_domain(K_LEVELS)
-    from .layerwise_runner import LayerwiseRunLock
-    from .training import resolve_blb_persistence_dir
+    from rfr.search.rl.stage2.layerwise_runner import LayerwiseRunLock
+    from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
 
     blb_progress_dir = resolve_blb_persistence_dir(runner.evaluator)
     probe_runner_owner_holder = _ProbeRunnerOwnerHolder()
@@ -4449,7 +4449,7 @@ def run_sequential_via_runner(
                 probe_runner_owner_holder=probe_runner_owner_holder,
                 pending_strict_resume_context=pending_strict_resume_context,
             )
-            from .search_baselines import normalize_search_backend
+            from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
             backend = normalize_search_backend(
                 getattr(train_cfg, "search_backend", "ppo")
@@ -4515,8 +4515,8 @@ def _run_sequential_via_runner_locked(
         write_training_curves,
     )
     from rfr.search.runtime.probe_runner import enable_cuda_reward_probe_fast_math
-    from .reward import ParetoCostArchive
-    from .training import (
+    from rfr.search.rl.stage2.reward import ParetoCostArchive
+    from rfr.search.rl.stage2.training import (
         _build_best_noise_config,
         resolve_blb_persistence_dir,
     )
@@ -4544,7 +4544,7 @@ def _run_sequential_via_runner_locked(
         precision_tolerance, stability_multiplier, bootstrap_samples = (
             _resolve_robust_baseline_config(train_cfg, ev)
         )
-        from .layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             validate_layerwise_three_bank_convergence_config,
             validate_layerwise_validation_bank_config,
         )
@@ -4681,8 +4681,8 @@ def _run_sequential_via_runner_locked(
         base_env.probe_runner = shared_probe_runner_owner.view("F1")
 
 
-    from .env import estimate_baseline_cost_stats
-    from .reward import calibrate_weights_from_baseline
+    from rfr.search.rl.stage2.env import estimate_baseline_cost_stats
+    from rfr.search.rl.stage2.reward import calibrate_weights_from_baseline
     precomputed = {
         "total_bits_sum": int(ss_cost_stats.total_bits_sum),
         "total_fusion_count": int(ss_cost_stats.total_fusion_count),
@@ -4876,7 +4876,7 @@ def _run_sequential_via_runner_locked(
                 _resolve_robust_baseline_config(train_cfg, ev)
             )
             if decision_path == "layerwise":
-                from .layerwise_runner import (
+                from rfr.search.rl.stage2.layerwise_runner import (
                     validate_layerwise_three_bank_convergence_config,
                     validate_layerwise_validation_bank_config,
                 )
@@ -5003,7 +5003,7 @@ def _run_sequential_via_runner_locked(
                     bank_references[bank_label] = bank_reference
                     bank_summaries[bank_label] = bank_summary
 
-                from .layerwise_runner import (
+                from rfr.search.rl.stage2.layerwise_runner import (
                     LayerwiseValidationBank,
                     LayerwiseValidationBanks,
                 )

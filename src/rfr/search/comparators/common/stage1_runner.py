@@ -21,7 +21,7 @@ from rfr.common.json_utils import (
 )
 from rfr.common.jsonl_utils import read_jsonl, recover_jsonl_file, write_jsonl_rows
 
-from .search_baselines import (
+from .stage1_core import (
     FIXED_SOFTMAX_DEGREE,
     GELU_DEGREES,
     SearchConfig,

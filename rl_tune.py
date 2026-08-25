@@ -656,7 +656,7 @@ def train(
     final_eval_random_enabled = parse_bool_flag(
         final_eval_random_enabled, "final_eval_random_enabled"
     )
-    from blb_stage2_rl.search_baselines import normalize_search_backend
+    from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     blb_v3_search_backend = normalize_search_backend(
         blb_v3_search_backend

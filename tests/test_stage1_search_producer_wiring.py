@@ -25,7 +25,7 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
 
     def test_stage1_search_reopens_ordinary_completed_result_before_selection(self):
         self.assertIn(
-            "from stage1_rl.search_runner import (\n"
+            "from rfr.search.comparators.common.stage1_runner import (\n"
             "                Stage1SearchGracefulStop,\n"
             "                build_stage1_search_accounting,\n"
             "                load_completed_search_result,\n"

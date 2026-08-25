@@ -29,7 +29,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .policy_network import POLICY_ARCHITECTURE, POLICY_NETWORK_ID
+from rfr.search.rl.stage2.policy_network import POLICY_ARCHITECTURE, POLICY_NETWORK_ID
 
 
 @dataclass

@@ -5,14 +5,14 @@ from unittest import mock
 
 import numpy as np
 
-import blb_stage2_rl.search_baselines as search_baselines_module
+import rfr.search.comparators.common.stage2_core as search_baselines_module
 from rfr.search.common.layerwise_action import (
     decode_layer_gene,
     decode_layerwise_action_genes,
     encode_layer_gene,
     encode_layerwise_action_matrix,
 )
-from blb_stage2_rl.search_baselines import (
+from rfr.search.comparators.common.stage2_core import (
     ConstraintLimits,
     LayerwiseSearchSpace,
     SearchConfig,

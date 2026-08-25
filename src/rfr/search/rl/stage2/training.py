@@ -18,8 +18,8 @@ from rfr.preparation.rescale.bridge import (
     build_rescale_invoker,
 )
 
-from .env import ProbeBatch
-from .sequential_policy import SequentialPPOConfig
+from rfr.search.rl.stage2.env import ProbeBatch
+from rfr.search.rl.stage2.sequential_policy import SequentialPPOConfig
 
 
 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_live.pt"
@@ -134,7 +134,7 @@ class BLBStage2TrainConfig:
 
     def __post_init__(self) -> None:
         from rfr.search.common.precision_presets import validate_communication_importance_ratio
-        from .search_baselines import normalize_search_backend
+        from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
         self.search_backend = normalize_search_backend(self.search_backend)
         self.total_episodes = int(self.total_episodes)
@@ -242,7 +242,7 @@ class BLBStage2RLRunner:
         fixed_source: str,
         resume_checkpoint_path: Optional[str] = None,
     ) -> dict[str, Any]:
-        from .sequential_runner import run_sequential_via_runner
+        from rfr.search.rl.stage2.sequential_runner import run_sequential_via_runner
 
         self.evaluator.activate_stage2_inference_batch_size()
         return run_sequential_via_runner(

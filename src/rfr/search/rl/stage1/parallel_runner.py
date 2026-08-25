@@ -46,7 +46,7 @@ import torch.nn as nn
 
 from rfr.search.runtime.device_utils import parse_device_ids
 from rfr.search.runtime.elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
-from .seed_utils import assign_global_episodes, derive_episode_seed
+from rfr.search.rl.stage1.seed_utils import assign_global_episodes, derive_episode_seed
 
 
 try:

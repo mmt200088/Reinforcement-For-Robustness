@@ -15,9 +15,10 @@ import numpy as np
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_COMMON_DIR = _REPO_ROOT / "src/rfr/search/comparators/common"
 _PACKAGE_NAME = "_stage1_search_testpkg"
 _package = ModuleType(_PACKAGE_NAME)
-_package.__path__ = [str(_REPO_ROOT / "stage1_rl")]
+_package.__path__ = [str(_COMMON_DIR)]
 sys.modules[_PACKAGE_NAME] = _package
 
 
@@ -25,7 +26,7 @@ def _load_module(short_name):
     full_name = f"{_PACKAGE_NAME}.{short_name}"
     spec = importlib.util.spec_from_file_location(
         full_name,
-        _REPO_ROOT / "stage1_rl" / f"{short_name}.py",
+        _COMMON_DIR / f"{short_name}.py",
     )
     module = importlib.util.module_from_spec(spec)
     sys.modules[full_name] = module
@@ -33,8 +34,8 @@ def _load_module(short_name):
     return module
 
 
-_search_baselines = _load_module("search_baselines")
-_search_runner = _load_module("search_runner")
+_search_baselines = _load_module("stage1_core")
+_search_runner = _load_module("stage1_runner")
 SearchConfig = _search_baselines.SearchConfig
 SearchEvaluation = _search_baselines.SearchEvaluation
 SearchResult = _search_baselines.SearchResult

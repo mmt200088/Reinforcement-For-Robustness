@@ -637,7 +637,7 @@ class LayerwiseValidationBank:
     trials_per_probe: int
 
     def __post_init__(self) -> None:
-        from .seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         label = str(self.label).strip().upper()
         if label not in ("A", "B", "C"):
@@ -666,7 +666,7 @@ class LayerwiseValidationBank:
 
     @property
     def trial_seeds(self) -> tuple[int, ...]:
-        from .seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         return tuple(
             derive_probe_trial_seed(probe_seed, trial_idx)
@@ -2070,7 +2070,7 @@ def _promotion_probe_seed(
         existing_seeds: Sequence[int],
         fresh_trial_count: int,
         ) -> tuple[int, tuple[int, ...]]:
-    from .seed_utils import (
+    from rfr.search.rl.stage2.seed_utils import (
         derive_layerwise_promotion_probe_seed,
         derive_probe_trial_seed,
     )
@@ -3589,7 +3589,7 @@ def _collect_layerwise_episode(
     reset_seed = None
     probe_seed = None
     if base_seed is not None:
-        from .seed_utils import derive_layerwise_online_evaluation_seeds
+        from rfr.search.rl.stage2.seed_utils import derive_layerwise_online_evaluation_seeds
 
         reset_seed, probe_seed = derive_layerwise_online_evaluation_seeds(
             int(base_seed),
@@ -3788,15 +3788,15 @@ def train_layerwise(
             policy.parameters(), lr=float(getattr(train_cfg.ppo, "lr", 5.0e-5)),
         )
     if rollout_buffer is None:
-        from .sequential_policy import SequentialRolloutBuffer
+        from rfr.search.rl.stage2.sequential_policy import SequentialRolloutBuffer
 
         rollout_buffer = SequentialRolloutBuffer()
     if ppo_update_fn is None:
-        from .sequential_policy import sequential_ppo_update
+        from rfr.search.rl.stage2.sequential_policy import sequential_ppo_update
 
         ppo_update_fn = sequential_ppo_update
     if step_adapter_fn is None:
-        from .sequential_policy import step_to_mask_and_levels
+        from rfr.search.rl.stage2.sequential_policy import step_to_mask_and_levels
 
         step_adapter_fn = step_to_mask_and_levels
 

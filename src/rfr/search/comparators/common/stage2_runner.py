@@ -19,7 +19,7 @@ from rfr.common.jsonl_utils import read_jsonl, recover_jsonl_file
 
 from rfr.search.common.candidate_store import CandidateStore, candidate_key
 from rfr.search.common.layerwise_action import describe_layerwise_action_matrix
-from .search_baselines import (
+from .stage2_core import (
     CONSTRAINT_NAMES,
     CONSTRAINT_PROBABILITY_NAMES,
     ActionMatrix,
@@ -643,7 +643,7 @@ def _promotion_payload(value: Any) -> dict[str, Any]:
 
 def _strict_selected_rank(evaluation: SearchEvaluation) -> tuple[Any, ...]:
     """Return the same ascending strict-selection key used by PPO."""
-    from .layerwise_runner import strict_selection_key
+    from rfr.search.rl.stage2.layerwise_runner import strict_selection_key
 
     metadata = dict(evaluation.metadata)
     full_vector = tuple(
@@ -1203,7 +1203,7 @@ def canonical_strict_validation(
         final_probability: float,
         ) -> dict[str, Any]:
     """Reuse the canonical A/B/C point gates and axis counterfactuals."""
-    from .layerwise_runner import (
+    from rfr.search.rl.stage2.layerwise_runner import (
         _FINAL_REVALIDATION_PASSED,
         _deserialize_boosted_overrides,
         _strict_evidence_final_config_fingerprint,

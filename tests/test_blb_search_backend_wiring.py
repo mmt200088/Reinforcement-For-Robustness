@@ -183,7 +183,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("from stage1_rl.search_runner import (", evaluator)
+        self.assertIn("from rfr.search.comparators.common.stage1_runner import (", evaluator)
         self.assertIn("run_stage1_search,", evaluator)
         self.assertIn("backend=backend", evaluator)
         self.assertIn('self.stage2_fixed_config_source = "stage1_result"', evaluator)
@@ -275,7 +275,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("stage1_rl.provenance", runner)
         self.assertIn(
-            "from stage1_rl.search_runner import load_completed_search_result",
+            "from rfr.search.comparators.common.stage1_runner import load_completed_search_result",
             runner,
         )
         self.assertIn(
@@ -460,7 +460,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("full_search_strict_least_violating", runner)
 
         baseline_runner = (
-            ROOT / "blb_stage2_rl" / "search_baseline_runner.py"
+            ROOT / "src/rfr/search/comparators/common/stage2_runner.py"
         ).read_text(encoding="utf-8")
         self.assertIn("promote_candidate_if_eligible", baseline_runner)
         self.assertIn("certify_candidate_with_bank_c", baseline_runner)

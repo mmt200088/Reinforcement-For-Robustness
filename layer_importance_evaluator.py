@@ -2000,7 +2000,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if self.blb_v3_convergence_patience_updates < 100:
             raise ValueError("convergence patience must be at least 100 updates")
 
-        from blb_stage2_rl.search_baselines import (
+        from rfr.search.comparators.common.stage2_core import (
             normalize_search_backend,
             validate_comparator_scientific_parameters,
         )
@@ -4851,12 +4851,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             from dataclasses import replace
 
             from rfr.common.json_utils import read_json_file
-            from stage1_rl.search_baselines import (
+            from rfr.search.comparators.common.stage1_core import (
                 Stage1Constraints,
                 stage1_comparator_search_config,
                 validate_stage1_comparator_setup,
             )
-            from stage1_rl.search_runner import (
+            from rfr.search.comparators.common.stage1_runner import (
                 Stage1SearchGracefulStop,
                 build_stage1_search_accounting,
                 load_completed_search_result,
@@ -6760,7 +6760,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     None if final_eval_error is None else repr(final_eval_error)
                 ),
             )
-            from blb_stage2_rl.search_baseline_runner import _atomic_json
+            from rfr.search.comparators.common.stage2_runner import _atomic_json
 
             _atomic_json(
                 os.path.join(self.run_output_dir, "two_stage_result.json"),

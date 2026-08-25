@@ -10,8 +10,8 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from blb_stage2_rl import search_baseline_runner
-from blb_stage2_rl.search_baselines import (
+from rfr.search.comparators.common import stage2_runner as search_baseline_runner
+from rfr.search.comparators.common.stage2_core import (
     ConstraintLimits,
     SearchEvaluation,
     SearchMetrics,

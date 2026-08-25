@@ -143,7 +143,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 stage2_inference_batch_size=64,
             )
             with mock.patch(
-                "stage1_rl.search_runner.load_completed_search_result",
+                "rfr.search.comparators.common.stage1_runner.load_completed_search_result",
                 return_value=_completed_stage1_result(),
             ) as load_completed:
                 invocation = build(
@@ -234,7 +234,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 stage1_comparator_selection_binding=binding,
             )
             with mock.patch(
-                "stage1_rl.search_runner.load_completed_search_result",
+                "rfr.search.comparators.common.stage1_runner.load_completed_search_result",
                 return_value=_completed_stage1_result(),
             ):
                 with self.assertRaisesRegex(
@@ -276,7 +276,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 stage1_comparator_selection_binding=binding,
             )
             with mock.patch(
-                "stage1_rl.search_runner.load_completed_search_result",
+                "rfr.search.comparators.common.stage1_runner.load_completed_search_result",
                 return_value=_completed_stage1_result(),
             ), self.assertRaisesRegex(
                 RuntimeError, "does not match the completed Stage-1 result",

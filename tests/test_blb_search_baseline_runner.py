@@ -19,8 +19,8 @@ from rfr.search.common.layerwise_action import (
 )
 from rfr.search.common.precision_presets import allocated_precision_tolerances
 from rfr.search.rl.stage2.reward import EpisodeMetrics
-import blb_stage2_rl.search_baseline_runner as search_runner_module
-from blb_stage2_rl.search_baseline_runner import (
+import rfr.search.comparators.common.stage2_runner as search_runner_module
+from rfr.search.comparators.common.stage2_runner import (
     LayerwiseRuntimeEvaluator,
     _atomic_json,
     _strict_fallback_rank,
@@ -31,7 +31,7 @@ from blb_stage2_rl.search_baseline_runner import (
     persist_search_result,
     run_layerwise_search_baseline,
 )
-from blb_stage2_rl.search_baselines import (
+from rfr.search.comparators.common.stage2_core import (
     ConstraintLimits,
     LayerwiseSearchSpace,
     SearchConfig,
@@ -678,7 +678,7 @@ def _strict_materialization_fingerprints():
 
 def _patch_strict_materialization_preparation():
     return patch(
-        "blb_stage2_rl.search_baseline_runner."
+        "rfr.search.comparators.common.stage2_runner."
         "_prepare_strict_materialization_fingerprints",
         return_value=_strict_materialization_fingerprints(),
     )
@@ -831,10 +831,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             return real_replace(source, target)
 
         with tempfile.TemporaryDirectory() as tmpdir, patch(
-                "blb_stage2_rl.search_baseline_runner.os.fsync",
+                "rfr.search.comparators.common.stage2_runner.os.fsync",
                 side_effect=lambda _fd: events.append("fsync"),
         ), patch(
-                "blb_stage2_rl.search_baseline_runner.os.replace",
+                "rfr.search.comparators.common.stage2_runner.os.replace",
                 side_effect=tracked_replace,
         ):
             _atomic_json(
@@ -1608,7 +1608,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         scientific_manifest = _search_manifest()
 
         with tempfile.TemporaryDirectory() as tmpdir, patch(
-                "blb_stage2_rl.search_baseline_runner.run_search",
+                "rfr.search.comparators.common.stage2_runner.run_search",
                 side_effect=AssertionError("search must not run"),
         ):
             with self.assertRaisesRegex(ValueError, "seed 42"):
@@ -1648,7 +1648,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             ("rf_min_samples_leaf", 3),
         ):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmpdir, patch(
-                    "blb_stage2_rl.search_baseline_runner.run_search",
+                    "rfr.search.comparators.common.stage2_runner.run_search",
                     side_effect=AssertionError("search must not run"),
             ):
                 with self.assertRaisesRegex(ValueError, "Bayesian"):
@@ -1671,7 +1671,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         scientific_manifest = _search_manifest()
 
         with tempfile.TemporaryDirectory() as tmpdir, patch(
-                "blb_stage2_rl.search_baseline_runner.run_search",
+                "rfr.search.comparators.common.stage2_runner.run_search",
                 side_effect=RuntimeError("canonical search reached"),
         ):
             with self.assertRaisesRegex(RuntimeError, "canonical search reached"):
@@ -1830,10 +1830,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             termination_reason="observation_attempt_guard",
         )
         with tempfile.TemporaryDirectory() as tmpdir, patch(
-                "blb_stage2_rl.search_baseline_runner.run_search",
+                "rfr.search.comparators.common.stage2_runner.run_search",
                 return_value=incomplete,
         ), patch(
-                "blb_stage2_rl.search_baseline_runner.persist_search_result",
+                "rfr.search.comparators.common.stage2_runner.persist_search_result",
                 return_value={
                     "manifest": os.path.join(tmpdir, "manifest.json"),
                     "observations": os.path.join(tmpdir, "observations.jsonl"),
@@ -1885,7 +1885,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 raise RuntimeError("online interrupted")
 
             with patch(
-                    "blb_stage2_rl.search_baseline_runner.run_search",
+                    "rfr.search.comparators.common.stage2_runner.run_search",
                     side_effect=interrupted_search,
             ):
                 with self.assertRaisesRegex(RuntimeError, "online interrupted"):
@@ -1950,7 +1950,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     raise RuntimeError("online interrupted")
 
                 with patch(
-                        "blb_stage2_rl.search_baseline_runner.run_search",
+                        "rfr.search.comparators.common.stage2_runner.run_search",
                         side_effect=interrupted_search,
                 ):
                     with self.assertRaisesRegex(RuntimeError, "online interrupted"):
