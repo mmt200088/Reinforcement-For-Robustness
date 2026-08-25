@@ -1,6 +1,6 @@
 """GPU-count-independence contract for the Stage-2 episode-parallel rollout (torch-free).
 
-Mirror of tests/test_stage1_determinism.py for blb_stage2_rl/seed_utils.py:
+Mirror of tests/test_stage1_determinism.py for src/rfr/search/rl/stage2/seed_utils.py:
 every seed is keyed by the GLOBAL episode index (+ step / trial / attempt /
 update), never by worker count or wall clock, so a window's seed sequence is
 identical for 1, 2, 4, 5, ... workers.
@@ -16,7 +16,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 _spec = importlib.util.spec_from_file_location(
-    "blb_seq_seed_utils", str(_REPO / "blb_stage2_rl" / "seed_utils.py")
+    "blb_seq_seed_utils", str(_REPO / "src/rfr/search/rl/stage2/seed_utils.py")
 )
 seed_utils = importlib.util.module_from_spec(_spec)
 sys.modules["blb_seq_seed_utils"] = seed_utils
@@ -138,7 +138,7 @@ class TrialMixConsistencyTest(unittest.TestCase):
                 )
 
     def test_deterministic_env_reuses_shared_trial_seed_list(self):
-        source = source_text("blb_stage2_rl/env.py")
+        source = source_text("src/rfr/search/rl/stage2/env.py")
         helper_region = source.split(
             "    def _run_deterministic_probe_trial_indices", 1
         )[1].split("    def _eval_on_probe_deterministic", 1)[0]

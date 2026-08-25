@@ -46,7 +46,7 @@ class FusionSinglePathGuardTest(unittest.TestCase):
             self.assertNotIn(forbidden, calls)
 
     def test_terminal_prepare_can_replay_boosted_overrides(self):
-        fn = _function_def(REPO / "blb_stage2_rl" / "env.py", "prepare_action_for_terminal_probe")
+        fn = _function_def(REPO / "src/rfr/search/rl/stage2/env.py", "prepare_action_for_terminal_probe")
         arg_names = [arg.arg for arg in fn.args.args + fn.args.kwonlyargs]
         self.assertIn("boosted_overrides", arg_names)
 
@@ -65,7 +65,7 @@ class FusionSinglePathGuardTest(unittest.TestCase):
         )
 
     def test_final_strict_revalidation_replays_boosted_fusion_config(self):
-        source = (REPO / "blb_stage2_rl" / "layerwise_runner.py").read_text(encoding="utf-8")
+        source = (REPO / "src/rfr/search/rl/stage2/layerwise_runner.py").read_text(encoding="utf-8")
         self.assertTrue(
             'boosted_overrides=strict_best_snapshot["boosted_overrides"]'
             in source,

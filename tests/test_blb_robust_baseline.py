@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from blb_stage2_rl.reward import EpisodeMetrics
-from blb_stage2_rl.seed_utils import derive_baseline_group_probe_seed
+from rfr.search.rl.stage2.reward import EpisodeMetrics
+from rfr.search.rl.stage2.seed_utils import derive_baseline_group_probe_seed
 from rfr.search.common.statistical_constraints import DegenerateBaselineVariance
 
 
@@ -59,7 +59,7 @@ def _metrics(group_idx, *, degenerate_until=0):
 
 
 def _collect(env):
-    from blb_stage2_rl.sequential_runner import _collect_robust_baseline_reference
+    from rfr.search.rl.stage2.sequential_runner import _collect_robust_baseline_reference
 
     return _collect_robust_baseline_reference(
         base_env=env,
@@ -184,7 +184,7 @@ def test_baseline_group_probe_seed_rejects_invalid_integer_inputs(base_seed, gro
 
 
 def test_baseline_preflight_dispatch_skips_standard_callback_for_robust_mode():
-    from blb_stage2_rl.sequential_runner import _run_standard_preflight_if_needed
+    from rfr.search.rl.stage2.sequential_runner import _run_standard_preflight_if_needed
 
     calls = []
     _run_standard_preflight_if_needed(
@@ -201,7 +201,7 @@ def test_baseline_preflight_dispatch_skips_standard_callback_for_robust_mode():
 
 
 def test_robust_baseline_config_reads_public_bootstrap_samples_name():
-    from blb_stage2_rl.sequential_runner import _resolve_robust_baseline_config
+    from rfr.search.rl.stage2.sequential_runner import _resolve_robust_baseline_config
 
     evaluator = SimpleNamespace(
         stage2_limit_tolerance=0.001,
@@ -218,8 +218,8 @@ def test_robust_baseline_config_reads_public_bootstrap_samples_name():
 
 
 def test_install_robust_reference_replaces_legacy_stability_and_margin_state():
-    from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
-    from blb_stage2_rl.sequential_runner import _install_robust_baseline_reference
+    from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
+    from rfr.search.rl.stage2.sequential_runner import _install_robust_baseline_reference
 
     reference, summary = _collect(FakeBaseEnv(_metrics))
     baseline = BaselineCostStats(
@@ -302,11 +302,11 @@ def test_collection_does_not_bypass_unknown_reward_design():
 
 
 def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate():
-    from blb_stage2_rl import env as env_module
+    from rfr.search.rl.stage2 import env as env_module
     from rfr.search.common.action_space import make_all_max_action_vector
-    from blb_stage2_rl.env import BLBStage2Env
-    from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
-    from blb_stage2_rl.sequential_runner import _collect_robust_baseline_reference
+    from rfr.search.rl.stage2.env import BLBStage2Env
+    from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
+    from rfr.search.rl.stage2.sequential_runner import _collect_robust_baseline_reference
 
     env = BLBStage2Env.__new__(BLBStage2Env)
     env.baseline = BaselineCostStats(total_bits_sum=100.0, avg_k=13.0)

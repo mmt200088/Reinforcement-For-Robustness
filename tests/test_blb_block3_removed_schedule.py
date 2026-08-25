@@ -36,7 +36,7 @@ class Block3RuntimeSourceTest(unittest.TestCase):
         self.assertIn("3: _BLOCK3_FIELDS", text)
 
     def test_layerwise_env_owns_and_resets_the_exact_ro_baseline(self):
-        text = source_text("blb_stage2_rl/layerwise_env.py")
+        text = source_text("src/rfr/search/rl/stage2/layerwise_env.py")
         self.assertIn("self._baseline_action_vec = baseline.copy()", text)
         self.assertIn("self._pending_full_vec = self._baseline_action_vec.copy()", text)
 

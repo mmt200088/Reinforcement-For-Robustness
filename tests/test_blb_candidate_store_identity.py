@@ -1896,7 +1896,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
 
     def test_mixed_store_recovery_preserves_compact_replay_fingerprints_and_offsets(self):
         from rfr.search.common.candidate_store import CandidateStore, candidate_key, sha256_json
-        from blb_stage2_rl.layerwise_runner import checkpoint_file_fingerprints
+        from rfr.search.rl.stage2.layerwise_runner import checkpoint_file_fingerprints
         from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()

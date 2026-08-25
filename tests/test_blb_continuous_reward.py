@@ -3,7 +3,7 @@ import types
 import unittest
 
 from rfr.preparation.fusion import cost as FC
-from blb_stage2_rl import reward as R
+from rfr.search.rl.stage2 import reward as R
 
 THR = 0.858
 BASELINE_M = 0.871

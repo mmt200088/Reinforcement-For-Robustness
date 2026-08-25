@@ -161,7 +161,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             load=lambda path, **_kwargs: checkpoints[pathlib.Path(path).name],
         )
         loader.__globals__["torch"] = fake_torch
-        runner_module = types.ModuleType("blb_stage2_rl.training")
+        runner_module = types.ModuleType("rfr.search.rl.stage2.training")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
@@ -180,7 +180,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             }):
                 _stage1, stage2 = loader(evaluator)
 
@@ -213,7 +213,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        runner_module = types.ModuleType("blb_stage2_rl.training")
+        runner_module = types.ModuleType("rfr.search.rl.stage2.training")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
@@ -232,7 +232,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             }):
                 with self.assertRaisesRegex(
                         RuntimeError,
@@ -268,7 +268,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        runner_module = types.ModuleType("blb_stage2_rl.training")
+        runner_module = types.ModuleType("rfr.search.rl.stage2.training")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
@@ -287,7 +287,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             }):
                 _stage1, stage2 = loader(evaluator)
 
@@ -315,7 +315,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
             raise RuntimeError("corrupt checkpoint bytes")
 
         loader.__globals__["torch"] = types.SimpleNamespace(load=fail_load)
-        runner_module = types.ModuleType("blb_stage2_rl.training")
+        runner_module = types.ModuleType("rfr.search.rl.stage2.training")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
@@ -333,7 +333,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             }):
                 with self.assertRaisesRegex(RuntimeError, "corrupt checkpoint bytes"):
                     loader(evaluator)
@@ -358,7 +358,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         loader.__globals__["torch"] = types.SimpleNamespace(
             load=lambda _path, **_kwargs: checkpoint,
         )
-        runner_module = types.ModuleType("blb_stage2_rl.training")
+        runner_module = types.ModuleType("rfr.search.rl.stage2.training")
         runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
         runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
 
@@ -376,7 +376,7 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
                 },
             )
             with mock.patch.dict(sys.modules, {
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             }):
                 with self.assertRaisesRegex(RuntimeError, "reloadable group"):
                     loader(evaluator)

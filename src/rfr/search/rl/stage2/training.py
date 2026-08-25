@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 import os
+from pathlib import Path
 import sys
 from typing import Any, Mapping, Optional
 
@@ -27,7 +28,7 @@ BLB_STAGE2_BEST_CFG_FILENAME = "blb_stage2_best_cfg.pkl"
 
 
 def _repo_root() -> str:
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return str(Path(__file__).resolve().parents[5])
 
 
 def resolve_blb_persistence_dir(evaluator: Any) -> str:

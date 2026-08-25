@@ -6,7 +6,7 @@ import unittest
 
 class Stage2ProductionConfigTest(unittest.TestCase):
     def test_config_contains_only_the_layerwise_production_surface(self):
-        from blb_stage2_rl.training import BLBStage2TrainConfig
+        from rfr.search.rl.stage2.training import BLBStage2TrainConfig
 
         names = {field.name for field in fields(BLBStage2TrainConfig)}
         removed = {
@@ -38,9 +38,9 @@ class Stage2ProductionConfigTest(unittest.TestCase):
         )
 
     def test_runner_is_exposed_only_from_training_module(self):
-        from blb_stage2_rl.training import BLBStage2RLRunner
+        from rfr.search.rl.stage2.training import BLBStage2RLRunner
 
-        self.assertEqual(BLBStage2RLRunner.__module__, "blb_stage2_rl.training")
+        self.assertEqual(BLBStage2RLRunner.__module__, "rfr.search.rl.stage2.training")
 
 
 if __name__ == "__main__":

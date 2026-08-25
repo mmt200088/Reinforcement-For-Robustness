@@ -18,7 +18,7 @@ from rfr.search.common.layerwise_action import (
     materialize_layerwise_counterfactuals,
 )
 from rfr.search.common.precision_presets import allocated_precision_tolerances
-from blb_stage2_rl.reward import EpisodeMetrics
+from rfr.search.rl.stage2.reward import EpisodeMetrics
 import blb_stage2_rl.search_baseline_runner as search_runner_module
 from blb_stage2_rl.search_baseline_runner import (
     LayerwiseRuntimeEvaluator,
@@ -41,7 +41,7 @@ from blb_stage2_rl.search_baselines import (
     candidate_rank_key,
     run_search,
 )
-from blb_stage2_rl.seed_utils import (
+from rfr.search.rl.stage2.seed_utils import (
     derive_layerwise_episode_probe_seed,
     derive_probe_trial_seed,
 )
@@ -1049,8 +1049,8 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         }), 3)
 
     def test_same_action_matches_ppo_episode_metrics_at_same_stream_index(self):
-        from blb_stage2_rl.layerwise_runner import _collect_layerwise_episode
-        from blb_stage2_rl.seed_utils import (
+        from rfr.search.rl.stage2.layerwise_runner import _collect_layerwise_episode
+        from rfr.search.rl.stage2.seed_utils import (
             derive_layerwise_online_evaluation_seeds,
         )
 
@@ -2096,11 +2096,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock, patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "certify_candidate_with_bank_c",
                 side_effect=_strict_result_side_effect(certification),
         ) as certify_mock:
@@ -2167,10 +2167,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+                "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
                 side_effect=_strict_result_side_effect(promotion),
         ), patch(
-                "blb_stage2_rl.layerwise_runner.certify_candidate_with_bank_c",
+                "rfr.search.rl.stage2.layerwise_runner.certify_candidate_with_bank_c",
                 side_effect=_strict_result_side_effect(certification),
         ), self.assertRaisesRegex(RuntimeError, "axis"):
             canonical_strict_validation(
@@ -2216,11 +2216,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock, patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "certify_candidate_with_bank_c",
                 side_effect=_strict_result_side_effect(certification),
         ) as certify_mock:
@@ -2279,11 +2279,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=promotion_side_effect,
         ) as promote_mock, patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "certify_candidate_with_bank_c",
         ) as certify_mock:
             strict = canonical_strict_validation(
@@ -2484,11 +2484,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=promotion_side_effect,
         ), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "certify_candidate_with_bank_c",
         ) as certify_mock:
             strict = canonical_strict_validation(
@@ -2556,7 +2556,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             },
         )
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=_strict_result_side_effect(promotion),
         ), self.assertRaisesRegex(RuntimeError, "infrastructure evaluation failed"):
@@ -2592,7 +2592,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             ),
         )
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 return_value=promotion,
         ), self.assertRaisesRegex(RuntimeError, "identity mismatch"):
@@ -2630,7 +2630,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         )
 
         with _patch_strict_materialization_preparation(), patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock:

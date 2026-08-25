@@ -18,7 +18,7 @@ import torch
 
 class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
     def test_aggregate_probe_trials_preserves_sanitized_trials_and_unbiased_std(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         metrics = BLBStage2Env._aggregate_probe_trials(
             object(),
@@ -44,7 +44,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(single_trial.metric2_std, 0.0)
 
     def test_metrics_from_trial_results_preserves_sanitized_trials_seeds_and_ddof_one(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         metrics = BLBStage2Env._metrics_from_trial_results(
             [(float("inf"), float("nan"), 0.4), (2.0, 0.6, float("inf"))],
@@ -60,7 +60,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(metrics.metric2_std, np.std([0.4, 1.0], ddof=1))
 
     def test_trial_aggregation_rejects_empty_explicit_seeds_for_nonempty_trials(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         with self.assertRaisesRegex(ValueError, "trial_seeds length"):
             BLBStage2Env._aggregate_probe_trials(
@@ -76,7 +76,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(empty.trial_seeds, ())
 
     def test_metrics_from_trial_results_rejects_misaligned_seeds(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         with self.assertRaisesRegex(ValueError, "trial_seeds length"):
             BLBStage2Env._metrics_from_trial_results(
@@ -85,7 +85,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
             )
 
     def test_probe_runner_reconstructs_trial_seeds_in_trial_index_order(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         class FakeProbeRunner:
             def __init__(self):
@@ -117,7 +117,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(metrics.trial_seeds, (700, 701))
 
     def test_fast_multi_action_probe_attaches_each_candidate_seed_in_local_order(self):
-        from blb_stage2_rl.env import BLBStage2Env
+        from rfr.search.rl.stage2.env import BLBStage2Env
 
         class FakeProbeRunner:
             def __init__(self):
@@ -154,8 +154,8 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(results[1][3]["metrics"].metric1_trials, (0.9,))
 
     def test_grouped_k5_probe_preserves_each_episode_seed_and_trial_order(self):
-        from blb_stage2_rl.env import BLBStage2Env
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.env import BLBStage2Env
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         class FakeProbeRunner:
             num_workers = 4
@@ -251,9 +251,9 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(first_diag["group_action_count"], 2)
 
     def test_grouped_k5_mixed_batch_preserves_order_seed_and_step_index(self):
-        from blb_stage2_rl.env import BLBStage2Env
-        from blb_stage2_rl.reward import EpisodeMetrics
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.env import BLBStage2Env
+        from rfr.search.rl.stage2.reward import EpisodeMetrics
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         class FakeProbeRunner:
             num_workers = 4
@@ -1166,7 +1166,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
         default. The regression invariant is the gate order: P1 blocks metric
         feasibility, P2 blocks cost reward, and only P3 can receive cost.
         """
-        from blb_stage2_rl.reward import (
+        from rfr.search.rl.stage2.reward import (
             BaselineCostStats,
             EpisodeMetrics,
             RewardWeights,
@@ -1259,7 +1259,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
         floor keeps tiny sampling swings in the top tier while preserving P2
         for materially unstable metrics.
         """
-        from blb_stage2_rl.reward import (
+        from rfr.search.rl.stage2.reward import (
             BaselineCostStats,
             EpisodeMetrics,
             RewardWeights,
@@ -1361,8 +1361,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             load_max_sfs,
             make_all_max_action_vector,
         )
-        from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
-        from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
+        from rfr.search.rl.stage2.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
+        from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
         from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class TinyModel(torch.nn.Module):
@@ -1472,8 +1472,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
 
     def test_env_runs_forward_even_when_optimizer_invalid(self):
         from rfr.search.common.action_space import load_max_sfs, make_all_max_action_vector
-        from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
-        from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
+        from rfr.search.rl.stage2.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
+        from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
         from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class TinyModel(torch.nn.Module):
@@ -1754,7 +1754,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
         ]
 
     def test_stage2_uses_all_train_probe_rows_in_fixed_order(self):
-        from blb_stage2_rl.training import BLBStage2RLRunner
+        from rfr.search.rl.stage2.training import BLBStage2RLRunner
 
         probe_rows = self._rows(256)
 
@@ -1780,7 +1780,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
     def test_stage2_activation_rebuilds_evaluator_loaders_and_drops_stage1_cache(self):
         from layer_importance_evaluator import LayerImportanceEvaluator
-        from stage1_rl.eval_cache import Stage1EvalCache
+        from rfr.search.rl.stage1.eval_cache import Stage1EvalCache
 
         evaluator = object.__new__(LayerImportanceEvaluator)
         evaluator.batch_size = 16
@@ -1816,7 +1816,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
 class BLBPersistencePathRegressionTests(unittest.TestCase):
     def test_blb_progress_stays_under_stage2_noise_progress(self):
-        from blb_stage2_rl.training import resolve_blb_persistence_dir
+        from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
 
         class DummyEvaluator:
             pass

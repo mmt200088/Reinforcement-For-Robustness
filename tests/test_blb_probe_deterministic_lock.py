@@ -105,7 +105,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertIs(probe_mod.run_installed_probe_trial, run_installed_probe_trial)
 
     def _make_env(self, *, seed: int, lock, scope=None, device=None, use_stream=False):
-        import blb_stage2_rl.env as env_mod
+        import rfr.search.rl.stage2.env as env_mod
         from rfr.search.runtime.model_handler import _sample_independent_gaussian
 
         class FakeNoisyModel(torch.nn.Module):
@@ -180,7 +180,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertGreater(len(calls), 0)
 
     def test_returned_metrics_and_diagnostics_reuse_shared_trial_seeds(self):
-        import blb_stage2_rl.seed_utils as seed_utils
+        import rfr.search.rl.stage2.seed_utils as seed_utils
 
         probe_env = self._make_env(seed=123, lock=threading.Lock())
         expected = (9001, 9002, 9003)

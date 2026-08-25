@@ -3,7 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYER_EVALUATOR = ROOT / "layer_importance_evaluator.py"
-PARALLEL_RUNNER = ROOT / "stage1_rl" / "parallel_runner.py"
+PARALLEL_RUNNER = ROOT / "src/rfr/search/rl/stage1/parallel_runner.py"
 
 
 def _source(path: Path) -> str:

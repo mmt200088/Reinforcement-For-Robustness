@@ -8,11 +8,11 @@ import unittest
 class ProductionPolicyNetworkTests(unittest.TestCase):
     def test_fixed_policy_network_module_exists(self):
         self.assertIsNotNone(
-            importlib.util.find_spec("blb_stage2_rl.policy_network")
+            importlib.util.find_spec("rfr.search.rl.stage2.policy_network")
         )
 
     def test_fixed_identity_and_architecture(self):
-        from blb_stage2_rl.policy_network import (
+        from rfr.search.rl.stage2.policy_network import (
             POLICY_ARCHITECTURE,
             POLICY_NETWORK_ID,
             POLICY_RL_VARIANT,
@@ -29,7 +29,7 @@ class ProductionPolicyNetworkTests(unittest.TestCase):
         )
 
     def test_checkpoint_requires_explicit_current_identity(self):
-        from blb_stage2_rl.policy_network import (
+        from rfr.search.rl.stage2.policy_network import (
             POLICY_NETWORK_ID,
             validate_checkpoint_policy_network,
         )
@@ -46,7 +46,7 @@ class ProductionPolicyNetworkTests(unittest.TestCase):
                 validate_checkpoint_policy_network(checkpoint)
 
     def test_contract_binds_fixed_network_and_rejects_shape_drift(self):
-        from blb_stage2_rl.policy_network import bind_policy_network_contract
+        from rfr.search.rl.stage2.policy_network import bind_policy_network_contract
 
         shape = {
             "d_model": 128,
@@ -69,7 +69,7 @@ class ProductionPolicyNetworkTests(unittest.TestCase):
             )
 
     def test_sequential_policy_has_no_network_selector(self):
-        from blb_stage2_rl.sequential_policy import SequentialPolicyConfig
+        from rfr.search.rl.stage2.sequential_policy import SequentialPolicyConfig
 
         names = {field.name for field in fields(SequentialPolicyConfig)}
         self.assertNotIn("network_variant", names)

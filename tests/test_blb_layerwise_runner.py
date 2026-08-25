@@ -19,7 +19,7 @@ import numpy as np
 
 class LayerwiseSeedTests(unittest.TestCase):
     def test_adjacent_episode_trial_domains_are_disjoint_and_bounded(self):
-        from blb_stage2_rl.seed_utils import (
+        from rfr.search.rl.stage2.seed_utils import (
             derive_layerwise_episode_probe_seed,
             derive_probe_trial_seed,
         )
@@ -76,7 +76,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         }
 
     def test_strict_rank_and_pareto_use_both_resource_axes(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             strict_rank_key,
             strict_resource_pareto_frontier,
         )
@@ -103,7 +103,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(list(frontier), ["a", "c"])
 
     def test_identical_online_evidence_retargets_existing_assessment(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _assess_pooled_online_trials,
         )
         from rfr.search.common.statistical_constraints import (
@@ -149,7 +149,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertTrue(result.online_stability_pass)
 
     def test_convergence_resets_on_exact_resource_objective_improvement(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker(patience_updates=2)
         tracker.observe_update(
@@ -179,7 +179,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(improved.best_robust_feasible_objective, (0.3, 0.3))
 
     def test_strict_rank_orders_cost_then_confidence_then_safety_margin(self):
-        from blb_stage2_rl.layerwise_runner import strict_rank_key
+        from rfr.search.rl.stage2.layerwise_runner import strict_rank_key
 
         lower_cost_high_reward = self._candidate(
             cost=0.4, probabilities=[0.99] * 6, loss=0.1, metric1=0.99, metric2=0.99,
@@ -202,7 +202,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertLess(strict_rank_key(strong_margin), strict_rank_key(weak_margin))
 
     def test_strict_rank_uses_all_six_confidences_and_margins(self):
-        from blb_stage2_rl.layerwise_runner import strict_rank_key
+        from rfr.search.rl.stage2.layerwise_runner import strict_rank_key
 
         weaker_confidence = self._candidate(
             cost=0.5,
@@ -230,7 +230,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertLess(strict_rank_key(stronger_margin), strict_rank_key(weaker_margin))
 
     def test_normalized_safety_margins_cover_all_six_constraints(self):
-        from blb_stage2_rl.layerwise_runner import normalized_constraint_safety_margins
+        from rfr.search.rl.stage2.layerwise_runner import normalized_constraint_safety_margins
 
         metrics = {
             "loss_mean": 0.30,
@@ -260,7 +260,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertAlmostEqual(margins[5], 0.5)
 
     def test_point_constraint_gate_checks_all_six_metrics_without_probability(self):
-        import blb_stage2_rl.layerwise_runner as layerwise_runner
+        import rfr.search.rl.stage2.layerwise_runner as layerwise_runner
 
         self.assertTrue(hasattr(layerwise_runner, "point_constraints_pass"))
         if not hasattr(layerwise_runner, "point_constraints_pass"):
@@ -291,12 +291,12 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 ))
 
     def test_axis_counterfactual_gate_splits_precision_but_keeps_all_stability_limits(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             LayerwiseValidationBank,
             LayerwiseValidationBanks,
             _evaluate_axis_counterfactual_banks,
         )
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
         from rfr.search.common.statistical_constraints import (
             TrialSeries,
             build_baseline_reference,
@@ -424,12 +424,12 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "materialize_layerwise_counterfactuals",
                 return_value=materializations,
             ),
             mock.patch(
-                "blb_stage2_rl.layerwise_runner."
+                "rfr.search.rl.stage2.layerwise_runner."
                 "_collect_fixed_validation_bank",
                 side_effect=collect,
             ),
@@ -497,10 +497,10 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_validation_bank_accepts_immutable_materialized_overrides(self):
         from rfr.search.common.candidate_store import CandidateStore
         from rfr.search.common.layerwise_action import LayerwiseMaterialization
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _collect_fixed_validation_bank,
         )
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         banks = _three_validation_banks()
         materialized = LayerwiseMaterialization(
@@ -580,8 +580,8 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_three_validation_banks_are_disjoint_and_pool_in_order(self):
-        import blb_stage2_rl.layerwise_runner as layerwise_runner
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        import rfr.search.rl.stage2.layerwise_runner as layerwise_runner
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
         from rfr.search.common.statistical_constraints import TrialSeries
 
         required = ("LayerwiseValidationBank", "LayerwiseValidationBanks")
@@ -678,11 +678,11 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             )
 
     def test_validation_banks_resume_payload_restores_exact_references(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             LayerwiseValidationBank,
             LayerwiseValidationBanks,
         )
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
         from rfr.search.common.statistical_constraints import (
             TrialSeries,
             build_baseline_reference,
@@ -760,7 +760,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             LayerwiseValidationBanks.from_resume_payload(payload)
 
     def test_layerwise_validation_bank_config_is_fixed_to_five_by_three(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             validate_layerwise_validation_bank_config,
         )
 
@@ -788,7 +788,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 validate_layerwise_validation_bank_config(invalid)
 
     def test_three_bank_convergence_contract_cannot_stop_before_90k_or_100_updates(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             validate_layerwise_three_bank_convergence_config,
         )
 
@@ -820,7 +820,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 validate_layerwise_three_bank_convergence_config(invalid)
 
     def test_episode_limit_resume_allows_only_equal_or_larger_caps(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             validate_layerwise_episode_limit_extension,
         )
 
@@ -841,7 +841,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             validate_layerwise_episode_limit_extension(0, 200_000)
 
     def test_normalized_entropy_excludes_masked_and_one_option_slots(self):
-        from blb_stage2_rl.layerwise_runner import normalized_entropy_snapshot
+        from rfr.search.rl.stage2.layerwise_runner import normalized_entropy_snapshot
 
         entropy = np.asarray([
             [0.05 * math.log(2), 999.0],
@@ -865,7 +865,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
     def test_evidence_identity_context_separates_probe_and_full_validation(self):
         from rfr.search.common.candidate_store import candidate_key
-        from blb_stage2_rl.layerwise_runner import evidence_identity_context
+        from rfr.search.rl.stage2.layerwise_runner import evidence_identity_context
 
         base = {
             "action_space_version": "stage2_layerwise_12x6_v1",
@@ -938,7 +938,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_compact_promotion_status_helper_delegates_to_candidate_store_api(self):
-        from blb_stage2_rl.layerwise_runner import _append_promotion_status
+        from rfr.search.rl.stage2.layerwise_runner import _append_promotion_status
 
         append = mock.Mock()
         append_promotion_status = mock.Mock()
@@ -967,7 +967,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_probe_loader_uses_exact_registered_train_probe_without_resampling(self):
-        source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "training.py"
+        source_path = Path(__file__).resolve().parents[1] / "src/rfr/search/rl/stage2/training.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"))
         method = next(
             node
@@ -999,7 +999,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIn("authoritative_robust_reference", source)
 
     def test_resumed_best_reward_uses_historical_diagnostics_maximum(self):
-        from blb_stage2_rl.sequential_runner import resolve_resumed_best_reward
+        from rfr.search.rl.stage2.sequential_runner import resolve_resumed_best_reward
 
         cases = (
             ("historical maximum", {"reward": 4.0}, 9.5, 9.5),
@@ -1100,7 +1100,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(view_keys, {"F1"})
 
     def test_search_gate_reuses_exact_online_batches_and_probe_view(self):
-        from blb_stage2_rl.sequential_runner import (
+        from rfr.search.rl.stage2.sequential_runner import (
             _build_search_gate_env,
         )
 
@@ -1208,7 +1208,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIn("if online_probe_example_count != 256:", sequential_source)
 
     def test_objective_convergence_requires_minimum_episodes_and_revalidation(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker(
             patience_updates=100, minimum_episodes=90_000,
@@ -1257,7 +1257,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(huge_episode_without_plateau.converged)
 
     def test_convergence_checkpoint_persists_and_validates_contract(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker(
             patience_updates=100, minimum_episodes=90_000,
@@ -1309,7 +1309,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertNotIn('completion_status = "bounded_budget_exhausted"', source)
 
     def test_layerwise_algorithm_identity_excludes_extendable_runtime_cap(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
 
@@ -1323,7 +1323,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_convergence_depends_on_policy_and_frontier_not_episode_count(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker(patience_updates=100)
         for _ in range(50):
@@ -1380,7 +1380,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
     def test_convergence_uses_stable_selected_action_not_entropy(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker(patience_updates=100)
         state = tracker.observe_update(
@@ -1419,7 +1419,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertTrue(state.converged)
 
     def test_same_cost_selected_action_change_resets_action_stability(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.observe_update(
@@ -1452,7 +1452,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
     def test_strict_best_snapshot_uses_action_lexicographic_final_tie_break(self):
-        from blb_stage2_rl.layerwise_runner import _strict_best_snapshot
+        from rfr.search.rl.stage2.layerwise_runner import _strict_best_snapshot
 
         common = {
             "variable_cost": 0.4,
@@ -1494,7 +1494,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_strict_selection_key_uses_action_vector_before_candidate_key(self):
-        from blb_stage2_rl.layerwise_runner import strict_selection_key
+        from rfr.search.rl.stage2.layerwise_runner import strict_selection_key
 
         candidate = self._candidate(
             cost=0.5, probabilities=[0.9] * 6, full_vector=[0, 9],
@@ -1514,7 +1514,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_strict_snapshot_selection_key_matches_live_key_shape(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             strict_selection_key,
             strict_selection_key_from_snapshot,
         )
@@ -1538,7 +1538,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertLess(restored_key, live_key)
 
     def test_orphaned_selected_action_counter_resets_on_restore(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.load_state_dict({
@@ -1553,7 +1553,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state["selected_action_stable_update_windows"], 0)
 
     def test_same_cost_resume_reconciliation_resets_stale_action_identity(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.load_state_dict({
@@ -1571,7 +1571,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state["selected_action_stable_update_windows"], 0)
 
     def test_nonfinite_entropy_is_unavailable_diagnostic_not_fatal(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         state = tracker.observe_update(
@@ -1625,7 +1625,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             self.assertFalse(Path(recorder.best_json_path).exists())
 
     def test_convergence_cannot_trigger_while_current_frontier_is_empty(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.observe_update(
@@ -1648,7 +1648,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
     def test_convergence_tracker_state_round_trips_across_resume(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.observe_update(
@@ -1683,7 +1683,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.selected_action_stable_update_windows, 8)
 
     def test_convergence_rebases_when_feasible_frontier_retracts(self):
-        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+        from rfr.search.rl.stage2.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
         tracker.observe_update(
@@ -1710,7 +1710,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
     def test_layerwise_episode_budget_zero_remains_unbounded_across_resume(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             is_unbounded_layerwise_training,
             resolve_layerwise_episode_budget,
         )
@@ -1727,7 +1727,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             resolve_layerwise_episode_budget(60_000, 60_001)
 
     def test_p3_resource_score_is_redistributed_without_changing_episode_return(self):
-        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+        from rfr.search.rl.stage2.layerwise_runner import redistribute_layerwise_rewards
 
         layer_resources = tuple((index + 1) / 780.0 for index in range(12))
         resource_score = sum(layer_resources)
@@ -1744,7 +1744,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertAlmostEqual(sum(rewards), 1.75 + resource_score)
 
     def test_p3_resource_score_supports_all_24_bert_large_layers(self):
-        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+        from rfr.search.rl.stage2.layerwise_runner import redistribute_layerwise_rewards
 
         layer_resources = (0.01,) * 24
         rewards = redistribute_layerwise_rewards(
@@ -1759,7 +1759,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertAlmostEqual(sum(rewards), 2.0)
 
     def test_p1_and_p2_never_receive_cost_credit(self):
-        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+        from rfr.search.rl.stage2.layerwise_runner import redistribute_layerwise_rewards
 
         layer_resources = (0.01,) * 12
         for priority, terminal_reward in ((1, -3.2), (2, -1.7)):
@@ -1774,7 +1774,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 self.assertEqual(rewards[-1], terminal_reward)
 
     def test_reward_redistribution_rejects_inconsistent_cost_terms(self):
-        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+        from rfr.search.rl.stage2.layerwise_runner import redistribute_layerwise_rewards
 
         with self.assertRaisesRegex(ValueError, "sum"):
             redistribute_layerwise_rewards(
@@ -1804,9 +1804,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         return owner
 
     def _run_with_mocked_locked_stage2(self, locked_impl):
-        from blb_stage2_rl import layerwise_runner
-        from blb_stage2_rl import training as runner_module
-        from blb_stage2_rl import sequential_runner
+        from rfr.search.rl.stage2 import layerwise_runner
+        from rfr.search.rl.stage2 import training as runner_module
+        from rfr.search.rl.stage2 import sequential_runner
 
         class _NoopRunLock:
             def __init__(self, _path):
@@ -1841,7 +1841,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                     )
 
     def test_layerwise_branch_derives_policy_and_identity_from_model_depth(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -1896,7 +1896,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("num_layers=12", branch_source)
 
     def test_stage2_runner_uses_shared_calibrated_action_context(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -1935,7 +1935,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_layerwise_candidate_identity_binds_k_level_order(self):
         from rfr.search.common.candidate_store import candidate_key
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         binder = getattr(
             layerwise_runner, "bind_layerwise_candidate_identity", None,
@@ -1963,7 +1963,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_layerwise_candidate_identity_binds_every_resource_contract_field(self):
         from rfr.search.common.candidate_store import candidate_key
-        from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
+        from rfr.search.rl.stage2.layerwise_runner import bind_layerwise_candidate_identity
 
         contract = {
             "algorithm_contract_hash": "algorithm-v9",
@@ -2005,7 +2005,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_layerwise_candidate_identity_binds_plain_stage1_selection(self):
         from rfr.search.common.candidate_store import candidate_key
-        from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
+        from rfr.search.rl.stage2.layerwise_runner import bind_layerwise_candidate_identity
 
         stage1_binding = {
             "backend": "bo_rf",
@@ -2069,7 +2069,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_layerwise_checkpoint_metadata_rejects_foreign_run_context(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         validator = getattr(
             layerwise_runner, "validate_layerwise_checkpoint_metadata", None,
@@ -2140,7 +2140,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             )
 
     def test_cuda_rng_role_registry_survives_shrink_and_reexpansion(self):
-        from blb_stage2_rl.sequential_runner import (
+        from rfr.search.rl.stage2.sequential_runner import (
             merge_cuda_rng_role_registry,
             resolve_cuda_rng_role_registry,
         )
@@ -2178,7 +2178,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertEqual(resumed_registry, resumed_active)
 
     def test_cuda_rng_role_registry_initializes_only_never_seen_roles(self):
-        from blb_stage2_rl.sequential_runner import (
+        from rfr.search.rl.stage2.sequential_runner import (
             resolve_cuda_rng_role_registry,
         )
 
@@ -2200,7 +2200,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertEqual(registry, active)
 
     def test_checkpoint_without_cuda_rng_registry_requires_fresh_run(self):
-        from blb_stage2_rl.sequential_runner import (
+        from rfr.search.rl.stage2.sequential_runner import (
             resolve_cuda_rng_role_registry,
         )
 
@@ -2212,7 +2212,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             )
 
     def test_layerwise_gpu_recovery_restart_waits_for_committed_checkpoint(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2255,7 +2255,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("completed", work_remaining_source)
 
     def test_layerwise_training_wraps_primary_cuda_device_failures(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2284,12 +2284,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             max_communication_saving_units,
             max_compute_saving_units,
         )
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             bind_layerwise_candidate_identity,
             build_layerwise_run_context,
             validate_layerwise_checkpoint_metadata,
         )
-        from blb_stage2_rl.policy_network import POLICY_RL_VARIANT
+        from rfr.search.rl.stage2.policy_network import POLICY_RL_VARIANT
 
         old_k_levels = (8, 9, 11, 13, 10, 12)
         current_k_levels = tuple(K_LEVELS)
@@ -2393,7 +2393,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 dataset_protocol_hash="probe-a",
             )
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2427,7 +2427,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_checkpoint_file_fingerprint_allows_suffix_only_and_rejects_prefix_change(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         fingerprint = getattr(
             layerwise_runner, "checkpoint_file_fingerprints", None,
@@ -2451,7 +2451,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 validator(expected, specs)
 
     def test_fresh_layerwise_run_rejects_stale_marker_without_checkpoint(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         validator = getattr(
             layerwise_runner, "validate_fresh_layerwise_run_state", None,
@@ -2469,7 +2469,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 validator(marker, (candidate,))
 
     def test_layerwise_run_lock_rejects_second_writer_and_records_context(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         lock_type = getattr(layerwise_runner, "LayerwiseRunLock", None)
         self.assertIsNotNone(lock_type)
@@ -2489,7 +2489,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 pass
 
     def test_stage2_run_lock_survives_deletion_of_fresh_run_directory(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         lock_type = getattr(layerwise_runner, "LayerwiseRunLock", None)
         self.assertIsNotNone(lock_type)
@@ -2557,7 +2557,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertEqual(owner.remote_close_count, 1)
 
     def test_checkpoint_fingerprint_tracker_hashes_only_new_suffixes(self):
-        from blb_stage2_rl import layerwise_runner
+        from rfr.search.rl.stage2 import layerwise_runner
 
         tracker_type = getattr(
             layerwise_runner, "CheckpointFileFingerprintTracker", None,
@@ -2581,7 +2581,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             self.assertEqual(tracker.bytes_hashed, 8)
 
     def test_layerwise_branch_locks_and_writes_episode_zero_checkpoint(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2608,7 +2608,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("_run_sequential_via_runner_locked(", public_source)
 
     def test_layerwise_branch_wires_checkpoint_boundary_graceful_stop(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2654,7 +2654,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_sequential_train_config_carries_layerwise_resume_state(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2672,7 +2672,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("convergence_resume_state", fields)
 
     def test_layerwise_episode_diagnostics_map_existing_probe_timing_fields(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2719,7 +2719,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             self.assertIn(probe_key, expression)
 
     def test_layerwise_checkpoint_preserves_long_run_search_state(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2771,7 +2771,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             self.assertIn(required, branch_source)
 
     def test_layerwise_branch_uses_reward_only_natural_convergence_contract(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2874,7 +2874,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_factorized_ppo_uses_active_slot_kl_scale(self):
-        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_policy.py").read_text(
             encoding="utf-8",
         )
 
@@ -2885,7 +2885,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_factorized_ppo_uses_per_slot_cost_control_variate(self):
-        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_policy.py").read_text(
             encoding="utf-8",
         )
 
@@ -2895,7 +2895,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("factorized_actor_advantages = (", source)
 
     def test_layerwise_checkpoint_and_result_publish_reloadable_fusion_best(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2921,7 +2921,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('out["blb_v3_best_action_group"]', evaluator_source)
 
     def test_outer_layerwise_branch_does_not_resurrect_stale_checkpoint_best(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2942,7 +2942,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_layerwise_branch_rewrites_checkpoint_after_zero_episode_revalidation(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2958,7 +2958,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('strict_best=summary.get("strict_best")', branch_source)
 
     def test_layerwise_branch_persists_train_probe_schema_and_strict_summary(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -2977,7 +2977,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)
 
     def test_layerwise_branch_finalizes_live_status_and_run_manifest(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -3006,7 +3006,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_layerwise_branch_persists_complete_ppo_update_metrics(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -3043,7 +3043,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             self.assertIn(field, branch_source)
 
     def test_layerwise_online_trial_count_uses_explicit_online_trial_config(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -3066,7 +3066,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_layerwise_curves_rebuild_from_full_diagnostic_history(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -3085,7 +3085,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_initial_probabilities_use_decoded_k_values_and_disable_epsilon(self):
         from rfr.search.common.layerwise_action import K_LEVELS
-        from blb_stage2_rl.layerwise_runner import initialize_layerwise_policy
+        from rfr.search.rl.stage2.layerwise_runner import initialize_layerwise_policy
 
         class FakePolicy:
             def set_initial_slot_probabilities(self, probabilities, values):
@@ -3225,7 +3225,7 @@ class _FakeLayerwiseEnv:
                 "metric2_stability_probability",
             )
         }
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         trial_count = 4 if self._evidence_mode == "wrong_count" else 5
         statistical_trials = {
@@ -3377,11 +3377,11 @@ def _assessment(probability):
 
 
 def _three_validation_banks():
-    from blb_stage2_rl.layerwise_runner import (
+    from rfr.search.rl.stage2.layerwise_runner import (
         LayerwiseValidationBank,
         LayerwiseValidationBanks,
     )
-    from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+    from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
     from rfr.search.common.statistical_constraints import TrialSeries
 
     def reference(probe_seeds):
@@ -3442,7 +3442,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "communication": {"point_pass": True},
         }
         patcher = mock.patch(
-            "blb_stage2_rl.layerwise_runner._evaluate_axis_counterfactual_banks",
+            "rfr.search.rl.stage2.layerwise_runner._evaluate_axis_counterfactual_banks",
             return_value=(axis_evidence, 0),
         )
         patcher.start()
@@ -3474,7 +3474,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_exact_terminal_batch_size_uses_only_the_cross_episode_imbalance(self):
-        from blb_stage2_rl.layerwise_runner import resolve_exact_terminal_batch_size
+        from rfr.search.rl.stage2.layerwise_runner import resolve_exact_terminal_batch_size
 
         self.assertEqual(resolve_exact_terminal_batch_size(4, 3, 4), 4)
         self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 4), 4)
@@ -3484,9 +3484,9 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_default_step_adapter_accepts_precision_preset_level_count(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
-        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_policy.py").read_text(
             encoding="utf-8",
         )
         tree = ast.parse(source)
@@ -3501,13 +3501,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 ast.fix_missing_locations(
                     ast.Module(body=adapter_nodes, type_ignores=[]),
                 ),
-                "blb_stage2_rl/sequential_policy.py",
+                "src/rfr/search/rl/stage2/sequential_policy.py",
                 "exec",
             ),
             namespace,
         )
         default_adapter_module = types.ModuleType(
-            "blb_stage2_rl.sequential_policy",
+            "rfr.search.rl.stage2.sequential_policy",
         )
         default_adapter_module.step_to_mask_and_levels = namespace[
             "step_to_mask_and_levels"
@@ -3520,7 +3520,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 mock.patch.dict(
                     "sys.modules",
                     {
-                        "blb_stage2_rl.sequential_policy": (
+                        "rfr.search.rl.stage2.sequential_policy": (
                             default_adapter_module
                         ),
                     },
@@ -3552,8 +3552,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_grouped_terminal_probes_finalize_in_order_at_the_ppo_boundary(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
-        from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.seed_utils import derive_layerwise_episode_probe_seed
 
         env = _DeferredFakeLayerwiseEnv(probabilities=0.7)
         config = self._train_cfg(total_episodes=4, update_every=4)
@@ -3599,8 +3599,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_terminal_batch_rebalances_after_probe_pool_shrinks(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
-        from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.seed_utils import derive_layerwise_episode_probe_seed
 
         class ShrinkingProbeEnv(_DeferredFakeLayerwiseEnv):
             def __init__(self):
@@ -3691,7 +3691,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_layerwise_branch_propagates_runtime_terminal_batch_size(self):
-        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+        source = Path("src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8",
         )
         self.assertIn(
@@ -3701,7 +3701,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_train_collects_exactly_12_terminal_credit_transitions(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.7)
         policy = _FakePolicy()
@@ -3781,7 +3781,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_train_collects_all_24_bert_large_transitions(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.7, num_layers=24)
         policy = _FakePolicy()
@@ -3817,7 +3817,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_max_episode_cap_still_runs_bank_c_and_keeps_resumable_result(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.9)
         promotion_base = _PromotionBase(fresh_probability=0.01)
@@ -3851,7 +3851,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_max_cap_falls_back_to_dominated_ab_candidate_when_winner_fails_c(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         high_matrix = _fake_policy_action_matrix()
         low_matrix = [[0] * 2 for _ in range(12)]
@@ -3924,13 +3924,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
             metrics=None,
         )
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"high": high, "low": low},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
             return_value=no_promotion,
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.certify_candidate_with_bank_c",
+            "rfr.search.rl.stage2.layerwise_runner.certify_candidate_with_bank_c",
             side_effect=certification,
         ):
             summary = train_layerwise(
@@ -3957,7 +3957,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_train_bounded_history_can_be_disabled_without_changing_callbacks(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         completed = []
         ppo_updates = []
@@ -3998,7 +3998,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_graceful_stop_waits_for_the_next_ppo_checkpoint_boundary(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         completed = []
         ppo_updates = []
@@ -4040,7 +4040,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_train_bounded_history_preserves_nonzero_resume_callback_identities(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=5, update_every=2)
         config.absolute_episode_start = 40
@@ -4079,7 +4079,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_train_bounded_history_defaults_to_complete_direct_call_lists(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
             summary = train_layerwise(
@@ -4105,7 +4105,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_exhaustive_c_fallback_reports_surviving_certified_tie_as_passed(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _certify_strict_best_candidates,
         )
 
@@ -4172,7 +4172,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.certify_candidate_with_bank_c",
+            "rfr.search.rl.stage2.layerwise_runner.certify_candidate_with_bank_c",
             side_effect=certification,
         ):
             status, winner = _certify_strict_best_candidates(
@@ -4195,7 +4195,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_max_cap_does_not_export_an_uncertified_ab_candidate(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             promote_candidate_if_eligible,
             train_layerwise,
         )
@@ -4255,7 +4255,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_unbounded_training_stops_only_after_natural_convergence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         action_matrix = [[1, 2] for _ in range(12)]
         frontier = {
@@ -4341,13 +4341,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
         promotion_env = types.SimpleNamespace(statistical_reference=reference)
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
             side_effect=successful_revalidation,
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            "rfr.search.rl.stage2.layerwise_runner._current_policy_entropy",
             return_value={
                 "block4": 0.99,
                 "k": 0.99,
@@ -4391,7 +4391,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_failed_strict_revalidation_removes_winner_before_continuing(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         frontier = {
             "variable_cost": 0.4,
@@ -4485,13 +4485,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
             side_effect=promotion_flow,
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            "rfr.search.rl.stage2.layerwise_runner._current_policy_entropy",
             return_value={
                 "block4": 0.2,
                 "k": 0.6,
@@ -4529,7 +4529,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_transient_strict_revalidation_error_keeps_winner_and_retries(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         frontier = {
             "variable_cost": 0.4,
@@ -4620,13 +4620,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
             statistical_reference=_strict_reference(),
         )
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
             side_effect=promotion_flow,
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            "rfr.search.rl.stage2.layerwise_runner._current_policy_entropy",
             return_value={
                 "block4": 0.2,
                 "k": 0.6,
@@ -4664,7 +4664,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_positive_episode_budget_remains_a_bounded_smoke_run(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
             summary = train_layerwise(
@@ -4694,7 +4694,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_bounded_smoke_never_runs_natural_revalidation(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         frontier = {
             "variable_cost": 0.4,
@@ -4734,10 +4734,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
             return online_result
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            "rfr.search.rl.stage2.layerwise_runner.promote_candidate_if_eligible",
             side_effect=promotion_only,
         ):
             summary = train_layerwise(
@@ -4763,7 +4763,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_exhausted_bounded_resume_does_not_become_unbounded(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=0, update_every=1)
         config.absolute_episode_start = 2
@@ -4792,7 +4792,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_nonfinite_restored_entropy_is_unavailable_not_fatal(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=0, update_every=1)
         config.absolute_episode_start = 2
@@ -4824,7 +4824,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_nonfinite_skipped_update_does_not_advance_convergence_patience(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         action_matrix = [[1, 2] for _ in range(12)]
         frontier = {
@@ -4856,10 +4856,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            "rfr.search.rl.stage2.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
         ), mock.patch(
-            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            "rfr.search.rl.stage2.layerwise_runner._current_policy_entropy",
             return_value={
                 "block4": 0.05,
                 "k": 0.05,
@@ -4895,7 +4895,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_adjacent_same_action_episodes_pool_ten_distinct_real_probe_seeds(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
@@ -4930,7 +4930,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_episode_record_labels_fresh_reward_and_f1_prefilter_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
             summary = train_layerwise(
@@ -4959,7 +4959,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_repeated_action_keeps_bootstrap_assessment_at_fixed_25_trial_budget(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
@@ -4997,7 +4997,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_valid_terminal_requires_exact_aligned_raw_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         for evidence_mode, message in (
             ("missing", "statistical_trials"),
@@ -5025,7 +5025,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_invalid_terminal_may_omit_raw_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         buffer = _FakeBuffer()
         with tempfile.TemporaryDirectory() as td:
@@ -5060,7 +5060,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_infrastructure_terminal_failure_never_enters_ppo_rollout(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(evidence_mode="missing", invalid=True)
         original_step = env.step
@@ -5095,7 +5095,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(buffer.transitions, [])
 
     def test_layerwise_loop_contains_no_retired_blockwise_scaffolds(self):
-        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from rfr.search.rl.stage2.layerwise_runner import train_layerwise
 
         source = inspect.getsource(train_layerwise)
         for retired in (
@@ -5113,7 +5113,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
     def test_zero_remaining_bounded_resume_preserves_frontier_without_convergence(self):
         from rfr.search.common.candidate_store import CandidateStore, candidate_key
         from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
@@ -5212,7 +5212,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_promoted_reward_and_install_metadata_restore_from_promotion_record(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
@@ -5317,7 +5317,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
     def test_bounded_resume_clears_convergence_after_frontier_retraction(self):
         from rfr.search.common.candidate_store import CandidateStore
         from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
@@ -5392,7 +5392,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_ppo_update_exposes_current_strict_frontier_snapshot(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
@@ -5485,7 +5485,7 @@ class _PromotionBase:
         return prepared
 
     def evaluate_prepared_terminal_batch(self, prepared, **kwargs):
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         self.evaluate_calls.append((prepared, dict(kwargs)))
         count = int(kwargs["num_trials_per_action"])
@@ -5530,14 +5530,14 @@ class LayerwisePromotionTests(unittest.TestCase):
             "communication": {"point_pass": True},
         }
         patcher = mock.patch(
-            "blb_stage2_rl.layerwise_runner._evaluate_axis_counterfactual_banks",
+            "rfr.search.rl.stage2.layerwise_runner._evaluate_axis_counterfactual_banks",
             return_value=(axis_evidence, 0),
         )
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_terminal_axis_failure_restores_counterfactual_payload(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _promote_candidate_through_validation_banks,
         )
 
@@ -5550,7 +5550,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         banks = types.SimpleNamespace(final_trial_count=45)
         with mock.patch(
-                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                "rfr.search.rl.stage2.layerwise_runner._latest_promotion_status",
                 return_value=(
                     "axis_counterfactual_point_failed",
                     {"axis_counterfactuals": axis_payload},
@@ -5580,7 +5580,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(restored.axis_counterfactuals, axis_payload)
 
     def test_terminal_certification_failure_restores_counterfactual_payload(self):
-        from blb_stage2_rl.layerwise_runner import certify_candidate_with_bank_c
+        from rfr.search.rl.stage2.layerwise_runner import certify_candidate_with_bank_c
 
         axis_payload = {
             "compute": {"point_pass": False, "banks": {"A": {}}},
@@ -5591,7 +5591,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         banks = types.SimpleNamespace(final_trial_count=45)
         with mock.patch(
-                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                "rfr.search.rl.stage2.layerwise_runner._latest_promotion_status",
                 return_value=(
                     "axis_counterfactual_point_failed",
                     {"axis_counterfactuals": axis_payload},
@@ -5618,7 +5618,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(restored.axis_counterfactuals, axis_payload)
 
     def test_bank_c_point_failure_inherits_bank_ab_axis_evidence(self):
-        from blb_stage2_rl.layerwise_runner import certify_candidate_with_bank_c
+        from rfr.search.rl.stage2.layerwise_runner import certify_candidate_with_bank_c
 
         axis_payload = {
             "compute": {"point_pass": True, "banks": {"A": {}, "B": {}}},
@@ -5647,26 +5647,26 @@ class LayerwisePromotionTests(unittest.TestCase):
         }
         with (
             mock.patch(
-                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                "rfr.search.rl.stage2.layerwise_runner._latest_promotion_status",
                 return_value=(
                     "promoted",
                     {"axis_counterfactuals": axis_payload},
                 ),
             ),
             mock.patch(
-                "blb_stage2_rl.layerwise_runner._collect_fixed_validation_bank",
+                "rfr.search.rl.stage2.layerwise_runner._collect_fixed_validation_bank",
                 return_value=(evidence, 15),
             ),
             mock.patch(
-                "blb_stage2_rl.layerwise_runner._metrics_from_trials",
+                "rfr.search.rl.stage2.layerwise_runner._metrics_from_trials",
                 return_value=metrics,
             ),
             mock.patch(
-                "blb_stage2_rl.layerwise_runner.point_constraints_pass",
+                "rfr.search.rl.stage2.layerwise_runner.point_constraints_pass",
                 return_value=False,
             ),
             mock.patch(
-                "blb_stage2_rl.layerwise_runner._append_promotion_status",
+                "rfr.search.rl.stage2.layerwise_runner._append_promotion_status",
             ) as append_status,
         ):
             result = certify_candidate_with_bank_c(
@@ -5697,7 +5697,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def _store_with_five(self, root, seeds=None):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import evidence_identity_context
+        from rfr.search.rl.stage2.layerwise_runner import evidence_identity_context
         from rfr.search.common.statistical_constraints import TrialSeries
 
         context = evidence_identity_context(
@@ -5721,7 +5721,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         return store
 
     def test_latest_promotion_status_reuses_warmed_candidate_index(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _latest_promotion_status,
             evidence_identity_context,
         )
@@ -5770,7 +5770,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_promotion_tops_up_five_to_25_through_real_chain_once(self):
         from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         action_matrix = [[0] * 2 for _ in range(12)]
         expected_objective = compute_variable_cost_from_action_matrix(action_matrix)
@@ -5823,7 +5823,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_three_bank_promotion_uses_a_then_b_point_gates_not_probability(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         action = list(range(20))
         base = _PromotionBase(fresh_probability=0.01)
@@ -5888,7 +5888,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_three_bank_promotion_resumes_from_complete_fixed_seed_groups(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
@@ -5951,7 +5951,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_bank_c_certification_pools_75_trials_and_ignores_probability(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
         )
@@ -6006,7 +6006,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_completed_bank_c_reuse_rejects_stale_final_config_fingerprint(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
         )
@@ -6081,7 +6081,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_restore_rejects_inconsistent_final_config_fingerprints(self):
         from rfr.search.common.candidate_store import CandidateTrialEvidence
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
@@ -6141,7 +6141,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_bank_c_transient_failure_is_retryable_after_restore(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
             restore_promoted_candidates,
@@ -6224,7 +6224,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_three_bank_restore_uses_point_gate_and_preserves_final_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
             restore_promoted_candidates,
@@ -6288,7 +6288,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_each_authoritative_point_gate_blocks_its_own_failure(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
         )
@@ -6360,7 +6360,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             self.assertEqual(len(base.evaluate_calls), 3)
 
     def test_already_promoted_candidate_uses_f4_evidence_not_new_f1_result(self):
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)
@@ -6399,7 +6399,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(len(base.evaluate_calls), 1)
 
     def test_failed_f4_promotion_status_is_not_mislabeled_f1(self):
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)
@@ -6428,7 +6428,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_promotion_collects_25_full_trials_without_pooling_five_probe_trials(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
@@ -6483,7 +6483,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertIsNone(online_base._installed_action_hash)
 
     def test_promotion_assesses_existing_evidence_above_target_without_new_probe(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
@@ -6533,7 +6533,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(base.evaluate_calls, [])
 
     def test_promotion_recovers_pending_reassessment_after_top_up_crash(self):
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
@@ -6583,7 +6583,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_restore_promoted_candidates_reassesses_persisted_frontier(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
@@ -6648,7 +6648,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_final_revalidation_pass_restores_fresh_strict_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _record_final_revalidation_outcome,
             evidence_identity_context,
             restore_promoted_candidates,
@@ -6765,7 +6765,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_final_revalidation_failure_remains_excluded_after_restore(self):
         from rfr.search.common.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             _record_final_revalidation_outcome,
             evidence_identity_context,
             promote_candidate_if_eligible,
@@ -6860,11 +6860,11 @@ class LayerwisePromotionTests(unittest.TestCase):
 
     def test_promotion_selects_fresh_trial_seeds_disjoint_from_existing_evidence(self):
         from rfr.search.common.candidate_store import CandidateStore, candidate_key
-        from blb_stage2_rl.layerwise_runner import (
+        from rfr.search.rl.stage2.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
-        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from rfr.search.rl.stage2.seed_utils import derive_probe_trial_seed
 
         action = list(range(20))
         context = {"action_space_version": "layerwise-v1"}
@@ -6902,7 +6902,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(len(fresh_seeds), 20)
 
     def test_promotion_rejects_priority_confidence_and_dominated_candidates(self):
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         cases = (
             (1, 0.9, 0.6, 0.5, "priority_not_p3"),
@@ -6934,7 +6934,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 self.assertEqual(base.evaluate_calls, [])
 
     def test_promotion_allows_equal_cost_candidates_for_deterministic_tie_ranking(self):
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)
@@ -6958,7 +6958,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(len(base.evaluate_calls), 1)
 
     def test_failed_required_promotion_is_not_marked_promoted(self):
-        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from rfr.search.rl.stage2.layerwise_runner import promote_candidate_if_eligible
 
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)

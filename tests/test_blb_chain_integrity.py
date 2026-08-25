@@ -36,7 +36,7 @@ try:
         sync_block2_qk_binding,
     )
     from rfr.preparation.rescale.optimizer_cost import apply_optimizer_outputs_to_cfgs
-    from blb_stage2_rl.sequential_policy import (
+    from rfr.search.rl.stage2.sequential_policy import (
         BLBStage2SequentialPolicy,
         SequentialPolicyConfig,
     )

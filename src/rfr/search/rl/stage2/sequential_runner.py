@@ -6,6 +6,7 @@ import copy
 from dataclasses import asdict, dataclass, field
 import math
 import os
+from pathlib import Path
 import random
 import time
 from types import SimpleNamespace
@@ -1842,7 +1843,7 @@ def _run_layerwise_training_branch(
     existing_episode_path = os.path.join(diagnostics_dir, "episodes.jsonl")
     existing_update_path = os.path.join(diagnostics_dir, "ppo_updates.jsonl")
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo_root = str(Path(__file__).resolve().parents[5])
     run_id_marker = os.path.join(blb_progress_dir, "rl_data_points_run_id.txt")
     if resume_checkpoint is None:
         validate_fresh_layerwise_run_state(

@@ -17,7 +17,7 @@ from rfr.search.common.action_space import (
     build_block_cfg_from_field_values,
     make_all_max_action_vector,
 )
-from blb_stage2_rl.env import BLBStage2Env
+from rfr.search.rl.stage2.env import BLBStage2Env
 from .optimizer_cost import materialize_decoded_action
 
 

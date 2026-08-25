@@ -137,11 +137,11 @@ class ProbeRunnerDeterministicTorchFreeTest(unittest.TestCase):
         inference_eval.run_installed_probe_trial = lambda *args, **kwargs: None
         cls._install_module(f"{package_name}.inference_eval", inference_eval)
 
-        seed_utils = types.ModuleType("blb_stage2_rl.seed_utils")
+        seed_utils = types.ModuleType("rfr.search.rl.stage2.seed_utils")
         seed_utils.derive_probe_trial_seed = lambda base_seed, trial_index: (
             int(base_seed) ^ (int(trial_index) * 2654435761)
         )
-        cls._install_module("blb_stage2_rl.seed_utils", seed_utils)
+        cls._install_module("rfr.search.rl.stage2.seed_utils", seed_utils)
 
         if "torch" not in sys.modules:
             torch = types.ModuleType("torch")

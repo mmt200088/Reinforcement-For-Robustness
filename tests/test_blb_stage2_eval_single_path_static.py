@@ -8,7 +8,7 @@ import unittest
 class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_model_eval_routes_use_canonical_action_materialization(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        env = (repo / "src/rfr/search/rl/stage2/env.py").read_text(encoding="utf-8")
         sequential = (repo / "src/rfr/preparation/rescale/block_materialization.py").read_text(
             encoding="utf-8"
         )
@@ -42,7 +42,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_install_cache_uses_final_config_fingerprint_not_flat_action_hash(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        env = (repo / "src/rfr/search/rl/stage2/env.py").read_text(encoding="utf-8")
 
         self.assertIn("_installed_config_fingerprint", env)
         self.assertNotIn("_installed_action_hash", env)
@@ -53,10 +53,10 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         diagnostics = (repo / "src/rfr/search/common/diagnostics.py").read_text(
             encoding="utf-8"
         )
-        sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
+        sequential = (repo / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8"
         )
-        layerwise = (repo / "blb_stage2_rl" / "layerwise_runner.py").read_text(
+        layerwise = (repo / "src/rfr/search/rl/stage2/layerwise_runner.py").read_text(
             encoding="utf-8"
         )
         for field in (
@@ -107,8 +107,8 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         launcher = (repo / "llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
         evaluator = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
-        training = (repo / "blb_stage2_rl" / "training.py").read_text(encoding="utf-8")
-        sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
+        training = (repo / "src/rfr/search/rl/stage2/training.py").read_text(encoding="utf-8")
+        sequential = (repo / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8"
         )
 
@@ -122,7 +122,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_executable_eval_paths_use_shared_optimizer_writeback_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checked = [
-            repo / "blb_stage2_rl" / "env.py",
+            repo / "src/rfr/search/rl/stage2/env.py",
             repo / "Paean" / "blb_action_eval.py",
         ]
         forbidden = [
@@ -157,7 +157,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_installed_model_forward_paths_use_shared_inference_eval(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         layer_eval = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
-        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        env = (repo / "src/rfr/search/rl/stage2/env.py").read_text(encoding="utf-8")
         probe = (repo / "src/rfr/search/runtime/probe_runner.py").read_text(encoding="utf-8")
 
         self.assertIn("run_installed_model_on_dataloader", layer_eval)
@@ -183,7 +183,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_probe_runner_diagnostics_payload_uses_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        env = (repo / "src/rfr/search/rl/stage2/env.py").read_text(encoding="utf-8")
         probe = (repo / "src/rfr/search/runtime/probe_runner.py").read_text(encoding="utf-8")
 
         self.assertIn("def diagnostics_payload(", probe)

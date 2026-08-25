@@ -210,7 +210,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
         runner = (
-            ROOT / "blb_stage2_rl" / "sequential_runner.py"
+            ROOT / "src/rfr/search/rl/stage2/sequential_runner.py"
         ).read_text(encoding="utf-8")
         self.assertIn("expected_stage1_source", runner)
         self.assertIn(
@@ -271,7 +271,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
         runner = (
-            ROOT / "blb_stage2_rl" / "sequential_runner.py"
+            ROOT / "src/rfr/search/rl/stage2/sequential_runner.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("stage1_rl.provenance", runner)
         self.assertIn(
@@ -314,7 +314,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             "def activate_stage2_inference_batch_size(self)", evaluator,
         )
 
-        runner = (ROOT / "blb_stage2_rl" / "training.py").read_text(
+        runner = (ROOT / "src/rfr/search/rl/stage2/training.py").read_text(
             encoding="utf-8"
         )
         activation = "self.evaluator.activate_stage2_inference_batch_size()"
@@ -349,7 +349,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("if self.mrpc_reproducibility is None:", evaluator)
         self.assertIn("comparators require the MRPC reproducibility fixture", evaluator)
 
-        runner = (ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text(
+        runner = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8"
         )
         for contract_field in (
@@ -383,7 +383,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
         runner_tree = ast.parse(
-            (ROOT / "blb_stage2_rl" / "training.py").read_text(encoding="utf-8")
+            (ROOT / "src/rfr/search/rl/stage2/training.py").read_text(encoding="utf-8")
         )
         config_class = next(
             node for node in runner_tree.body
@@ -445,7 +445,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn('"stopped_by": "graceful_stop"', evaluator)
 
         runner = (
-            ROOT / "blb_stage2_rl" / "sequential_runner.py"
+            ROOT / "src/rfr/search/rl/stage2/sequential_runner.py"
         ).read_text(encoding="utf-8")
         self.assertIn("run_layerwise_search_baseline", runner)
         self.assertIn("search_backend != \"ppo\"", runner)

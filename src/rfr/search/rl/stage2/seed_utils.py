@@ -187,7 +187,7 @@ def assign_global_episodes(total_episodes: int, num_workers: int) -> List[List[i
 
     Covers ``range(total_episodes)`` exactly once for any worker count
     (counts differ by at most 1; remainder goes to the lowest workers).
-    Same contract as ``stage1_rl.seed_utils.assign_global_episodes``.
+    Same contract as ``rfr.search.rl.stage1.seed_utils.assign_global_episodes``.
     """
     total = max(0, int(total_episodes))
     n = max(1, int(num_workers))

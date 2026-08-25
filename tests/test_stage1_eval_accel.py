@@ -38,9 +38,9 @@ except Exception:  # pragma: no cover
 
 
 def _load_eval_cache_module():
-    """Import stage1_rl/eval_cache.py WITHOUT triggering the package __init__
+    """Import src/rfr/search/rl/stage1/eval_cache.py WITHOUT triggering the package __init__
     (which imports parallel_runner -> torch)."""
-    path = _REPO_ROOT / "stage1_rl" / "eval_cache.py"
+    path = _REPO_ROOT / "src/rfr/search/rl/stage1/eval_cache.py"
     spec = importlib.util.spec_from_file_location("_stage1_eval_cache_solo", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

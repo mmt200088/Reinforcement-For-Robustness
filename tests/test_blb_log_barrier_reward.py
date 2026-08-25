@@ -2,7 +2,7 @@
 import math
 import unittest
 
-from blb_stage2_rl import reward as rwd
+from rfr.search.rl.stage2 import reward as rwd
 
 
 def _weights(**kw):

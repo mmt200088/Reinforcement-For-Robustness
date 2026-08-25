@@ -1,6 +1,6 @@
 import unittest
 
-from blb_stage2_rl import reward
+from rfr.search.rl.stage2 import reward
 
 
 class ParetoCostArchiveTests(unittest.TestCase):

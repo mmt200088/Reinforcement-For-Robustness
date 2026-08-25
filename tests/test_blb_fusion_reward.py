@@ -8,7 +8,7 @@ from rfr.preparation.fusion import cost as fusion_cost
 from rfr.preparation.fusion import count_map as fcm
 from rfr.preparation.fusion import enumeration as fusion_enum
 from rfr.search.common import layerwise_action
-from blb_stage2_rl import reward as rwd
+from rfr.search.rl.stage2 import reward as rwd
 
 
 FW = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}

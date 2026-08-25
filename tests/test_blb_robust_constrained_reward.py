@@ -11,12 +11,12 @@ from unittest import mock
 import numpy as np
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
+_BLB_DIR = _REPO_ROOT / "src/rfr/search/rl/stage2"
 for _path in (str(_REPO_ROOT),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from blb_stage2_rl.reward import (
+from rfr.search.rl.stage2.reward import (
     BaselineCostStats,
     EpisodeMetrics,
     RewardBreakdown,

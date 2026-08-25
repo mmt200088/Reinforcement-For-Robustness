@@ -295,7 +295,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         self.assertNotEqual(record["action_index"], 0)
 
     def test_runner_has_no_static_skeletons_baseline_fallback(self):
-        runner_path = pathlib.Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "sequential_runner.py"
+        runner_path = pathlib.Path(__file__).resolve().parents[1] / "src/rfr/search/rl/stage2/sequential_runner.py"
         source = runner_path.read_text(encoding="utf-8")
 
         self.assertIn("load_calibrated_stage2_action_context", source)

@@ -796,7 +796,7 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertIn("rl_training_data_points", source)
 
     def test_stage2_loop_integrates_structured_data_writer(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        source = (REPO_ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text()
         self.assertIn("RLDataPointWriter", source)
         self.assertIn("stage2_data_writer", source)
         self.assertIn("data_point_writer=stage2_data_writer", source)
@@ -958,7 +958,7 @@ class RLDataPointWriterTest(unittest.TestCase):
                     )
 
     def test_layerwise_branch_enables_strict_diagnostics_writes(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        source = (REPO_ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text()
         self.assertIn("strict_writes=True", source)
 
     def test_stage2_diagnostics_reuses_primary_jsonl_handles(self):
@@ -1582,13 +1582,13 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertTrue(np.isinf(restored_payload["terminal_loss_std"]))
 
     def test_layerwise_checkpoint_flushes_mandatory_logs_before_save(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        source = (REPO_ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text()
         flush_pos = source.index("diag_recorder.committed_jsonl_sizes()")
         checkpoint_pos = source.index("torch.save(checkpoint, tmp_path)", flush_pos)
         self.assertLess(flush_pos, checkpoint_pos)
 
     def test_layerwise_checkpoint_precedes_probe_replica_restart(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        source = (REPO_ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text()
         callback_start = source.index("def on_layerwise_update(")
         checkpoint_pos = source.index(
             "save_layerwise_checkpoint(",

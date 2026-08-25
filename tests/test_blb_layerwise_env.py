@@ -18,7 +18,7 @@ from rfr.search.common import layerwise_action
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-BLB_DIR = REPO_ROOT / "blb_stage2_rl"
+BLB_DIR = REPO_ROOT / "src/rfr/search/rl/stage2"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

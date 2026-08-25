@@ -1429,7 +1429,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
 
-        from stage1_rl.eval_cache import Stage1EvalCache
+        from rfr.search.rl.stage1.eval_cache import Stage1EvalCache
         self._eval_cache = Stage1EvalCache()
 
 
@@ -2514,7 +2514,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.dataloader_test = self.dataloaders.get("validation_full")
 
 
-        from stage1_rl.eval_cache import Stage1EvalCache
+        from rfr.search.rl.stage1.eval_cache import Stage1EvalCache
 
         self._eval_cache = Stage1EvalCache()
         self._stage1_worker_eval_cache = Stage1EvalCache()
@@ -3614,7 +3614,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def _get_stage1_resume_checkpoint_path(self):
         """如果设置了 resume_run_dir，返回 Stage-1 checkpoint 路径；否则返回 None。"""
-        from stage1_rl.checkpoint import STAGE1_CHECKPOINT_FILENAME
+        from rfr.search.rl.stage1.checkpoint import STAGE1_CHECKPOINT_FILENAME
         if not self.resume_run_dir:
             return None
         path = os.path.join(self.resume_run_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
@@ -3623,7 +3623,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _get_stage2_resume_checkpoint_path(self):
         if not self.resume_run_dir:
             return None
-        from blb_stage2_rl.training import (
+        from rfr.search.rl.stage2.training import (
             BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
             BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
         )
@@ -3836,7 +3836,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         而 final_eval_only 已强制跳过这两个阶段）。
         返回 ``(stage1_best_dict_or_None, stage2_best_dict_or_None)``。
         """
-        from stage1_rl.checkpoint import STAGE1_CHECKPOINT_FILENAME
+        from rfr.search.rl.stage1.checkpoint import STAGE1_CHECKPOINT_FILENAME
 
         candidate_dirs = []
         if self.resume_run_dir:
@@ -3889,7 +3889,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         def _load_blb_stage2_best():
-            from blb_stage2_rl.training import (
+            from rfr.search.rl.stage2.training import (
                 BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
             )
@@ -4074,7 +4074,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         fixed_source,
         resume_checkpoint_path=None,
     ):
-        from blb_stage2_rl import BLBStage2RLRunner
+        from rfr.search.rl.stage2 import BLBStage2RLRunner
 
         runner = BLBStage2RLRunner(self)
         return runner.run(
@@ -4543,7 +4543,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         Returns an ``EpisodeRollout`` carrying per-step transitions plus
         per-episode summary metrics for the central bookkeeping.
         """
-        from stage1_rl.parallel_runner import EpisodeRollout
+        from rfr.search.rl.stage1.parallel_runner import EpisodeRollout
 
         device = worker.device
         policy = worker.gtrxl_replica
@@ -4703,7 +4703,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         inline in ``on_evaluate`` (baseline_metrics, base_tot_c, constraint
         limits, proxy prev metrics for the differential reward chain).
         """
-        from stage1_rl.parallel_runner import (
+        from rfr.search.rl.stage1.parallel_runner import (
             build_stage1_parallel_runner,
             parse_device_ids,
         )
@@ -5356,7 +5356,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self._reset_runtime_ppo_state()
 
 
-            from stage1_rl.checkpoint import (
+            from rfr.search.rl.stage1.checkpoint import (
                 save_stage1_rl_checkpoint,
                 load_stage1_rl_checkpoint,
                 STAGE1_CHECKPOINT_FILENAME,
@@ -5512,7 +5512,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             time.time() - _stage1_parallel_collect_t0
                         )
                         _stage1_parallel_stash.extend(_rollouts)
-                        from stage1_rl.parallel_runner import format_diagnostics_line
+                        from rfr.search.rl.stage1.parallel_runner import format_diagnostics_line
 
                         if _stage1_parallel_runner.last_diagnostics is not None:
                             _stage1_parallel_model_forward_seconds = float(

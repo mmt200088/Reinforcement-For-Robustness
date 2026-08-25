@@ -24,7 +24,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
     def test_detail_files_recover_to_committed_boundary(self):
-        from stage1_rl.checkpoint import (
+        from rfr.search.rl.stage1.checkpoint import (
             recover_stage1_detail_files,
             stage1_detail_file_sizes,
         )
@@ -48,7 +48,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
             self.assertEqual(unrelated.read_bytes(), b"preserve")
 
     def test_checkpoint_round_trip_preserves_artifact_transaction(self):
-        from stage1_rl.checkpoint import (
+        from rfr.search.rl.stage1.checkpoint import (
             load_stage1_rl_checkpoint,
             save_stage1_rl_checkpoint,
         )
@@ -123,7 +123,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
         )
 
     def test_checkpoint_round_trip_restores_all_rng_roles(self):
-        from stage1_rl.checkpoint import (
+        from rfr.search.rl.stage1.checkpoint import (
             load_stage1_rl_checkpoint,
             save_stage1_rl_checkpoint,
         )
@@ -222,7 +222,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
 
     def test_checkpoint_protocol_guard_precedes_weight_and_rng_restore(self):
         source = (
-            Path(__file__).resolve().parents[1] / "stage1_rl/checkpoint.py"
+            Path(__file__).resolve().parents[1] / "src/rfr/search/rl/stage1/checkpoint.py"
         ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         node = next(
@@ -240,7 +240,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
         self.assertLess(validation, method.index("torch.set_rng_state("))
 
     def test_cuda_rng_registry_retains_temporarily_absent_roles(self):
-        from stage1_rl.checkpoint import (
+        from rfr.search.rl.stage1.checkpoint import (
             merge_stage1_cuda_rng_role_registry,
             resolve_stage1_cuda_rng_role_registry,
         )

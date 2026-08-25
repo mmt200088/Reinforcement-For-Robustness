@@ -117,7 +117,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_invocation_loads_completed_stage1_result_and_emits_plain_binding(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_search_invocation_contract",
             Any=object,
             Mapping=dict,
@@ -214,7 +214,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_invocation_rejects_stage1_result_that_disagrees_with_binding(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_search_invocation_contract",
             Any=object,
             Mapping=dict,
@@ -256,7 +256,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_invocation_rejects_stage1_result_byte_drift(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_search_invocation_contract",
             Any=object,
             Mapping=dict,
@@ -296,7 +296,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 )
 
     def test_active_stage2_comparator_branch_consumes_plain_binding_only(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         branch = next(
             node
@@ -319,7 +319,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertNotIn("outer_invocation_hash", branch_source)
 
     def test_active_comparator_uses_direct_materialization_without_authority(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function = next(
             node
@@ -337,7 +337,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_candidate_identity_context_binds_plain_stage1_selection_only(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_layerwise_candidate_identity_context",
             Mapping=dict,
             np=np,
@@ -428,7 +428,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_candidate_identity_rejects_missing_stage1_content_hashes(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_layerwise_candidate_identity_context",
             Mapping=dict,
             np=np,
@@ -502,7 +502,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_completed_resume_returns_before_model_or_materialization_setup(self):
         run = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "run_sequential_via_runner",
             Any=object,
             Dict=dict,
@@ -526,9 +526,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 AssertionError("completed resume reauthenticated materialization")
             ),
         )
-        layerwise_runner = ModuleType("blb_stage2_rl.layerwise_runner")
+        layerwise_runner = ModuleType("rfr.search.rl.stage2.layerwise_runner")
         layerwise_runner.LayerwiseRunLock = _FakeRunLock
-        runner_module = ModuleType("blb_stage2_rl.training")
+        runner_module = ModuleType("rfr.search.rl.stage2.training")
         runner_module.resolve_blb_persistence_dir = lambda _evaluator: "/unused"
         evaluator = SimpleNamespace()
         runner = SimpleNamespace(evaluator=evaluator)
@@ -536,8 +536,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         with mock.patch.dict(
             sys.modules,
             {
-                "blb_stage2_rl.layerwise_runner": layerwise_runner,
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.layerwise_runner": layerwise_runner,
+                "rfr.search.rl.stage2.training": runner_module,
             },
         ):
             resumed = run(
@@ -553,7 +553,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertTrue(_FakeProbeOwnerHolder.last.closed)
 
     def test_completed_resume_preflight_uses_plain_inner_artifacts(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function = next(
             node
@@ -570,7 +570,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertNotIn("_verify_search_resume_file_descriptor", function_source)
 
     def test_completed_resume_writer_is_plain_atomic_json(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function = next(
             node
@@ -587,7 +587,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertNotIn("_verify_search_resume_file_descriptor", function_source)
 
     def test_completed_resume_result_uses_scientific_fields_only(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function = next(
             node
@@ -608,7 +608,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_completed_resume_restores_stage2_inference_batch_size(self):
         build = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_build_completed_search_resume_result",
             Any=object,
             Mapping=dict,
@@ -670,7 +670,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         fusion_module.build_fusion_fixed_config = lambda *_args, **_kwargs: None
         action_module = ModuleType("rfr.search.common.layerwise_action")
         action_module.describe_layerwise_action_matrix = lambda value: list(value)
-        runner_module = ModuleType("blb_stage2_rl.training")
+        runner_module = ModuleType("rfr.search.rl.stage2.training")
         runner_module._build_best_noise_config = lambda _value: {}
 
         with mock.patch.dict(
@@ -678,7 +678,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             {
                 "rfr.preparation.fusion.fixed_action": fusion_module,
                 "rfr.search.common.layerwise_action": action_module,
-                "blb_stage2_rl.training": runner_module,
+                "rfr.search.rl.stage2.training": runner_module,
             },
         ):
             resumed = build(
@@ -692,7 +692,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertEqual(resumed["stage2_inference_batch_size"], 64)
 
     def test_completed_resume_legacy_authority_helpers_are_removed(self):
-        source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function_names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
         removed_helpers = {
@@ -1004,7 +1004,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_pending_strict_preflight_needs_no_online_completion_seal(self):
         preflight = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_preflight_pending_strict_search_resume",
             Any=object,
             Mapping=dict,
@@ -1082,7 +1082,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_pending_strict_context_is_plain_atomic_json(self):
         writer = _load_function(
-            "blb_stage2_rl/sequential_runner.py",
+            "src/rfr/search/rl/stage2/sequential_runner.py",
             "_write_pending_strict_resume_context",
             Any=object,
             Mapping=dict,

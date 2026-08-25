@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - local macOS may be torch-free.
 class Stage1ElasticParallelRunnerTests(unittest.TestCase):
     @staticmethod
     def _worker(worker_idx: int, *, role: str):
-        from stage1_rl.parallel_runner import Stage1RolloutWorker
+        from rfr.search.rl.stage1.parallel_runner import Stage1RolloutWorker
 
         return Stage1RolloutWorker(
             worker_idx=worker_idx,
@@ -30,7 +30,7 @@ class Stage1ElasticParallelRunnerTests(unittest.TestCase):
 
     @staticmethod
     def _rollout(seed: int):
-        from stage1_rl.parallel_runner import EpisodeRollout
+        from rfr.search.rl.stage1.parallel_runner import EpisodeRollout
 
         return EpisodeRollout(
             cont_features=[],
@@ -52,8 +52,8 @@ class Stage1ElasticParallelRunnerTests(unittest.TestCase):
         )
 
     def test_replica_failure_retries_only_missing_episode_in_global_order(self):
-        from stage1_rl.parallel_runner import Stage1ParallelRunner
-        from stage1_rl.seed_utils import derive_episode_seed
+        from rfr.search.rl.stage1.parallel_runner import Stage1ParallelRunner
+        from rfr.search.rl.stage1.seed_utils import derive_episode_seed
 
         first_call_barrier = threading.Barrier(2)
         first_call_workers = set()
@@ -115,7 +115,7 @@ class Stage1ElasticParallelRunnerTests(unittest.TestCase):
 
     def test_primary_failure_requests_checkpoint_restart(self):
         from rfr.search.runtime.elastic_gpu import ElasticGPUFailure
-        from stage1_rl.parallel_runner import Stage1ParallelRunner
+        from rfr.search.rl.stage1.parallel_runner import Stage1ParallelRunner
 
         def collect_episode(**_kwargs):
             raise RuntimeError("CUDA error: device is lost")
@@ -136,7 +136,7 @@ class Stage1ElasticParallelRunnerTests(unittest.TestCase):
         self.assertEqual(raised.exception.role, "learner-primary")
 
     def test_scientific_worker_error_remains_fatal(self):
-        from stage1_rl.parallel_runner import Stage1ParallelRunner
+        from rfr.search.rl.stage1.parallel_runner import Stage1ParallelRunner
 
         original = ValueError("trial seed mismatch")
 

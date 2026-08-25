@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from rfr.search.common import skeleton_stage_map as _ssm
-from blb_stage2_rl.reward import BaselineCostStats
+from rfr.search.rl.stage2.reward import BaselineCostStats
 
 
 ALLOWED_GELU_DEGREES = (1, 2, 4)

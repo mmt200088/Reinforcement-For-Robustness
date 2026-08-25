@@ -482,7 +482,7 @@ class ActionVectorBoundsTests(unittest.TestCase):
         for method_name in ("prepare_action_for_terminal_probe", "step"):
             with self.subTest(method=method_name):
                 method = _load_paean_method_from_path(
-                    "blb_stage2_rl/env.py",
+                    "src/rfr/search/rl/stage2/env.py",
                     "BLBStage2Env",
                     method_name,
                     np=__import__("numpy"),

@@ -2,7 +2,7 @@
 import unittest
 
 from rfr.preparation.fusion import cost as FC
-from blb_stage2_rl import reward as RW
+from rfr.search.rl.stage2 import reward as RW
 
 
 class SaturateShapeTest(unittest.TestCase):

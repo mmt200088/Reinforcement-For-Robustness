@@ -15,7 +15,7 @@ from rfr.search.common.layerwise_action import LayerwiseStepSpec
 @unittest.skipIf(torch is None, "torch is required for layerwise policy tests")
 class LayerwisePolicyTest(unittest.TestCase):
     def _config(self, **overrides):
-        from blb_stage2_rl.sequential_policy import SequentialPolicyConfig
+        from rfr.search.rl.stage2.sequential_policy import SequentialPolicyConfig
 
         values = {
             "state_dim": 4 + 12 + 12 * 6 + 12 * 4,
@@ -32,12 +32,12 @@ class LayerwisePolicyTest(unittest.TestCase):
         return SequentialPolicyConfig(**values)
 
     def _policy(self, **overrides):
-        from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy
+        from rfr.search.rl.stage2.sequential_policy import BLBStage2SequentialPolicy
 
         return BLBStage2SequentialPolicy(self._config(**overrides))
 
     def test_production_small_shared_network_has_agreed_architecture_and_size(self):
-        from blb_stage2_rl.sequential_policy import (
+        from rfr.search.rl.stage2.sequential_policy import (
             BLBStage2SequentialPolicy,
             SequentialPolicyConfig,
         )
@@ -61,7 +61,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(summary["shared"], 661_304)
 
     def test_production_network_completes_factorized_ppo_with_diagnostics(self):
-        from blb_stage2_rl.sequential_policy import (
+        from rfr.search.rl.stage2.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
             sequential_ppo_update,
@@ -225,7 +225,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(policy.fc_continuous[0].in_features, 8)
 
     def test_layerwise_step_mask_activates_layer_zero_block1_slot(self):
-        from blb_stage2_rl.sequential_policy import step_to_mask_and_levels
+        from rfr.search.rl.stage2.sequential_policy import step_to_mask_and_levels
 
         layer0 = LayerwiseStepSpec(
             step_idx=0,
@@ -462,7 +462,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(float(log_prob_per_slot[0, 1].detach()), 0.0)
 
     def test_factorized_clipping_does_not_cross_clip_sibling_slots(self):
-        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
+        from rfr.search.rl.stage2.sequential_policy import _factorized_clipped_policy_loss
 
         old_log_prob = torch.zeros((1, 2))
         new_log_prob = torch.log(torch.tensor([[1.50, 0.95]]))
@@ -491,7 +491,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertAlmostEqual(float(masked_loss), -1.20, places=6)
 
     def test_factorized_kl_uses_active_slot_mean_not_joint_sum(self):
-        from blb_stage2_rl.sequential_policy import _factorized_approx_kl
+        from rfr.search.rl.stage2.sequential_policy import _factorized_approx_kl
 
         old_log_prob = torch.zeros((1, 2))
         new_log_prob = torch.tensor([[-0.10, -0.30]])
@@ -505,7 +505,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertAlmostEqual(float(masked_kl), 0.10, places=6)
 
     def test_normalized_entropy_objective_equalizes_binary_and_six_way_slots(self):
-        from blb_stage2_rl.sequential_policy import _active_slot_entropy_objective
+        from rfr.search.rl.stage2.sequential_policy import _active_slot_entropy_objective
 
         entropy = torch.log(torch.tensor([[2.0, 6.0]]))
         levels = torch.tensor([[2, 6]])
@@ -528,7 +528,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertAlmostEqual(float(raw), float(entropy.mean()), places=6)
 
     def test_factorized_actor_cost_removes_same_step_sibling_noise(self):
-        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
+        from rfr.search.rl.stage2.sequential_policy import SequentialRolloutBuffer
 
         buffer = SequentialRolloutBuffer()
         transition_index = buffer.add(
@@ -551,7 +551,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(factorized, torch.tensor([[0.5, 0.6]]))
 
     def test_explicit_shared_constraint_return_replaces_scalar_critic_noise(self):
-        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
+        from rfr.search.rl.stage2.sequential_policy import SequentialRolloutBuffer
 
         buffer = SequentialRolloutBuffer()
         transition_index = buffer.add(
@@ -575,7 +575,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(factorized, torch.tensor([[-0.15, -0.05]]))
 
     def test_factorized_policy_loss_accepts_one_advantage_per_slot(self):
-        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
+        from rfr.search.rl.stage2.sequential_policy import _factorized_clipped_policy_loss
 
         loss, _ = _factorized_clipped_policy_loss(
             torch.log(torch.tensor([[1.50, 0.95]])),
@@ -670,7 +670,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(per_slot_log_prob, replay[3])
 
     def test_factorized_ppo_uses_stored_behavior_log_probability_after_policy_changes(self):
-        from blb_stage2_rl.sequential_policy import (
+        from rfr.search.rl.stage2.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
             sequential_ppo_update,
@@ -761,7 +761,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
 
     def test_factorized_ppo_rejects_missing_behavior_log_probability_per_slot(self):
-        from blb_stage2_rl.sequential_policy import (
+        from rfr.search.rl.stage2.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
             sequential_ppo_update,
@@ -797,7 +797,7 @@ class LayerwisePolicyTest(unittest.TestCase):
             )
 
     def test_terminal_reward_has_undiscounted_credit_at_every_layer(self):
-        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
+        from rfr.search.rl.stage2.sequential_policy import SequentialRolloutBuffer
 
         buffer = SequentialRolloutBuffer()
         for step_idx in range(12):
@@ -830,7 +830,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         from rfr.search.common.layerwise_action import (
             compute_variable_cost_from_action_matrix,
         )
-        from blb_stage2_rl.sequential_policy import (
+        from rfr.search.rl.stage2.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
             sequential_ppo_update,
