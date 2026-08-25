@@ -50,14 +50,13 @@ def _build_table() -> Dict[int, Dict[int, Dict[str, float]]]:
                 "encoding": float(stds[0]) ** 2,
                 "fresh": float(stds[1]) ** 2,
                 "rescale": float(stds[2]) ** 2,
-                # rotation (KS / galois noise) reuses the rescale column, matching
-                # function_handler.NOISE_VARIANCE_TABLE_BY_N.
+
+
                 "rotation": float(stds[2]) ** 2,
             }
     return table
 
 
-# Built once at import; pure data (floats), torch-free.
 NOISE_VARIANCE_TABLE_BY_N: Dict[int, Dict[int, Dict[str, float]]] = _build_table()
 ALLOWED_N: Tuple[int, ...] = tuple(sorted(NOISE_VARIANCE_TABLE_BY_N))
 ALLOWED_SCALING_FACTORS_BY_N: Dict[int, Tuple[int, ...]] = {

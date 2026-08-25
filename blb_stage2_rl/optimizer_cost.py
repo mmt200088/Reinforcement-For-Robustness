@@ -19,24 +19,14 @@ from rescale_optimizer_bridge import (
     sync_block5_aux_fresh_binding,
 )
 
-if __package__:  # package/runtime context
-    from .action_space import (
-        ActionDecodeResult,
-        MaxSFsTable,
-        action_vector_to_cfgs,
-        build_optimizer_requests,
-        parse_config_name,
-        validate_action_vector,
-    )
-else:  # torch-free test lane (blb_stage2_rl on sys.path)
-    from action_space import (
-        ActionDecodeResult,
-        MaxSFsTable,
-        action_vector_to_cfgs,
-        build_optimizer_requests,
-        parse_config_name,
-        validate_action_vector,
-    )
+from .action_space import (
+    ActionDecodeResult,
+    MaxSFsTable,
+    action_vector_to_cfgs,
+    build_optimizer_requests,
+    parse_config_name,
+    validate_action_vector,
+)
 
 
 @dataclass
@@ -373,6 +363,7 @@ def materialize_decoded_action(
     response that is missing, extra, or cannot be written back completely is a
     plumbing failure and therefore fails closed before model inference.
     """
+    # This materialized cfg set is the only optimizer output allowed into a model.
     mutable_cfgs = dict(cfgs_dict)
     configure_truncation_backend(
         mutable_cfgs,
@@ -537,18 +528,11 @@ def evaluate_action_for_cost(
         attn_degree=attn_degree,
     )
     if boosted_overrides:
-        if __package__:  # package/runtime context
-            from .action_space import (
-                _block_default_N,
-                _degree_for_layer,
-                build_block_cfg_from_field_values,
-            )
-        else:  # torch-free test lane (blb_stage2_rl on sys.path)
-            from action_space import (
-                _block_default_N,
-                _degree_for_layer,
-                build_block_cfg_from_field_values,
-            )
+        from .action_space import (
+            _block_default_N,
+            _degree_for_layer,
+            build_block_cfg_from_field_values,
+        )
         for (block_idx, layer_idx), field_values in boosted_overrides.items():
             bi, li = int(block_idx), int(layer_idx)
             deg_g = _degree_for_layer(gelu_degree, li, int(num_layers), default=4, name="gelu_degree")

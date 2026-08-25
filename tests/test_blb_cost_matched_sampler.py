@@ -40,7 +40,7 @@ class _StubBridge:
 
     def evaluate_blocks(self, requests):
         self.call_count += 1
-        # Use the first request's cfg id as a deterministic discriminator.
+
         keys = sorted(requests.keys())
         if not keys:
             return {}
@@ -53,8 +53,8 @@ class _StubBridge:
                 total_bits=int(self.target_bits + ((seed & 0xF) - 7) * 11),
                 valid=True,
             )
-        # Tag the "anchor" action: when sampler happens to draw the anchor
-        # action shape, force-match the targets so accepted >= 1 in tests.
+
+
         return outputs
 
 
@@ -138,9 +138,8 @@ class CostMatchedSamplerTests(unittest.TestCase):
         self.assertEqual(len(accepted), 0)
         self.assertEqual(diag.accepted, 0)
         self.assertLessEqual(diag.attempts, 80)
-        # When sum_k pre-filter never matches, the bridge isn't even called;
-        # otherwise all bridge calls yield invalid. Either way, invalid +
-        # prefilter together should account for everything attempted.
+
+
         total_explained = diag.invalid + diag.avg_k_prefilter_skipped + diag.cost_mismatch
         self.assertEqual(total_explained, diag.attempts)
 
@@ -150,9 +149,8 @@ class CostMatchedSamplerTests(unittest.TestCase):
         import numpy as np
 
         ctx = self._build_context(num_layers=4)
-        # Pick a target the deterministic seed is guaranteed to hit: the first
-        # random draw used by the sampler. This keeps the test about acceptance
-        # logic instead of relying on the probability mass of one sum_k bucket.
+
+
         dims = np.asarray(action_dims_for_config(ctx["num_layers"]), dtype=int)
         first_draw = np.random.default_rng(7).integers(
             low=0, high=dims, size=dims.shape[0], dtype=np.int64,
@@ -177,10 +175,10 @@ class CostMatchedSamplerTests(unittest.TestCase):
             max_attempts=2000,
             fixed_specs=(),
         )
-        # We expect at least one acceptance with this generous attempt budget.
+
         self.assertGreaterEqual(diag.accepted, 1)
         self.assertEqual(diag.invalid, 0)
-        # Sanity: accepted candidates carry the chosen name + overrides.
+
         if accepted:
             self.assertTrue(accepted[0].name.startswith("ActionRandomSameCost_"))
             self.assertIn("sampling", accepted[0].overrides)
@@ -207,7 +205,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
             max_attempts=500,
             fixed_specs=(),
         )
-        # All counters should sum to attempts.
+
         total = diag.accepted + diag.invalid + diag.cost_mismatch + diag.avg_k_prefilter_skipped
         self.assertEqual(total, diag.attempts)
         self.assertLessEqual(diag.attempts, 500)
@@ -228,7 +226,7 @@ class SumTruncationKHelperTests(unittest.TestCase):
                 vec = builder(num_layers=num_layers)
                 s = sum_truncation_k_in_action(vec, num_layers)
                 a = avg_truncation_k_in_action(vec, num_layers)
-                # Every layer exposes the same five effective K slots.
+
                 eff_count = num_layers * 5
                 self.assertAlmostEqual(s / eff_count, a, places=6)
 

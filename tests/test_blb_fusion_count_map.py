@@ -1,41 +1,19 @@
-"""Fusion-count map + NoiseOrder tests (torch-free).
-
-Imports the torch-free modules directly (repo root + ``blb_stage2_rl`` on
-``sys.path``) so the package ``__init__`` (which pulls torch) is bypassed — runs
-on a torch-free box (local dev) and in the torch-free CI lane. Mirrors the import
-trick in ``tests/test_blb_skeleton_stage_map.py``.
-"""
+"""Fusion-count map and noise-order invariants."""
 
 from __future__ import annotations
 
-import pathlib
-import sys
 import types
 import unittest
 from unittest import mock
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-_RO_ROOT = _REPO_ROOT / "Rescale_optimizer"
-for _p in (str(_REPO_ROOT), str(_BLB_DIR), str(_RO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import fusion_count_map as fcm
-import fusion_enum
-import layerwise_action as layerwise
-
 import noise_tables
+from blb_stage2_rl import action_space as _aspace
+from blb_stage2_rl import fusion_count_map as fcm
+from blb_stage2_rl import fusion_enum
+from blb_stage2_rl import layerwise_action as layerwise
 
-# action_space pulls torch (cfg dataclasses live in function_handler); guard it so
-# this file still imports on a torch-free box. FusionScheduleTest runs on the server.
-try:
-    import action_space as _aspace
 
-    _ASPACE_OK = True
-except Exception:
-    _aspace = None
-    _ASPACE_OK = False
+_ASPACE_OK = True
 
 
 def _function_region(source: str, name: str) -> str:
@@ -84,7 +62,7 @@ def _toy_payload():
         "graphs": {
             "block1_mrpc": {
                 "graph_key": "block1_mrpc",
-                "k_slot_index": 8,  # block1 K is the 9th (last) slot
+                "k_slot_index": 8,
                 "block_num_slots": 9,
                 "options": [
                     {
@@ -95,7 +73,7 @@ def _toy_payload():
                         "total_bits": 100,
                         "slots": {"gelu_out_sf": 30},
                         "action_indices": [4, 4, 2, 2, 3, 3, 0, 0, 3],
-                    },  # all-max = baseline
+                    },
                     {
                         "option_id": 1,
                         "fusion_count": 2,
@@ -125,7 +103,7 @@ class FusionMapLoaderTest(unittest.TestCase):
         self.assertEqual(m.max_num_options(), 2)
 
     def test_expand_overwrites_k_slot(self):
-        # option 1, K slot (idx 8) overwritten with k_index=5; rest per action_indices
+
         out = self._toy().expand("block1_mrpc", option_id=1, k_index=5)
         self.assertEqual(list(out), [3, 4, 2, 2, 0, 3, 0, 0, 5])
 
@@ -143,7 +121,7 @@ class FusionMapLoaderTest(unittest.TestCase):
             d = pathlib.Path(td) / "fusion_maps" / "mrpc"
             d.mkdir(parents=True)
             (d / "block1_mrpc.json").write_text(json.dumps(_toy_payload()["graphs"]["block1_mrpc"]), encoding="utf-8")
-            # sidecar with no graph_key — load must skip it, not crash
+
             (d / "_summary.json").write_text(json.dumps({"profile": "mrpc", "max_num_options": 2}), encoding="utf-8")
             m = fcm.FusionCountMap.load("mrpc", root=td)
             self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
@@ -248,15 +226,15 @@ class GroupMinNoiseOptionsTest(unittest.TestCase):
         )
 
     def setUp(self):
-        self.BASE = (3, 3, 3)  # all-max baseline: lowest fusion + global min variance
+        self.BASE = (3, 3, 3)
         self.evaluated = [
-            self._ec(self.BASE, fc=0, var=1.0, bits=100, sig="BASE"),  # option 0
-            self._ec((3, 3, 2), fc=0, var=2.0, bits=95, sig="A2"),  # same fc, higher var -> dropped
-            self._ec((1, 3, 3), fc=1, var=3.0, bits=90, sig="C"),  # f1 min, plan C
-            self._ec((1, 2, 3), fc=1, var=3.0, bits=80, sig="D"),  # f1 min, plan D (cheaper)
-            self._ec((1, 2, 3), fc=1, var=3.0, bits=80, sig="D"),  # dup install plan -> deduped
-            self._ec((2, 3, 3), fc=1, var=4.0, bits=85, sig="E"),  # f1 higher var -> dropped
-            self._ec((0, 3, 3), fc=2, var=5.0, bits=70, sig="F"),  # f2 min
+            self._ec(self.BASE, fc=0, var=1.0, bits=100, sig="BASE"),
+            self._ec((3, 3, 2), fc=0, var=2.0, bits=95, sig="A2"),
+            self._ec((1, 3, 3), fc=1, var=3.0, bits=90, sig="C"),
+            self._ec((1, 2, 3), fc=1, var=3.0, bits=80, sig="D"),
+            self._ec((1, 2, 3), fc=1, var=3.0, bits=80, sig="D"),
+            self._ec((2, 3, 3), fc=1, var=4.0, bits=85, sig="E"),
+            self._ec((0, 3, 3), fc=2, var=5.0, bits=70, sig="F"),
         ]
         self.opts = fusion_enum.group_min_noise_options(self.evaluated, self.BASE)
 
@@ -266,25 +244,25 @@ class GroupMinNoiseOptionsTest(unittest.TestCase):
         self.assertEqual(self.opts[0]["fusion_count"], 0)
 
     def test_higher_variance_dropped_and_dups_removed(self):
-        # kept: BASE(f0), D(f1), C(f1), F(f2)  -> A2 & E dropped, one D deduped
+
         self.assertEqual(len(self.opts), 4)
         kept_indices = {tuple(o["action_indices"]) for o in self.opts}
-        self.assertNotIn((3, 3, 2), kept_indices)  # A2 dropped (higher var in f0)
-        self.assertNotIn((2, 3, 3), kept_indices)  # E dropped (higher var in f1)
-        self.assertEqual(sum(1 for i in kept_indices if i == (1, 2, 3)), 1)  # D deduped
+        self.assertNotIn((3, 3, 2), kept_indices)
+        self.assertNotIn((2, 3, 3), kept_indices)
+        self.assertEqual(sum(1 for i in kept_indices if i == (1, 2, 3)), 1)
 
     def test_fusion_tie_pairs(self):
         pairs = {(o["fusion_count"], o["tie_index"]) for o in self.opts}
         self.assertEqual(pairs, {(0, 0), (1, 0), (1, 1), (2, 0)})
 
     def test_cheaper_tie_member_ranks_first(self):
-        # within fusion=1, D (bits 80) must rank before C (bits 90)
+
         f1 = [o for o in self.opts if o["fusion_count"] == 1]
         self.assertEqual(f1[0]["action_indices"], [1, 2, 3])
         self.assertEqual(f1[0]["tie_index"], 0)
 
     def test_baseline_not_min_noise_raises(self):
-        # if the passed baseline is not option 0 (here a fusion=1 config), guard fires
+
         with self.assertRaises(ValueError):
             fusion_enum.group_min_noise_options(self.evaluated, (1, 3, 3))
 
@@ -304,7 +282,7 @@ class CheckKIndependenceTest(unittest.TestCase):
             return {"valid": True, "fusion_count": int(block[0])}
 
         samples = (cfg for cfg in ([0, 0], [1, 0]))
-        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}), \
+        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}),\
              mock.patch.object(fusion_enum, "_eval_block", side_effect=fake_eval):
             result = fusion_enum.check_k_independence(Ctx(), sample_configs=samples)
 
@@ -329,7 +307,7 @@ class ActiveRescalePremiseTest(unittest.TestCase):
         arch_path = _RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json"
         archive = json.loads(arch_path.read_text(encoding="utf-8"))
         plans = ssm.build_stage_plans_from_archive(archive)
-        for gk in ["block1_mrpc", "block2_mrpc", "block4", "block5_n0", "block5_n1", "block5_n2", "block5_n4"]:
+        for gk in ["block1_mrpc", "block2_mrpc", "block4", "block5_n1", "block5_n2", "block5_n4"]:
             self.assertIn(gk, plans, f"{gk} missing from skeleton plans")
             active = set(plans[gk].active_rescale_rl_fields)
             self.assertTrue(active, f"{gk}: no active rescale RL fields — fusion map would have no rescale lever")
@@ -351,7 +329,7 @@ class FusionScheduleTest(unittest.TestCase):
         )
 
     def test_horizon_matches_step_schedule(self):
-        self.assertEqual(len(self.sched), _aspace.horizon_for_num_layers(12))  # 47, block 3 excluded
+        self.assertEqual(len(self.sched), _aspace.horizon_for_num_layers(12))
 
     def test_dims_are_two_slots(self):
         md, mnl = _aspace.fusion_step_schedule_dims(self.m)

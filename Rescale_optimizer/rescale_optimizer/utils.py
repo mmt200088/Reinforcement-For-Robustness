@@ -15,10 +15,6 @@ from typing import List, Optional, Tuple, Union
 logger = logging.getLogger("rescale_optimizer")
 
 
-# ---------------------------------------------------------------------------
-# Logging setup
-# ---------------------------------------------------------------------------
-
 def setup_logging(
     level: int = logging.INFO,
     log_file: Optional[Union[str, Path]] = None,
@@ -58,10 +54,6 @@ def setup_logging(
 
     root.setLevel(level)
 
-
-# ---------------------------------------------------------------------------
-# Math helpers
-# ---------------------------------------------------------------------------
 
 def bits_for_value(value: float) -> float:
     """返回表示 |value| 所需的 bit 数 = ceil(log2(|value| + 1))。"""
@@ -128,10 +120,6 @@ def find_ntt_friendly_prime(bit_size: int, ring_degree: int = 1 << 15,
             candidate -= m
     return 0
 
-
-# ---------------------------------------------------------------------------
-# Pretty-printing
-# ---------------------------------------------------------------------------
 
 def format_skeleton(skeleton: List[int],
                     drop_bits: Optional[List[float]] = None) -> str:

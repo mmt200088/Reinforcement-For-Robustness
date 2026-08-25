@@ -38,10 +38,6 @@ from .reachability import Reachability, compute_reachability
 logger = logging.getLogger("rescale_optimizer")
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
 @dataclass
 class OptimizationConfig:
     """
@@ -63,10 +59,6 @@ class OptimizationConfig:
     q_tail_bits: int = 60
     max_best_first_expansions: int = 64
 
-
-# ---------------------------------------------------------------------------
-# Result
-# ---------------------------------------------------------------------------
 
 @dataclass
 class OptimizationResult:
@@ -90,11 +82,10 @@ class OptimizationResult:
     chain_result: ChainResult = field(default_factory=ChainResult)
     message: str = ""
 
-    # convenience shortcuts --------------------------------------------
 
     @property
     def skeleton(self) -> List[int]:
-        return self.chain_result.skeleton if self.chain_result.valid \
+        return self.chain_result.skeleton if self.chain_result.valid\
             else self.dp.skeleton
 
     @property
@@ -131,10 +122,6 @@ class OptimizationResult:
         return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
-
 def optimize_rescale(
     graph: RescaleGraph,
     config: Optional[OptimizationConfig] = None,
@@ -168,7 +155,7 @@ def optimize_rescale(
 
     result = OptimizationResult()
 
-    # ---- Stage 1: Feasibility DAG ------------------------------------
+
     logger.info("=" * 58)
     logger.info("Stage 1: Feasibility-DAG construction")
     build_feasibility_dag(graph)
@@ -179,7 +166,7 @@ def optimize_rescale(
         logger.error(result.message)
         return result
 
-    # ---- Stage 2: Reachability ---------------------------------------
+
     logger.info("=" * 58)
     logger.info("Stage 2: Reachability analysis")
     reach = compute_reachability(graph)
@@ -192,7 +179,7 @@ def optimize_rescale(
         logger.error(result.message)
         return result
 
-    # ---- Stage 3: Backward Level-DP ----------------------------------
+
     logger.info("=" * 58)
     logger.info("Stage 3: Backward Level-DP (valid L's: %s)", L_choices)
     dp_result = run_backward_dp(graph, reach, config.cost_params)
@@ -205,7 +192,7 @@ def optimize_rescale(
 
     logger.info("Best DP: %s", dp_result)
 
-    # ---- Stage 4: Modulus chain construction -------------------------
+
     logger.info("=" * 58)
     logger.info("Stage 4: Modulus chain construction (+ repair/compress)")
     chain_result = construct_modulus_chain(
@@ -231,17 +218,9 @@ def optimize_rescale(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Convenience
-# ---------------------------------------------------------------------------
-
 def print_result(result: OptimizationResult) -> None:
     print(result.summary())
 
-
-# ---------------------------------------------------------------------------
-# Pretty printing — modulus chain + SEAL CoeffModulus ordering
-# ---------------------------------------------------------------------------
 
 def _format_modulus_chain(
     chain: ModulusChain,
@@ -272,7 +251,7 @@ def _format_modulus_chain(
     lines.append("  Final modulus chain")
     lines.append("  " + "-" * 58)
 
-    # --- algorithmic view ---------------------------------------------
+
     lines.append(
         f"  layout  : q = [q_head, q_1, ..., q_{R}, q_tail]  "
         f"(R = {R}, total = {total} bits)"
@@ -281,7 +260,7 @@ def _format_modulus_chain(
         f"    q_head  =  {chain.q_head_bits} bits   "
         f"(head prime; kept in ActiveBits, not consumed by rescale)"
     )
-    # s_1..s_R are skeleton[1..R]
+
     for i, b in enumerate(chain.q_bits, start=1):
         s_i = skeleton[i] if i < len(skeleton) else "?"
         lines.append(
@@ -293,7 +272,7 @@ def _format_modulus_chain(
         f"(special prime for key-switching / rotation; excluded from ActiveBits)"
     )
 
-    # --- SEAL view -----------------------------------------------------
+
     seal_bits: List[int] = (
         [chain.q_head_bits] + list(reversed(chain.q_bits)) + [chain.q_tail_bits]
     )

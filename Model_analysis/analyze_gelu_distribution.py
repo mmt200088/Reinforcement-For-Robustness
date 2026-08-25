@@ -13,7 +13,6 @@ Usage:
     python analyze_gelu_distribution.py --tasks sst2 mrpc
 """
 
-# 运行全部数据集 bash run_gelu_analysis.sh
 
 import os
 import argparse
@@ -52,8 +51,6 @@ INTERVAL_COLORS = ['#e74c3c', '#f39c12', '#2ecc71', '#3498db']
 HIST_MIN, HIST_MAX, HIST_BINS = -15.0, 15.0, 300
 
 
-# ==================== Statistics Collector ====================
-
 class GELUInputCollector:
     """Incrementally accumulates histogram and interval statistics for GELU inputs.
     Also accumulates per-position (per dimension) basic stats (mean, std, min, max)
@@ -72,7 +69,7 @@ class GELUInputCollector:
         self.min_val = [float('inf')] * num_layers
         self.max_val = [float('-inf')] * num_layers
 
-        # Per-position stats: layer_idx -> dict with (D,) arrays; D set on first update
+
         self._per_pos = [None] * num_layers
 
     def _init_per_pos(self, layer_idx, D):
@@ -149,9 +146,6 @@ class GELUInputCollector:
         }
 
 
-# ==================== Hook Installation ====================
-
-
 class GELUHookWrapper(nn.Module):
     """Compute all statistics on GPU, enqueue only tiny result dicts (~220KB)."""
 
@@ -175,7 +169,7 @@ class GELUHookWrapper(nn.Module):
     @torch.no_grad()
     def _collect_stats(self, x):
         flat = x.reshape(-1)
-        x_2d = x.reshape(-1, x.shape[-1])  # (N, D)
+        x_2d = x.reshape(-1, x.shape[-1])
 
         hist = torch.histc(flat.float(), bins=self.hist_bins,
                            min=self.hist_min, max=self.hist_max)
@@ -204,7 +198,7 @@ class GELUHookWrapper(nn.Module):
             ((x_2d >= -2.7) & (x_2d < 0)).sum(dim=0),
             ((x_2d >= 0) & (x_2d <= 2.7)).sum(dim=0),
             (x_2d > 2.7).sum(dim=0),
-        ], dim=1)  # (D, 4)
+        ], dim=1)
 
         batch_stats = {
             'hist': hist.long().cpu().numpy(),
@@ -251,8 +245,6 @@ def restore_gelu(model, original_fns):
     for i, layer in enumerate(model.bert.encoder.layer):
         layer.intermediate.intermediate_act_fn = original_fns[i]
 
-
-# ==================== Plotting ====================
 
 def plot_fine_grained_histograms(collector, task_name, output_dir):
     """Grid of per-layer histograms, colored by interval boundaries."""
@@ -331,7 +323,7 @@ def plot_interval_distribution(collector, task_name, output_dir):
     x_pos = np.arange(NUM_LAYERS)
     bar_w = 0.18
 
-    # ---- Top: Grouped bar chart ----
+
     for iv in range(4):
         pcts = []
         for li in range(NUM_LAYERS):
@@ -352,7 +344,7 @@ def plot_interval_distribution(collector, task_name, output_dir):
     ax1.legend(loc='upper right', fontsize=9)
     ax1.grid(axis='y', alpha=0.3)
 
-    # ---- Bottom: Stacked bar chart ----
+
     bottoms = np.zeros(NUM_LAYERS)
     for iv in range(4):
         pcts = np.array([
@@ -429,7 +421,7 @@ def plot_per_position_interval_heatmap(collector, task_name, output_dir):
         if stats is None:
             ax.set_title(f'Layer {layer_idx} (no data)')
             continue
-        pct = stats['interval_pct']  # (D, 4)
+        pct = stats['interval_pct']
         im = ax.imshow(pct.T, aspect='auto', cmap='YlOrRd',
                        vmin=0, vmax=100, interpolation='nearest')
         ax.set_yticks(range(4))
@@ -472,8 +464,6 @@ def save_per_position_stats(collector, task_name, output_dir):
     np.savez_compressed(filepath, **data)
     print(f'  Saved: {filepath}')
 
-
-# ==================== Per-Task Processing ====================
 
 def process_task(task_name, task_config, output_dir, device,
                  max_length=128, batch_size=32, max_samples=0):
@@ -527,7 +517,7 @@ def process_task(task_name, task_config, output_dir, device,
     worker.join()
     restore_gelu(model, original_fns)
 
-    # ---- Print statistics ----
+
     header = (f'  {"Layer":<8} {"Count":>14} {"Mean":>9} {"Std":>9} '
               f'{"Min":>9} {"Max":>9}  '
               f'{"<-2.7":>8} {"[-2.7,0)":>9} {"[0,2.7]":>9} {">2.7":>8}')
@@ -560,7 +550,7 @@ def process_task(task_name, task_config, output_dir, device,
                 f.write(f'Layer {i}: interval_counts = {s["interval_counts"]}\n')
     print(f'  Saved: {stats_path}')
 
-    # ---- Plot ----
+
     plot_fine_grained_histograms(collector, task_name, output_dir)
     plot_interval_distribution(collector, task_name, output_dir)
     plot_per_position_distribution(collector, task_name, output_dir)
@@ -571,8 +561,6 @@ def process_task(task_name, task_config, output_dir, device,
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-
-# ==================== Main ====================
 
 def main():
     parser = argparse.ArgumentParser(

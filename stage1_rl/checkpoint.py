@@ -38,17 +38,13 @@ def _deserialize_numpy_keys(obj, keys_to_convert):
 
 
 def _atomic_torch_save(obj, path):
-    """原子性 torch.save：先写临时文件再 rename，避免中断导致 checkpoint 损坏。
-
-    如果进程在 torch.save 期间崩溃，残留的 .tmp 文件不会污染正式 checkpoint；
-    下次保存时 .tmp 会被覆盖。
-    """
+    """Commit a checkpoint only after the temporary file is complete."""
     tmp_path = path + ".tmp"
     try:
         torch.save(obj, tmp_path)
-        os.replace(tmp_path, path)  # 原子替换（Windows 和 POSIX 均支持）
+        os.replace(tmp_path, path)
     except BaseException:
-        # 写入失败时清理残留临时文件
+
         if os.path.isfile(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -161,20 +157,10 @@ def resolve_stage1_cuda_rng_role_registry(
 
     stored_registry = checkpoint.get("cuda_rng_state_by_role")
     if stored_registry is None:
-        legacy_states = checkpoint.get("cuda_rng_state_all")
-        if legacy_states is None:
-            return [], [
-                new_role_state_factory(role_index)
-                for role_index in range(current_count)
-            ]
-        registry = list(legacy_states)
-        if len(registry) != current_count:
-            raise RuntimeError(
-                "legacy Stage-1 checkpoint GPU count changed: "
-                f"checkpoint={len(registry)}, current={current_count}; "
-                "exact CUDA RNG role mapping is unavailable"
-            )
-        return registry, list(registry)
+        raise RuntimeError(
+            "Stage-1 checkpoint is missing the CUDA RNG role registry; "
+            "a fresh run is required"
+        )
 
     version = int(
         checkpoint.get("cuda_rng_role_registry_version", 0) or 0
@@ -329,36 +315,28 @@ def load_stage1_rl_checkpoint(
             )
     if checkpoint.get("torch_rng_state") is not None:
         torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
-    if (
-        checkpoint.get("cuda_rng_state_by_role") is not None
-        or checkpoint.get("cuda_rng_state_all") is not None
-    ):
-        active_count = (
-            int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
-        )
-        initial_active_states = (
-            [state.cpu() for state in torch.cuda.get_rng_state_all()]
-            if active_count > 0
-            else []
-        )
-        registry, active_states = resolve_stage1_cuda_rng_role_registry(
-            checkpoint,
-            active_role_count=active_count,
-            new_role_state_factory=lambda role_index: initial_active_states[
-                role_index
-            ],
-        )
-        for role_index, state in enumerate(active_states):
-            torch.cuda.set_rng_state(state.cpu(), device=role_index)
-        checkpoint["cuda_rng_role_registry_version"] = (
-            STAGE1_CUDA_RNG_ROLE_REGISTRY_VERSION
-        )
-        checkpoint["cuda_rng_state_by_role"] = registry
-        checkpoint["cuda_rng_active_role_count"] = active_count
+    active_count = int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+    initial_active_states = (
+        [state.cpu() for state in torch.cuda.get_rng_state_all()]
+        if active_count > 0
+        else []
+    )
+    registry, active_states = resolve_stage1_cuda_rng_role_registry(
+        checkpoint,
+        active_role_count=active_count,
+        new_role_state_factory=lambda role_index: initial_active_states[
+            role_index
+        ],
+    )
+    for role_index, state in enumerate(active_states):
+        torch.cuda.set_rng_state(state.cpu(), device=role_index)
+    checkpoint["cuda_rng_role_registry_version"] = (
+        STAGE1_CUDA_RNG_ROLE_REGISTRY_VERSION
+    )
+    checkpoint["cuda_rng_state_by_role"] = registry
+    checkpoint["cuda_rng_active_role_count"] = active_count
     if checkpoint.get("numpy_rng_state") is not None:
         np.random.set_state(checkpoint["numpy_rng_state"])
     if checkpoint.get("python_rng_state") is not None:
         random.setstate(checkpoint["python_rng_state"])
     return checkpoint
-
-

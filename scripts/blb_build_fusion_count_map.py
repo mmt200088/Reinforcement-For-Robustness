@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 """Build the Stage-2 fusion-count map (spec §3, plan Task 4).
 
-For each of the 7 RL block-types (block3 is frozen → no map), enumerate the
+For each production fusion block type, enumerate the
 effective chain slots, run real replan, group by realized fusion_count, keep the
 minimum-installed-noise set (option 0 == baseline by construction), and write a
 per-block-type JSON cache under ``blb_stage2_rl/fusion_maps/<profile>/``.
 
-Server-only (needs torch + Rescale_optimizer). Parallelizes the cartesian
-product across processes (each worker owns its own bridge). Run via
-SERVER_COMMAND.md per the local/server protocol.
+The builder requires Torch and the in-process Rescale optimizer. Cartesian
+products are partitioned across worker processes.
 
 Usage:
     python scripts/blb_build_fusion_count_map.py --profile mrpc \
         --out-dir blb_stage2_rl/fusion_maps/mrpc \
         --report reports/blb_opt/fusion_maps/build_<ts>.html --workers 16
-    # local small dry-run (torch needed):
-    python scripts/blb_build_fusion_count_map.py --profile mrpc \
-        --only block1_mrpc,block5_n1 --out-dir /tmp/fm --workers 4
 """
 
 from __future__ import annotations
@@ -31,19 +27,13 @@ import time
 from typing import Any, Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-for _p in (str(REPO_ROOT / "blb_stage2_rl"), str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
+for _p in (str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from json_utils import write_json_file  # noqa: E402
 
 
-# (graph_key, block_idx, gelu_degree, attn_degree). attn=2 keeps the bootstrap's
-# block3 baseline valid (block3_exp_n2 exists); it does not affect block1/2/4/5.
-# block5_n0 (GELU degree 0 / ReLU) is disabled since 2026-06-06 (Stage-1 stopped
-# sampling degree 0); it is no longer built. The committed block5_n0.json map is
-# kept as dormant data and FusionCountMap.load still loads it, but a degree-0 layer
-# is rejected upstream at baseline_bootstrap, so the fusion schedule never requests it.
 def block_types_for_profile(profile: str) -> List[Tuple[str, int, int, int]]:
     """``(graph_key, block_idx, gelu_degree, attn_degree)`` per buildable block-type
     for ``profile``. block1 / block2 graph keys are profile-suffixed
@@ -62,7 +52,6 @@ def block_types_for_profile(profile: str) -> List[Tuple[str, int, int, int]]:
     ]
 
 
-# Back-compat default (mrpc); main() rebuilds this per --profile.
 BLOCK_TYPES: List[Tuple[str, int, int, int]] = block_types_for_profile("mrpc")
 
 
@@ -81,8 +70,8 @@ def _enumerate_shard_worker(payload: Dict[str, Any]) -> Tuple[int, List[Tuple]]:
     classification is deterministic, so every worker enumerates the same product
     and the ``i % num_shards`` stride is consistent.
     """
-    import fusion_count_map as fcm
-    import fusion_enum
+    from blb_stage2_rl import fusion_count_map as fcm
+    from blb_stage2_rl import fusion_enum
 
     ctx = fusion_enum.prepare_block_type_context(
         graph_key=payload["graph_key"],
@@ -114,7 +103,7 @@ def _iter_golden_shard_results(payloads: List[Dict[str, Any]], num_shards: int):
 
 
 def _merge_golden_shard_results(shard_results) -> Tuple[List[Any], int]:
-    import fusion_enum
+    from blb_stage2_rl import fusion_enum
 
     reducer = fusion_enum._MinNoiseReducer()
     nv_g = 0
@@ -173,10 +162,9 @@ def build_one_block_type(
     fast_verify_random: int = 64,
     shards_per_worker: int = 8,
 ) -> Dict[str, Any]:
-    import fusion_enum
+    from blb_stage2_rl import fusion_enum
 
-    # One context in the main process for geometry + baseline + classification
-    # diagnostics (the workers rebuild their own bridge for the heavy loop).
+
     ctx = fusion_enum.prepare_block_type_context(
         graph_key=graph_key,
         block_idx=block_idx,
@@ -190,15 +178,7 @@ def build_one_block_type(
     total_combos = ctx.enum_total()
     num_shards = max(1, int(workers))
 
-    # Budget guard: the sound (fusion, total_bits) classification enumerates every
-    # fusion-relevant encode JOINTLY, so the deep 10-level grid can be huge for a
-    # block with many encodes (block4 ~ 7e8 combos ~ tens of hours), even though
-    # such a block is usually fusion-DEGENERATE (the encodes move bits but not
-    # fusion). NOTE: we cannot just keep the existing committed map — its
-    # action_indices use the OLD per-slot level convention and would mis-decode
-    # under the new uniform-10 decode. Instead run a degeneracy probe (all-min
-    # corner + random samples); if nothing fuses, emit a correct new-convention
-    # baseline-only map cheaply; if any config fuses, REFUSE to shortcut.
+
     if max_enum_combos and total_combos > int(max_enum_combos):
         probe = fusion_enum.degeneracy_probe(ctx, num_random=int(degeneracy_probe_samples))
         if not probe["degenerate"]:
@@ -254,17 +234,11 @@ def build_one_block_type(
     num_valid_golden = 0
     t0 = time.time()
 
-    # The fast path uses a golden-DERIVED template; verify_template cross-checks it
-    # golden-vs-fast on random combos. The template assumes the installed-point SET
-    # is captured by per-slot probes, which can miss a point whose install depends on
-    # a COMBINATION of slots (rte block5_n1: golden installs an extra rescale@15 the
-    # template omits). On such a mismatch, fall back to the golden cfg-path
-    # enumeration (the source of truth) for THIS block-type instead of aborting the
-    # whole build. ``--enum-path both`` still requires an exact golden-vs-fast match.
+
     effective_enum_path = enum_path
     fast_fallback_reason = ""
     if enum_path in ("fast", "both"):
-        import fusion_enum_fast
+        from blb_stage2_rl import fusion_enum_fast
         template = fusion_enum_fast.build_fast_template(ctx)
         try:
             vres = fusion_enum_fast.verify_template(
@@ -272,7 +246,7 @@ def build_one_block_type(
             )
         except RuntimeError as exc:
             if enum_path != "fast":
-                raise  # 'both' must cross-validate exactly; a mismatch is a real failure
+                raise
             fast_fallback_reason = str(exc)
             effective_enum_path = "golden"
             print(
@@ -281,7 +255,7 @@ def build_one_block_type(
                 flush=True,
             )
     if effective_enum_path in ("fast", "both"):
-        # ---- direct-replan fast path (template golden-derived + verified) ----
+
         print(
             f"  [fast] template OK: {len(template.points)} point specs, "
             f"golden-vs-fast verified on {vres['checked']} probes "
@@ -358,7 +332,7 @@ def build_one_block_type(
         )
 
     if effective_enum_path in ("golden", "both"):
-        # ---- original cfg-path enumeration (stride shards) ----
+
         evaluated_golden, num_valid_golden = _run_golden_enum()
         if effective_enum_path == "golden":
             evaluated = evaluated_golden
@@ -372,19 +346,7 @@ def build_one_block_type(
 
     options = _group(evaluated)
 
-    # Golden self-consistency on the KEPT options when the FAST path produced them.
-    # verify_template cross-checks RANDOM combos golden-vs-fast, but the fast
-    # template (golden-DERIVED from per-slot probes) can mis-feed replan for a
-    # specific combo it never probed — e.g. the rte/sst2 block2 fc=1 option whose
-    # three SF-irrelevant rescales decode to the lex-min SF (15): golden classifies
-    # that config as fusion 0 (the low rescales stop the chain fusing), but the fast
-    # path stored it as fusion 1, so the precision boost could not raise its
-    # non-fusing base to the output target (build emitted output_sf=43, gate wants
-    # 46). The kept options are few + deterministic, so golden-re-checking exactly
-    # them catches the escape -> full golden fallback (source of truth); the real
-    # fusing option then boosts to the target. block4 (canonical rescales) and the
-    # already-golden block5_n* are unaffected; only the buggy block-type pays the
-    # golden enumeration cost.
+
     if effective_enum_path == "fast":
         kept_problems = fusion_enum.verify_kept_options_golden(ctx, options)
         if kept_problems:
@@ -407,8 +369,8 @@ def build_one_block_type(
     elapsed = time.time() - t0
 
     if enum_path == "both":
-        # FULL cross-validation: the two paths' final option lists must agree
-        # exactly (variance compared with float-sum-order tolerance only).
+
+
         if int(num_valid_golden) != int(num_valid_total):
             raise RuntimeError(
                 f"{graph_key}: enum-path mismatch: valid fast={num_valid_total} "
@@ -438,20 +400,17 @@ def build_one_block_type(
                 )
         fast_meta["both_paths_identical"] = True
         print(f"  [both] fast == golden on all {len(options)} options ✓", flush=True)
-    # Fill SF/K-first slot view for the kept options only.
+
     for opt in options:
         opt["slots"] = fusion_enum.decode_block_slots(ctx, opt["action_indices"])
 
-    # 加大精度 (precision boost, 2026-06-19): raise each non-zero-fusion option's
-    # short modulus primes to q_max at minimum installed noise (replan-verified),
-    # rewriting it as a boosted explicit-SF option. No-op for fc=0 options,
-    # block-types without a registered ChainTopology, or options already all-q_max.
+
     options = fusion_enum.boost_options_for_block(ctx, options)
     n_boosted = sum(1 for o in options if o.get("boosted"))
     if n_boosted:
         print(f"  [boost] 加大精度: {n_boosted}/{len(options)} options raised to all-q_max", flush=True)
 
-    # K-independence self-check on a small sample of options.
+
     sample = [opt["action_indices"] for opt in options[: min(8, len(options))]]
     k_indep = fusion_enum.check_k_independence(ctx, sample_configs=sample)
 

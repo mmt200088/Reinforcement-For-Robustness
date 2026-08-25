@@ -459,10 +459,8 @@ def load_search_preload(path: str | Path) -> tuple[SearchEvaluation, ...]:
     resolved = _resolve_store(source, payload)
     if resolved is not None:
         observation_path, store = resolved
-        # The JSONL row is fsynced before checkpoint metadata is published.
-        # A crash may therefore leave a valid append-only suffix beyond the last
-        # checkpoint interval; recover the complete suffix instead of truncating
-        # it to stale checkpoint metadata.
+
+
         recover_jsonl_file(observation_path)
         rows = _read_strict_object_jsonl(observation_path)
         expected = int(store.get("observation_count", payload.get("observation_count", len(rows))))
@@ -473,7 +471,7 @@ def load_search_preload(path: str | Path) -> tuple[SearchEvaluation, ...]:
             )
         return tuple(SearchEvaluation.from_dict(item) for item in rows)
 
-    # Backward compatibility with the initial all-in-memory schema.
+
     if payload.get("result") and payload["result"].get("observations") is not None:
         return SearchResult.from_dict(payload["result"]).observations
     if payload.get("schema_version") == "stage1_gelu_search_result_v1":
@@ -1417,8 +1415,7 @@ def persist_search_result(
         manifest_payload.get("search_wall_seconds", 0.0) or 0.0
     )
 
-    # The complete checkpoint records algorithm completion.  The manifest and
-    # COMPLETED marker are published only after all derived artifacts exist.
+
     _atomic_json(paths["history"], list(result.history))
     _atomic_json(paths["result"], compact)
     _atomic_json(paths["summary"], compact)

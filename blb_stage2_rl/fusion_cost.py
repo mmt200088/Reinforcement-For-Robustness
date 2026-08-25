@@ -1,17 +1,15 @@
-"""Per-block weighted fusion + truncation cost saving for the Stage-2 fusion-count
-reward (P3 cost term).
+"""Per-block weighted fusion and truncation saving for the P3 reward.
 
-This is the redesign agreed 2026-06-03: instead of the aggregate
-``fusion_gain + k_gain + total_bits`` tiebreaker, the P3 cost is a per-block-type
-weighted saving ratio (user ratio ``block1:block2:block4:block5:truncation =
-80:150:130:40:50``). ``total_bits`` is dropped from the reward scalar entirely.
+The fixed block1:block2:block4:block5:truncation weights are
+``80:150:130:40:50``. ``total_bits`` is a ranking diagnostic, not part of the
+reward scalar.
 
 The module is **pure / torch-free** (dataclasses + arithmetic plus the shared
 truncation-domain constants). It imports only the torch-free ``truncation_levels``
-sibling, with package, legacy top-level, and standalone file-load compatibility;
+sibling;
 callers pass pre-extracted per-block choices.
 
-Semantics (see ``docs/superpowers/specs/2026-06-03-stage2-fusion-count-reward-design.md``):
+Semantics:
 
   per block b of block-type t(b), with chosen (fusion_option, K):
     fusion_saving_b = fusion_count / max_fusion(t)   # 0 when max_fusion == 0 (block1/block4)
@@ -28,39 +26,10 @@ does not dilute the normalization.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import importlib.util
 import math
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
-
-def _load_truncation_bounds() -> tuple[int, int]:
-    if __package__:
-        from .truncation_levels import K_MAX_BITS, K_MIN_BITS
-
-        return K_MAX_BITS, K_MIN_BITS
-
-    try:
-        from truncation_levels import K_MAX_BITS, K_MIN_BITS
-    except ModuleNotFoundError as exc:
-        if exc.name != "truncation_levels":
-            raise
-    else:
-        return K_MAX_BITS, K_MIN_BITS
-
-    sibling = Path(__file__).with_name("truncation_levels.py")
-    spec = importlib.util.spec_from_file_location(
-        f"_{Path(__file__).stem}_standalone_truncation_levels",
-        sibling,
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load truncation bounds from {sibling}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.K_MAX_BITS, module.K_MIN_BITS
-
-
-K_MAX_BITS, K_MIN_BITS = _load_truncation_bounds()
+from .truncation_levels import K_MAX_BITS, K_MIN_BITS
 
 
 @dataclass(frozen=True)
@@ -93,11 +62,8 @@ class FusionCostResult:
     cost_rank: float
     max_actual: float
     fusion_norm: float = 0.0
-    # ADR-014 (2026-06-14): concave/saturating transform of ``fusion_norm`` used
-    # for the PPO cost scalar (anti-runaway). ``fusion_norm`` stays RAW (linear,
-    # for diagnostics); the caller scales ``fusion_norm_saturated`` by the budget
-    # so marginal fusion reward → ~0 past a healthy knee. ``tau<=0`` => identical
-    # to ``fusion_norm`` (back-compat / saturation off).
+
+
     fusion_norm_saturated: float = 0.0
     trunc_norm: float = 0.0
     fusion_actual: float = 0.0

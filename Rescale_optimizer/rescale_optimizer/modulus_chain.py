@@ -50,10 +50,6 @@ logger = logging.getLogger("rescale_optimizer")
 INF = float("inf")
 
 
-# ---------------------------------------------------------------------------
-# Modulus chain data structure
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ModulusChain:
     """
@@ -105,10 +101,6 @@ class ModulusChain:
                 f"total={self.total_bits} bits, R={self.R}")
 
 
-# ---------------------------------------------------------------------------
-# Helpers: skeleton → stage index mapping
-# ---------------------------------------------------------------------------
-
 def _stage_index_of(skeleton: Sequence[int], j: int) -> int:
     """
     Given a skeleton S* = [s_0, s_1, ..., s_R, M+1] and a cut-point j
@@ -117,17 +109,13 @@ def _stage_index_of(skeleton: Sequence[int], j: int) -> int:
     (We assume s_0 = 0 so the answer is always ≥ 0.)
     """
     r = 0
-    for u in range(len(skeleton) - 1):   # skip the final M+1
+    for u in range(len(skeleton) - 1):
         if skeleton[u] <= j:
             r = u
         else:
             break
     return r
 
-
-# ---------------------------------------------------------------------------
-# Alg 8  ValidateCutPoints
-# ---------------------------------------------------------------------------
 
 def validate_cut_points(
     graph: RescaleGraph,
@@ -170,10 +158,6 @@ def validate_cut_points(
 
     return True, None, None, 0
 
-
-# ---------------------------------------------------------------------------
-# Alg 5  RepairChain
-# ---------------------------------------------------------------------------
 
 def _next_larger_legal(bits: int, q_legal_min: int, q_legal_max: int) -> Optional[int]:
     """The next integer > bits in [q_legal_min, q_legal_max]; None if none."""
@@ -221,7 +205,7 @@ def repair_chain(
     t = list(t)
     skel = list(skeleton)
 
-    # Safety: hard iteration bound
+
     max_iter = (R + 1) * (q_max - q_min + 1) * 4
     for _ in range(max_iter):
         valid, j_star, r_star, delta = validate_cut_points(
@@ -231,16 +215,16 @@ def repair_chain(
             return chain, t, True
 
         repaired = False
-        for u in range(r_star + 1, R + 1):      # u = r*+1 .. R
+        for u in range(r_star + 1, R + 1):
             current_bits = int(chain.q_bits[u - 1])
             new_bits = _next_larger_legal(current_bits, q_min, q_max)
             if new_bits is None:
                 continue
 
-            # Tentatively bump q_u and re-walk t[v] for v >= u.
+
             tentative_q = list(chain.q_bits)
             tentative_q[u - 1] = new_bits
-            tentative_t = list(t[:u])  # keep t[0..u-1] unchanged
+            tentative_t = list(t[:u])
             ok = True
             for v in range(u, R + 1):
                 path = graph.nodes_between(skel[v - 1], skel[v])
@@ -264,10 +248,6 @@ def repair_chain(
     logger.warning("RepairChain: hit iteration bound")
     return chain, t, False
 
-
-# ---------------------------------------------------------------------------
-# Alg 7  CompressHeadroom
-# ---------------------------------------------------------------------------
 
 def compress_headroom(
     graph: RescaleGraph,
@@ -313,7 +293,7 @@ def compress_headroom(
 
     Compared to the previous linear-formula version, this fixes the
     ``(2^k - 1) · c[r-1]``-bit slack that accrued whenever path
-    contained ``k`` symmetric CTCTs (see scripts/check_compress_headroom.py).
+    contained ``k`` symmetric CTCTs.
     """
     R = chain.R
     assert len(t) == R + 1 == len(t_base)
@@ -324,7 +304,7 @@ def compress_headroom(
     new_q: List[int] = list(int(x) for x in chain.q_bits)
     t_new: List[int] = [0] * (R + 1)
 
-    # Source: collapse to baseline if possible.
+
     t_new[0] = tb[0]
 
     for r in range(1, R + 1):
@@ -342,14 +322,12 @@ def compress_headroom(
         elif q_candidate > q_upper:
             new_q[r - 1] = q_upper
             t_new[r] = sf_pre_new - q_upper
-        else:  # q_candidate < q_lower → drop too small even before compress
+        else:
             new_q[r - 1] = q_old
             t_new[r] = sf_pre_new - q_old
             if t_new[r] < tb[r]:
-                # Cannot meet baseline with this stage compressed; revert.
-                # Keep t_new[r-1] as already decided (don't roll back upstream),
-                # use unchanged q_old, accept the chain-consistent t = sf_pre - q_old.
-                # If still below baseline, fall back to the pre-compress t_old[r].
+
+
                 t_new[r] = max(t_old[r], sf_pre_new - q_old)
                 new_q[r - 1] = q_old
 
@@ -360,10 +338,6 @@ def compress_headroom(
     )
     return t_new, new_chain
 
-
-# ---------------------------------------------------------------------------
-# Helper: derive (t_base, d_hat) from a skeleton
-# ---------------------------------------------------------------------------
 
 def derive_stage_parameters(
     graph: RescaleGraph,
@@ -381,7 +355,7 @@ def derive_stage_parameters(
     * drop_bits list excludes the final tail-edge drop (it is None).
     """
     skel = dp_result.skeleton
-    # drop the final M+1 from the scan
+
     R = len(skel) - 2
     t_base = [int(graph.cut_points[skel[r]].baseline_scale_bits)
               for r in range(R + 1)]
@@ -434,10 +408,6 @@ def initial_chain_from_skeleton(
     return chain, t, t_base
 
 
-# ---------------------------------------------------------------------------
-# Alg 6  BestFirstRepairableSkeleton
-# ---------------------------------------------------------------------------
-
 def _skeleton_key(dp_result: DPResult) -> Tuple:
     """A hashable key for a skeleton + L_star (for the visited set)."""
     return (dp_result.L_star, tuple(dp_result.skeleton),
@@ -473,7 +443,7 @@ def best_first_repairable_skeleton(
     """
     heap: List[Tuple[float, int, DPResult]] = []
     visited = {_skeleton_key(failed_dp)}
-    counter = 0  # heap tie-breaker
+    counter = 0
 
     def enqueue_deviations(src: DPResult) -> None:
         nonlocal counter
@@ -519,10 +489,6 @@ def best_first_repairable_skeleton(
     return None, None, None, None, False
 
 
-# ---------------------------------------------------------------------------
-# Alg 4  ConstructModulusChain
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ChainResult:
     skeleton: List[int] = field(default_factory=list)
@@ -560,13 +526,13 @@ def construct_modulus_chain(
         4. CompressHeadroom on the repairable (S, t_base, q, t).
         5. Final ValidateCutPoints on (S, q_final, t_final).
     """
-    # --- Step 1 ----------------------------------------------------------
+
     chain0, t0, t_base0 = initial_chain_from_skeleton(
         graph, dp_result, q_head_bits, q_tail_bits
     )
     logger.info("Initial chain: %s", chain0.summary())
 
-    # --- Step 2 ----------------------------------------------------------
+
     chain_r, t_r, ok = repair_chain(
         graph, dp_result.skeleton, chain0, t0, t_base0, A_budgets,
     )
@@ -580,8 +546,8 @@ def construct_modulus_chain(
     else:
         logger.info("RepairChain failed on initial skeleton; "
                     "falling back to BestFirstRepairableSkeleton")
-        # --- Step 3 ------------------------------------------------------
-        S_cand, t_base_cand, chain_cand, t_cand, ok2 = \
+
+        S_cand, t_base_cand, chain_cand, t_cand, ok2 =\
             best_first_repairable_skeleton(
                 graph, reach, cost, dp_result, A_budgets,
                 q_head_bits, q_tail_bits, max_expansions,
@@ -591,14 +557,14 @@ def construct_modulus_chain(
                                valid=False, used_fallback=True)
         used_fallback = True
 
-    # --- Step 4 ----------------------------------------------------------
+
     t_final, chain_final = compress_headroom(
         graph, S_cand, t_cand, t_base_cand, chain_cand,
         graph.q_legal_min, graph.q_legal_max,
     )
     logger.info("After CompressHeadroom: %s", chain_final.summary())
 
-    # --- Step 5 ----------------------------------------------------------
+
     valid, j_star, r_star, delta = validate_cut_points(
         graph, S_cand, chain_final, t_final, A_budgets,
     )

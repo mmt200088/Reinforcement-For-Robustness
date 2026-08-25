@@ -7,9 +7,7 @@ minimum-noise SF combination achieving a given ``fusion_count`` for a block-type
 This module is (1) the pluggable noise partial order used to pick "minimum noise"
 and (2) the runtime data/lookup layer.
 
-Imports only the repo-root ``noise_tables`` (no relative imports, no torch, no
-``action_space``), so it is importable on a torch-free box and in the torch-free
-test lane. See docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md.
+Imports only the repository noise tables, so map inspection remains torch-free.
 """
 
 from __future__ import annotations
@@ -22,12 +20,9 @@ from typing import Dict, List, Protocol, Sequence, runtime_checkable
 import numpy as np
 
 from json_utils import read_json_file
-import noise_tables  # repo-root torch-free module (always on sys.path)
+import noise_tables
 
 
-# ---------------------------------------------------------------------------
-# Pluggable noise partial order (spec §3.3)
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class InstalledNoisePoint:
     """One Gaussian noise point actually installed after replan + override.
@@ -37,7 +32,7 @@ class InstalledNoisePoint:
     """
 
     scaling_factor: int
-    distribution: str  # fresh / encoding / rescale / rotation
+    distribution: str
     N: int
 
 
@@ -66,9 +61,6 @@ class SummedInstalledVariance:
         return total
 
 
-# ---------------------------------------------------------------------------
-# Runtime map data + loader (spec §3.7 / §4.2)
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class FusionOption:
     """One RL-selectable option for a block-type.
@@ -84,14 +76,10 @@ class FusionOption:
     tie_index: int
     total_variance: float
     total_bits: int
-    slots: Dict[str, int]  # field -> decoded SF (human/SF-first view)
+    slots: Dict[str, int]
     action_indices: List[int]
-    # Precision boost ("加大精度", 2026-06-19): a non-zero-fusion option whose short
-    # modulus primes were raised to q_max. Boosted SFs go ABOVE the slot grid's
-    # baseline, so they cannot be expressed as ``action_indices`` — the option
-    # carries the FULL explicit per-block field_values instead, and the env builds
-    # the cfg SF-direct (``action_space.build_block_cfg_from_field_values``). Empty
-    # / boosted=False ⇒ the legacy index path is used, byte-for-byte unchanged.
+
+
     boosted: bool = False
     explicit_field_values: Dict[str, int] = None  # type: ignore[assignment]
 
@@ -101,7 +89,7 @@ class BlockTypeFusionMap:
     graph_key: str
     k_slot_index: int
     block_num_slots: int
-    options: List[FusionOption]  # options[0] == baseline (all-max)
+    options: List[FusionOption]
 
 
 @dataclass

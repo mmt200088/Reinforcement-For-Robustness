@@ -13,9 +13,8 @@ import unittest
 from tests.source_inspection_utils import source_text
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-# Load the module by file path under a unique name — importing blb_stage2_rl
-# as a package would pull torch, and a bare ``import seed_utils`` would
-# collide with stage1's module of the same name in shared test processes.
+
+
 _spec = importlib.util.spec_from_file_location(
     "blb_seq_seed_utils", str(_REPO / "blb_stage2_rl" / "seed_utils.py")
 )
@@ -80,8 +79,8 @@ class GpuCountIndependenceTest(unittest.TestCase):
             self.assertEqual(self._window_probe_seeds(42, 600, 60, nw), ref, nw)
 
     def test_policy_step_seeds_identical_across_worker_counts(self):
-        # Worker count never enters the formula; lock the full (ep, step,
-        # attempt) grid for one window against a literal recomputation.
+
+
         grid_a = [
             seed_utils.derive_policy_step_seed(7, ep, st, at)
             for ep in range(100, 160) for st in range(47) for at in (0, 1)
@@ -93,13 +92,13 @@ class GpuCountIndependenceTest(unittest.TestCase):
         self.assertEqual(grid_a, grid_b)
 
     def test_streams_do_not_alias(self):
-        # policy / probe / update streams must differ for the same key tuple.
+
         base, ep = 42, 1234
         policy = seed_utils.derive_policy_step_seed(base, ep, 0, 0)
         probe = seed_utils.derive_probe_seed(base, ep)
         update = seed_utils.derive_update_seed(base, ep)
         self.assertEqual(len({policy, probe, update}), 3)
-        # distinct episodes / steps / attempts / trials give distinct seeds
+
         self.assertNotEqual(
             seed_utils.derive_probe_seed(base, ep),
             seed_utils.derive_probe_seed(base, ep + 1),
@@ -116,11 +115,11 @@ class GpuCountIndependenceTest(unittest.TestCase):
             seed_utils.derive_probe_trial_seed(probe, 0),
             seed_utils.derive_probe_trial_seed(probe, 1),
         )
-        # trial 0 == the base probe seed (same convention as _trial_seed)
+
         self.assertEqual(seed_utils.derive_probe_trial_seed(probe, 0), probe)
 
     def test_preflight_episode_reserved(self):
-        # The preflight stream must not collide with episode 0's stream.
+
         self.assertNotEqual(
             seed_utils.derive_probe_seed(42, seed_utils.PREFLIGHT_EPISODE),
             seed_utils.derive_probe_seed(42, 0),
@@ -129,8 +128,8 @@ class GpuCountIndependenceTest(unittest.TestCase):
 
 class TrialMixConsistencyTest(unittest.TestCase):
     def test_trial_mix_matches_probe_runner_formula(self):
-        # probe_runner._trial_seed(base, i) = (base ^ (i * 2654435761)) & MASK.
-        # Locked here torch-free so the two implementations cannot drift.
+
+
         for base in (0, 42, 0x7FFFFFFFFFFFFFFF):
             for i in range(6):
                 expected = (int(base) ^ (i * 2654435761)) & 0x7FFFFFFFFFFFFFFF

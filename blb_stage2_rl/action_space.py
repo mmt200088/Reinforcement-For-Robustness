@@ -1,35 +1,8 @@
-"""BLB Stage 2 RL 动作空间定义、SF/k 编解码、cfg 构建。
+"""Full-vector Stage-2 action schema and model-config materialization.
 
-每个层、每个 BLB block 的离散动作字段（按 spec §4.2）：
-
-| Block | F (fresh) | W (weight) | M / S | R (rescale) | K | 总 SF dim |
-| ----- | --------- | ---------- | ----- | ----------- | - | --------- |
-| 1     | 1         | 1          | 2     | 4           | 1 | 8 + 1K |
-| 2     | 2         | 3          | 6     | 11          | 1 | 22 + 1K |
-| 3     | 1         | 0          | 1     | 1+degree    | 1 | 7 + 1K (deg=4) |
-| 4     | 2         | 1          | 5     | 8           | 1 | 16 + 1K |
-| 5     | 2         | 1          | 2     | 3+(deg-1)+deg | 1 | 15 + 1K (deg=4) |
-| first-input | 1   | 0          | 0     | 0           | 0 | 1 |
-
-每层 73 维（softmax_deg=4, gelu_deg=4 各占满），L=12 层 → 73*12 + 1 = 877 维。
-（旧注释里 94 维和 1129 维已废弃；以 ``action_dims_for_config(num_layers)`` 实际返回为准。
- 槽位数不再采用旧记忆假设，权威分类由 ``scripts/blb_export_action_registry.py`` 从当前代码导出。）
-
-注：2026-05-14 一度把 25 个 "mrpc baseline 不覆盖的" 槽（block1 wffn2/square_rescale；
-block2 Q-side encodes + 8 个 rescale；block3 x_inv_2n_rescale；block4 5 个 rescale；
-block5 6 个 rescale）从字段表里删除，但 CLAUDE.md 的指引是 "classify as compat-extra /
-inactive rather than deleting"。所以这些槽现在以 *compat-extra* 形式回到 _BLOCK*_FIELDS：
-槽存在于 action vector / registry / describe 输出里，但 ``_is_action_field_effective``
-把它们标记成 effective=False，``build_block*_cfg_from_action`` 强制把对应 cfg 字段写成
-None（即不安装该处噪声），所以 RL 选这些槽的值不会改变 cfg 也不会改变 optimizer cost。
-
-动作向量布局（顺序）：
-  对每层 i ∈ [0, L):
-    block1 dims (9) | block2 dims (23) | block3 dims (7+1) | block4 dims (17) | block5 dims (16)
-  尾部追加 first_input_sf (1 dim)
-
-每个分量都是 [0, num_levels) 的 categorical index；按
-``sf_from(idx, max, levels) = max - 2 * (levels - 1 - idx)`` 反推 SF 实际值。
+The layerwise policy projects its compact fusion/precision matrix into this
+stable vector. Inactive compatibility slots keep fixed offsets for persisted
+artifacts but are never installed or charged by the optimizer.
 """
 from __future__ import annotations
 
@@ -63,70 +36,28 @@ from function_handler import (
     Block5NoiseConfig,
 )
 
-try:
-    from .layerwise_action import truncation_k_summary_from_full_action
-    from .truncation_levels import (
-        DEFAULT_K_LEVELS_LEGACY_COMPAT,
-        K_LEVELS,
-        LEVELS_K,
-        baseline_k_index,
-    )
-except ImportError:  # pragma: no cover - legacy top-level import compatibility
-    from layerwise_action import truncation_k_summary_from_full_action
-    from truncation_levels import (
-        DEFAULT_K_LEVELS_LEGACY_COMPAT,
-        K_LEVELS,
-        LEVELS_K,
-        baseline_k_index,
-    )
+from .layerwise_action import truncation_k_summary_from_full_action
+from .truncation_levels import K_LEVELS, LEVELS_K, baseline_k_index
 
 
-# ---------------------------------------------------------------------------
-# 全局常量：每类噪声的离散挡位数（与 spec §4.1 对齐）
-# ---------------------------------------------------------------------------
-# 2026-06-11 (user spec; supersedes the 2026-06-04 hybrid 2/1 sweep): all SF kinds
-# use a UNIFORM step-1 downward sweep anchored at the slot's BASELINE SF
-# (= calibrated max_sf, NOT the noise-table max=46), 15 levels max, NO extra floor:
-# idx levels-1..0 → baseline, -1, -2, …, -(levels-1). e.g. baseline 30 →
-# 30,29,28,…,16 — the full integer range [baseline-14, baseline] (see ``sf_from``).
-# ``_snap_to_table`` still bounds any decoded SF below the noise table (min SF=10);
-# a low-baseline slot therefore gets duplicate SF=10 levels — the fusion builder
-# skips them pre-enumeration via ``distinct_sf_level_indices`` (result-equivalent:
-# a duplicate-value level decodes to the identical cfg; the lowest index per value
-# is kept, matching the lex-min representative the post-eval signature dedup keeps)
-# and still dedups by installed-noise signature as before. K stays ``K_LEVELS``.
-# The noise variance comes from the N=16384 column for every slot
-# (``_block_default_N``). History: hybrid 2/1 ×10 (2026-06-04) → uniform-2/floor-12
-# (2026-06-10, reverted same day) → uniform-1 ×15 (2026-06-11, current).
-LEVELS_W = 15        # weight encode
-LEVELS_MS = 15       # mask / scalar encode
-LEVELS_R = 15        # rescale (idx0=None; idx1..14 sweep SF, step-1)
-LEVELS_F = 15        # fresh
+LEVELS_W = 15
+LEVELS_MS = 15
+LEVELS_R = 15
+LEVELS_F = 15
 
-LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
+LEVELS_FIRST_INPUT = 5
 BLB_FIRST_INPUT_N = 8192
 
-# 每个 block 在 baseline / 全 max action 下的 truncation K。
-# 历史上短暂存在过 per-block 差异化（2026-05-15 实验 B2/B4=10），但相应改动让
-# 全 max 动作的 avg_k 偏离 baseline，造成 reward 不为零 / contract test 失败；
-# 现在统一回归 K=13（与 noise_std_table N=16384 主测档对齐）。
-# 这是 RL warmstart 锚点 + reward.k_drop 的基准；RL 训练时可以选其它 K 值，但 cost
-# reward 会以这个 baseline 计算 k_drop。
+
 BASELINE_K_BY_BLOCK: Dict[int, int] = {1: 13, 2: 13, 3: 13, 4: 13, 5: 13}
 
 
 def _baseline_k_index_for_block(block_idx: int) -> int:
-    """Map per-block baseline K value -> action index in K_LEVELS.
-
-    Falls back to ``K_LEVELS.index(max(K_LEVELS))`` if the configured baseline
-    K isn't in the K_LEVELS table (defensive — the BLB_TRUNCATION_K_LEVELS env
-    var override could remove 10 or 13).
-    """
+    """Map a block's baseline K value to the fixed action index."""
     target = int(BASELINE_K_BY_BLOCK.get(int(block_idx), max(K_LEVELS)))
     return int(baseline_k_index(K_LEVELS, baseline_k=target))
 
 
-# 离散挡位数（与 cfg 字段一一对应；同时影响 reward / policy 头维度）
 NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {
     "F": LEVELS_F,
     "W": LEVELS_W,
@@ -137,9 +68,6 @@ NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Block 字段表（顺序极其重要，必须与 build_*_cfg_from_action 的字段顺序对齐）
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class _BlockFieldSpec:
     """单层中一个 block 的离散动作字段表。
@@ -153,14 +81,6 @@ class _BlockFieldSpec:
     fields: Tuple[Tuple[str, str, int], ...]
 
 
-# Block 1（所有层都包含 K；layer 0 的 SF/noise 字段无效，但 K 真实安装）
-# 2026-05-14 一度删过 ``wffn2_rescale_sf`` / ``square_rescale_sf`` 两个 rescale 槽，
-# 但 CLAUDE.md 的指引是“classify discrepancies as compat-extra/inactive rather than
-# deleting”，所以现在按 compat-extra 复位 —— 槽保留在 action vector 里、参与 registry
-# 计数、describe_action_vector 仍会汇报；但它们不在 mrpc baseline skeleton 上、
-# Rescale_optimizer 不会选用，``build_block1_cfg_from_action`` 强制把对应 cfg 字段
-# 写成 None（即不安装该处 rescale 噪声）。``_is_action_field_effective`` 会把它们
-# 标记成 effective=False。
 _BLOCK1_FIELDS = _BlockFieldSpec(
     fields=(
         ("gelu_out_sf",        "F", 30),
@@ -169,7 +89,7 @@ _BLOCK1_FIELDS = _BlockFieldSpec(
         ("var_inv_d_sf",       "S", 22),
         ("mean_rescale_sf",    "R", 22),
         ("var_rescale_sf",     "R", 22),
-        # compat-extra (mrpc baseline 不上这两处 rescale；cfg 字段固定 None)
+
         ("wffn2_rescale_sf",   "R", 22),
         ("square_rescale_sf",  "R", 22),
         ("output_truncation_k","K", 13),
@@ -177,15 +97,6 @@ _BLOCK1_FIELDS = _BlockFieldSpec(
 )
 
 
-# Block 2
-# 2026-05-14 曾删过 11 个 RL 槽（3 个 Q-side encode + 8 个 rescale），现在按
-# compat-extra 全部复位 ——
-#   * Q-side encodes (``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``) 与 K-side 绑定，
-#     ``_build_block2_action`` 把 K-side action value 拷贝到 cfg 的 Q-side 字段。
-#     RL 选这三个槽的 action 不会影响 cfg（cfg 用 K-side 的值）。
-#   * 8 个 rescale (``normalize/wk/wq/wv/kt_mask1/q_mask1/q_mask2/qkt_matmul``) 不在
-#     mrpc baseline skeleton 上，``build_block2_cfg_from_action`` 强制写 None。
-# ``wv_sf`` 仍然驱动模型 V 路径噪声（虽不入 optimizer cost）。
 _BLOCK2_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",            "F", 30),
@@ -199,11 +110,11 @@ _BLOCK2_FIELDS = _BlockFieldSpec(
         ("gamma_rescale_sf",            "R", 22),
         ("kt_mask2_rescale_sf",         "R", 22),
         ("qkt_merge_mask_rescale_sf",   "R", 22),
-        # compat-extra encodes (Q-side bound to K-side via _build_block2_action)
+
         ("wq_sf",                       "W", 22),
         ("q_mask1_sf",                  "M", 22),
         ("q_mask2_sf",                  "M", 22),
-        # compat-extra rescales (mrpc baseline 不上这些点；cfg 字段固定 None)
+
         ("normalize_rescale_sf",        "R", 22),
         ("wk_rescale_sf",               "R", 22),
         ("wq_rescale_sf",               "R", 22),
@@ -217,11 +128,7 @@ _BLOCK2_FIELDS = _BlockFieldSpec(
 )
 
 
-# Block 3：Softmax 近似中的 fresh / encode / 多次 squaring。
-# 2026-05-14 删过 ``x_inv_2n_rescale_sf``，现在按 compat-extra 复位 ——
-# mrpc baseline 不上 ``ctct_x_inv_2n_rescale``，cfg 字段固定 None。
-# ``square_rescale_sf_0..3``（按 degree 截短）通过 t_new 进 optimizer。
-_BLOCK3_R_SLOTS = 4   # square_rescale_sf_0..3 (max degree=4)
+_BLOCK3_R_SLOTS = 4
 _BLOCK3_FIELDS = _BlockFieldSpec(
     fields=(
         ("x_fresh_sf",              "F", 30),
@@ -230,19 +137,13 @@ _BLOCK3_FIELDS = _BlockFieldSpec(
         ("square_rescale_sf_1",     "R", 22),
         ("square_rescale_sf_2",     "R", 22),
         ("square_rescale_sf_3",     "R", 22),
-        # compat-extra (mrpc baseline 不上这个 rescale；cfg 字段固定 None)
+
         ("x_inv_2n_rescale_sf",     "R", 22),
         ("output_truncation_k",     "K", 13),
     ),
 )
 
 
-# Block 4
-# 2026-05-14 删过 5 个 rescale 槽 (``softmax_out_mask_rescale_sf`` /
-# ``v_mask_rescale_sf`` / ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` /
-# ``ln_square_rescale_sf``)，现在按 compat-extra 复位 —— 它们不在 mrpc baseline
-# skeleton 上，``build_block4_cfg_from_action`` 强制 cfg 字段 None。
-# V 侧 ``v_fresh_sf`` / ``v_mask_sf`` 仍驱动模型噪声（虽不入 optimizer cost）。
 _BLOCK4_FIELDS = _BlockFieldSpec(
     fields=(
         ("softmax_out_fresh_sf",            "F", 30),
@@ -256,7 +157,7 @@ _BLOCK4_FIELDS = _BlockFieldSpec(
         ("softmax_v_matmul_rescale_sf",     "R", 22),
         ("ln_mean_rescale_sf",              "R", 22),
         ("ln_var_rescale_sf",               "R", 22),
-        # compat-extra rescales (mrpc baseline 不上这些点；cfg 字段固定 None)
+
         ("softmax_out_mask_rescale_sf",     "R", 22),
         ("v_mask_rescale_sf",               "R", 22),
         ("softmax_v_mask_rescale_sf",       "R", 22),
@@ -267,12 +168,6 @@ _BLOCK4_FIELDS = _BlockFieldSpec(
 )
 
 
-# Block 5（GELU degree-aware）
-# 2026-05-14 删过 6 个 rescale 槽 (gelu_power_rescale_sf_1/2 + 4 个
-# gelu_coeff_mul_rescale_sf_*)，现在按 compat-extra 复位 ——
-# mrpc graph 里 x³ 折进 x⁴、ctpt_gelu_coeff 单节点替代了 4 段 coeff·x^k rescale，
-# 所以这 6 个槽不在 skeleton 上，cfg 字段固定 None。
-# ``gelu_power_rescale_sf_0`` (x²) 在 degree>=2 时通过 t_new 进 optimizer。
 _BLOCK5_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",                "F", 30),
@@ -283,8 +178,8 @@ _BLOCK5_FIELDS = _BlockFieldSpec(
         ("normalize_rescale_sf",            "R", 22),
         ("gamma_rescale_sf",                "R", 22),
         ("wffn1_rescale_sf",                "R", 22),
-        ("gelu_power_rescale_sf_0",         "R", 22),  # x²；degree>=2 时启用
-        # compat-extra rescales (x³ 折进 x⁴；coeff_mul 链合到 ctpt_gelu_coeff)
+        ("gelu_power_rescale_sf_0",         "R", 22),
+
         ("gelu_power_rescale_sf_1",         "R", 22),
         ("gelu_power_rescale_sf_2",         "R", 22),
         ("gelu_coeff_mul_rescale_sf_0",     "R", 22),
@@ -305,9 +200,6 @@ _BLOCK_SPECS: Dict[int, _BlockFieldSpec] = {
 }
 
 
-# Per-block "节点名" → block 字段名（用于 max_sfs JSON 反查）。
-# 与 ``rescale_optimizer_bridge.default_block*_cfg_to_delta`` 的命名约定保持一致；
-# 实际外部 ``static_skeletons_<profile>.json`` 节点名以用户最终使用的 config 为准。
 _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
     1: {
         "gelu_out_sf":          "ctpt_gelu_out",
@@ -321,17 +213,15 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "inv_std_fresh_sf":            "ctpt_inv_std",
         "x_centered_fresh_sf":         "ctpt_x_centered",
         "gamma_sf":                    "ctpt_gamma",
-        # ``wk_sf`` 同时控制 Q/K 两侧 encode（bridge -> ctpt_wq_wk）
+
         "wk_sf":                       "ctpt_wq_wk",
-        # 2026-05-21 user spec：Q 侧四个 compat-extra 字段（wq / q_mask1 /
-        # q_mask2 / q_mask2_r）也 mirror 到对应的 q/k 共享 graph 节点。
-        # baseline 抽取在 _RO_*_NODE_TO_RL_FIELD[2] 里写两份；max_sfs 校准
-        # 时两个 RL 字段查同一个节点 key，互相一致。
+
+
         "wq_sf":                       "ctpt_wq_wk",
         "q_mask1_sf":                  "ctpt_rotKT_mask1",
         "q_mask2_sf":                  "ctpt_rotKT_mask2",
         "q_mask2_rescale_sf":          "ctct_kt_mask2_rescale",
-        # ``wv_sf`` 只控制模型噪声（mrpc graph 无对应节点）
+
         "wv_sf":                       "ctpt_wv",
         "kt_mask1_sf":                 "ctpt_rotKT_mask1",
         "kt_mask2_sf":                 "ctpt_rotKT_mask2",
@@ -371,31 +261,22 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "gamma_rescale_sf":                 "ctct_gamma_attn_rescale",
         "wffn1_rescale_sf":                 "ctct_wffn1_rescale",
         "gelu_power_rescale_sf_0":          "ctct_gelu_x2",
-        # 2026-05-21: gelu_coeff_mul_rescale_sf_0 drives the rescale after
-        # ctpt_gelu_coeff (coeff × x^k). All degrees have this rescale in the
-        # baseline (n=1: sf_post=30; n=2/n=4: sf_post=31). Node name follows
-        # the ``ctct_*_rescale`` convention used by neighbouring rescales.
+
+
         "gelu_coeff_mul_rescale_sf_0":      "ctct_gelu_coeff_rescale",
     },
 }
 
 
-# ---------------------------------------------------------------------------
-# Block N 选取（与 ``make_block*_default_config`` 推荐一致）
-# ---------------------------------------------------------------------------
 def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4) -> int:
     """噪声表 N（决定 noise variance 查表 + snap 范围）。
 
-    2026-06-04（用户指定）：N=8192 暂时不用，所有 block 的所有槽都统一查 N=16384 的噪声表。
-    （只影响安装的 noise variance / snap；Rescale_optimizer 的 modulus-chain N 仍由其图定义，
-    不受此影响。）原先 block1 / block5_n0,n1 / block3@attn2 用 8192——如需恢复差异化 N，改这里。
+    All production action slots use the N=16384 noise table. Rescale graph N
+    remains owned by the optimizer.
     """
     return 16384
 
 
-# ---------------------------------------------------------------------------
-# action index ↔ scaling factor 转换
-# ---------------------------------------------------------------------------
 def sf_from(idx: int, max_sf: int, levels: int) -> int:
     """Uniform step-1 downward sweep from ``max_sf`` (= the slot's BASELINE SF,
     not the table max).
@@ -412,14 +293,13 @@ def sf_from(idx: int, max_sf: int, levels: int) -> int:
     levels = int(levels)
     if idx < 0 or idx >= levels:
         raise ValueError(f"action idx {idx} out of [0, {levels})")
-    dist = (levels - 1) - idx           # 0 at idx = max (baseline SF)
+    dist = (levels - 1) - idx
     return int(max_sf) - int(dist)
 
 
 def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
-    # idx 0 = None (rescale dropped — never selected by RL / the fusion builder, per
-    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the uniform step-1 decode;
-    # _snap_to_table floors at SF=10 downstream.
+
+
     idx = int(idx)
     if idx <= 0:
         return None
@@ -448,9 +328,6 @@ def _snap_to_table(sf: int, N: int) -> int:
     return min(allowed)
 
 
-# ---------------------------------------------------------------------------
-# max_sfs JSON 加载
-# ---------------------------------------------------------------------------
 @dataclass
 class MaxSFsTable:
     """每个 (block_idx, node_name) 的 max scaling factor 缓存。
@@ -468,12 +345,8 @@ class MaxSFsTable:
             *,
             layer_idx: Optional[int] = None,
             ) -> int:
-        # Look up via registered RO graph-node name first; if there is no entry
-        # for the field, fall back to using the field name itself as the node
-        # key. The fallback path is what ``static_skeletons_baseline_to_action``
-        # writes when a baseline provides an SF for a field that has no entry
-        # in ``_BLOCK_NODE_NAME_BY_FIELD`` (e.g. baseline-injected compat-extra
-        # rescales like ``wo_rescale_sf``).
+
+
         node = _BLOCK_NODE_NAME_BY_FIELD.get(int(block_idx), {}).get(str(field_name))
         candidate_nodes: List[str] = []
         if node is not None:
@@ -488,11 +361,11 @@ class MaxSFsTable:
             v = self.by_block_node.get((int(block_idx), cand))
             if v is not None:
                 return int(v)
-        # fallback 到 _BLOCK_SPECS 默认
+
         for fname, kind, default_max_sf in _BLOCK_SPECS[int(block_idx)].fields:
             if fname == field_name:
                 return int(default_max_sf)
-        return 22  # 终极兜底
+        return 22
 
 
 def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> MaxSFsTable:
@@ -546,15 +419,12 @@ def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> 
                     table.by_block_node[(int(block_idx), str(node_name))] = int(max_sf)
                 except (TypeError, ValueError):
                     continue
-        # 找到一份就停止；上层覆盖下层
+
         break
 
     return table
 
 
-# ---------------------------------------------------------------------------
-# 动作维度 (block-wise + per-layer) 计算
-# ---------------------------------------------------------------------------
 def block_dims(block_idx: int) -> List[int]:
     """返回单层一个 block 的离散维度数列表（顺序 = ``_BLOCK_SPECS`` 顺序）。"""
     spec = _BLOCK_SPECS[int(block_idx)]
@@ -651,30 +521,6 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Per-block sequential step schedule (for the sequential RL formulation).
-#
-# Episode order (C, 2026-05-30: block 3 excluded from the decided schedule):
-#   step 1:  layer 0, block 2                          -- legacy schedule omits L0 B1
-#   step 2:  layer 0, block 4                           -- block 3 skipped
-#   step 3:  layer 0, block 5
-#   step 4:  layer 1, block 1
-#   step 5:  layer 1, block 2
-#   step 6:  layer 1, block 4                           -- block 3 skipped
-#   ...
-#   step 3 + (L-1)*4: layer L-1, block 5
-#
-# Total horizon for L layers = 3 + (L-1)*4
-# For L=12 -> horizon = 47 (was 59 when block 3 was decided).
-# Block3's SF slots remain in the legacy full action vector and are frozen at
-# the static_skeletons baseline. The active layerwise policy writes only its K
-# slot; this retired blockwise schedule still has no separate Block3 step.
-#
-# first_input fresh is a deprecated legacy tail slot. It still occupies its old
-# position in the full action vector for compatibility, but no sequential RL
-# step decides it and model/final-eval installation ignores it.
-# ---------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class BlockStepSpec:
     """Description of one (layer, block) decision step in the sequential episode.
@@ -703,15 +549,10 @@ class BlockStepSpec:
     slot_kinds: Tuple[str, ...]
     full_vec_offsets: Tuple[int, ...]
     includes_first_input: bool
-    graph_key_suffix: str          # e.g. "block2_mrpc" -- profile filled in by env
+    graph_key_suffix: str
     terminal: bool
 
 
-# This retired blockwise schedule omits layer-0 Block1. The canonical layerwise
-# policy does not: it selects and installs layer-0 Block1 K through a K-only cfg.
-# C (2026-05-30): Block3 has no standalone legacy blockwise step. Its SF/fusion
-# values stay baseline-owned; the active layerwise policy independently selects
-# Block3 K and the terminal decoder installs the resulting Block3 cfg.
 _LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 4, 5)
 _LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 4, 5)
 
@@ -801,7 +642,7 @@ def step_schedule(
                 slot_field_names.append(fname)
                 slot_kinds.append(kind)
                 full_vec_offsets.append(block_base + slot_local_idx)
-            # graph key suffix
+
             if b == 3:
                 deg = (
                     int(attn_degree_per_layer[layer_idx])
@@ -875,14 +716,6 @@ def empty_full_action_vec(num_layers: int) -> np.ndarray:
     return np.zeros(len(action_dims_for_config(int(num_layers))), dtype=np.int64)
 
 
-# ---------------------------------------------------------------------------
-# Fusion-count action schedule (opt-in; see fusion_count_map / spec 2026-06-03)
-#
-# Same (layer, block) order as ``step_schedule`` (block 3 already excluded), but
-# each step decides just two categoricals: a fusion-count OPTION (resolved to a
-# full per-block SF vector via the offline fusion map) and a separate K. The
-# policy is the SAME GTrXL instantiated with max_step_dim=2.
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class FusionStepSpec:
     """One (layer, block) step in the fusion-count episode.
@@ -900,11 +733,11 @@ class FusionStepSpec:
     step_idx: int
     layer_idx: int
     block_idx: int
-    graph_key_suffix: str          # fusion-map key: block1_mrpc / block2_mrpc / block4 / block5_n{deg}
+    graph_key_suffix: str
     fusion_num_options: int
     map_option_ids: Tuple[int, ...]
     k_num_levels: int
-    k_slot_index: int              # within-block index of the K slot
+    k_slot_index: int
     block_num_slots: int
     block_full_vec_offsets: Tuple[int, ...]
     terminal: bool
@@ -935,8 +768,8 @@ def fusion_step_schedule(
                 f"block {s.block_idx}); built graphs: {sorted(fusion_map.graphs)}"
             )
         block_num_slots = int(fusion_map.graphs[gk].block_num_slots)
-        # s.full_vec_offsets lists only this block's contiguous slot offsets.
-        # The deprecated first_input fresh tail is not part of any fusion step.
+
+
         block_offsets = tuple(int(o) for o in s.full_vec_offsets[:block_num_slots])
         if len(block_offsets) != block_num_slots:
             raise RuntimeError(
@@ -1045,9 +878,6 @@ def splice_fusion_step_into_full_vec(
     return full_vec
 
 
-# ---------------------------------------------------------------------------
-# action vector → cfgs
-# ---------------------------------------------------------------------------
 @dataclass
 class ActionDecodeResult:
     """``action_vector_to_cfgs`` 的返回值。"""
@@ -1057,7 +887,7 @@ class ActionDecodeResult:
     block4_cfgs: Dict[int, Block4NoiseConfig]
     block5_cfgs: Dict[int, Block5NoiseConfig]
     first_input_sf: int
-    # 调试用：原始动作 idx → SF 的 per-layer 映射
+
     per_layer_field_values: List[Dict[str, object]] = field(default_factory=list)
 
     def cfgs_dict(self) -> Dict[str, Dict[int, object]]:
@@ -1126,8 +956,8 @@ def _build_block2_action(
     wk_sf = int(layer_field_values["wk_sf"])
     kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
     kt_mask2_sf = int(layer_field_values["kt_mask2_sf"])
-    # Which rescale points the CURRENT block2 skeleton selected (auto via SSOT).
-    # Q-side rescales are bound equal to their K-side action when active.
+
+
     active = active_rescale_rl_fields(2, profile=profile)
 
     def _rsc(name: str) -> Optional[int]:
@@ -1137,20 +967,20 @@ def _build_block2_action(
     kt_mask2_r = _rsc("kt_mask2_rescale_sf")
     return Block2ActionSpec(
         inv_std_fresh_sf=inv_std_fresh_sf,
-        # x_centered_fresh 绑定到 inv_std_fresh（一同决定）。
+
         x_centered_fresh_sf=inv_std_fresh_sf,
         gamma_sf=int(layer_field_values["gamma_sf"]),
-        # Q/K 绑定：wq_sf / q_mask{1,2}_sf 不再独立选，等于 K 侧
+
         wk_sf=wk_sf,
         wq_sf=wk_sf,
-        # Wv 不再由 RL 控制；cfg 上用固定 SF 安装 Wv 噪声（默认 22 = baseline）。
+
         wv_sf=_BLOCK2_FIXED_WV_SF,
         kt_mask1_sf=kt_mask1_sf,
         q_mask1_sf=kt_mask1_sf,
         kt_mask2_sf=kt_mask2_sf,
         q_mask2_sf=kt_mask2_sf,
         qkt_merge_mask_sf=int(layer_field_values["qkt_merge_mask_sf"]),
-        # Rescales: set iff on the current skeleton (skeleton_stage_map active set).
+
         gamma_rescale_sf=_rsc("gamma_rescale_sf"),
         normalize_rescale_sf=_rsc("normalize_rescale_sf"),
         wk_rescale_sf=_rsc("wk_rescale_sf"),
@@ -1164,9 +994,6 @@ def _build_block2_action(
     )
 
 
-# 2026-05-20 user spec: Block 2 Wv encode no longer has an RL action. The model
-# still installs noise at the Wv multiplication point — we just use a constant
-# SF rather than letting RL drift it. 22 matches the mrpc max_sfs.ctpt_wv default.
 _BLOCK2_FIXED_WV_SF: int = 22
 
 
@@ -1185,8 +1012,8 @@ def _build_block3_action(
     if deg <= len(square_rescale_base):
         square_rescale_sfs = tuple(square_rescale_base[:deg])
     else:
-        # The historical action vector exposes four square-rescale slots.
-        # Degree-5/6 softmax configs reuse the last slot for the extra powers.
+
+
         square_rescale_sfs = tuple(
             square_rescale_base + [square_rescale_base[-1]] * (deg - len(square_rescale_base))
         )
@@ -1216,8 +1043,8 @@ def _build_block4_action(
     也对得上 baseline。``_COMPAT_EXTRA_FIELDS[4]`` 把 ``v_mask_sf`` 标成 inactive。
     """
     shared_mask2_sf = int(layer_field_values["softmax_out_mask_sf"])
-    # Rescales follow the current block4 skeleton (auto via SSOT): the 2026 regen
-    # put the 3rd LN-tail rescale on ctct_square ((X−μ)²) instead of ln_var.
+
+
     active = active_rescale_rl_fields(4, profile=profile)
 
     def _rsc(name: str) -> Optional[int]:
@@ -1227,7 +1054,7 @@ def _build_block4_action(
         softmax_out_fresh_sf=int(layer_field_values["softmax_out_fresh_sf"]),
         softmax_out_mask_sf=shared_mask2_sf,
         v_fresh_sf=int(layer_field_values["v_fresh_sf"]),
-        # mask2 绑定：v_mask cfg 字段总是用与 softmax_out_mask 相同的 SF。
+
         v_mask_sf=shared_mask2_sf,
         softmax_v_mask_sf=int(layer_field_values["softmax_v_mask_sf"]),
         wo_sf=int(layer_field_values["wo_sf"]),
@@ -1261,32 +1088,27 @@ def _build_block5_action(
       所以只有 [-1] 位置真正进 optimizer。
     """
     deg = int(gelu_degree)
-    # block5 GELU degree 支持 {0, 1, 2, 4}（0=ReLU→block5_n0，无多项式 GELU 噪声）。
-    # 其它杂散值钳到最近的合法 degree（>=4→4, ==3→2, <=0 留 0 让 ReLU 分支生效）。
+
+
     if deg not in (0, 1, 2, 4):
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
-    # RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）；x³/x⁴ 在
-    # mrpc graph 里被折掉，不上 skeleton。
-    # ``.get`` (not ``[]``): the index path passes a COMPLETE field_values (key
-    # present, possibly None), but the SF-direct / boosted path omits inactive
-    # keys — e.g. block5_n2 has no ``gelu_power_rescale_sf_0`` at all. Missing ==
-    # None == the index path's None, so both routes build the identical cfg.
+
+
     power_sf_0 = _optional_int(layer_field_values.get("gelu_power_rescale_sf_0")) if deg >= 2 else None
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = (
         () if deg <= 1 else tuple([power_sf_0] + [None] * (deg - 2))
     )
-    # gelu_coeff_mul_rescale_sf_0 → cfg.gelu_coeff_mul_rescales[-1]
-    # （tuple 其它位置固定 None；optimizer 只读 [-1]）
+
+
     coeff_rescale_sf = _optional_int(layer_field_values.get("gelu_coeff_mul_rescale_sf_0"))
     if deg <= 0:
         gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
     else:
         gelu_coeff_mul_rescale_sfs = tuple([None] * (deg - 1) + [coeff_rescale_sf])
-    # x_centered_fresh / inv_std_fresh 绑定 —— x_centered 主导（block5 SOURCE）
+
     x_centered_fresh_sf = int(layer_field_values["x_centered_fresh_sf"])
-    # LN-tail rescales (normalize / gamma / wffn1) follow this degree's skeleton
-    # (auto via SSOT): e.g. block5_n1 has no wffn1 rescale, gamma is never a
-    # rescale on any block5 skeleton. gelu power/coeff stay degree-driven above.
+
+
     active = active_rescale_rl_fields(5, gelu_degree=deg, profile=profile)
 
     def _rsc(name: str) -> Optional[int]:
@@ -1294,7 +1116,7 @@ def _build_block5_action(
 
     return Block5ActionSpec(
         gelu_degree=deg,
-        # inv_std_fresh 绑定 = x_centered_fresh
+
         inv_std_fresh_sf=x_centered_fresh_sf,
         x_centered_fresh_sf=x_centered_fresh_sf,
         gamma_sf=int(layer_field_values["gamma_sf"]),
@@ -1350,7 +1172,7 @@ def _decode_first_input_sf(
         max_sfs: MaxSFsTable,
         ) -> int:
     """first_input fresh SF：与 fresh 同语义（5 挡）。"""
-    # 没有专门的节点表，沿用 block1 fresh 默认 max=30
+
     max_sf = 30
     sf = sf_from(int(action_value), max_sf, LEVELS_FIRST_INPUT)
     return _snap_to_table(int(sf), BLB_FIRST_INPUT_N)
@@ -1446,7 +1268,7 @@ def action_vector_to_cfgs(
         slice_end = slice_start + layer_dim
         layer_action = arr[slice_start:slice_end]
 
-        # 切出每个 block 的 action 子段
+
         offset = 0
         layer_block_values: Dict[int, Dict[str, object]] = {}
         for b in (1, 2, 3, 4, 5):
@@ -1466,8 +1288,7 @@ def action_vector_to_cfgs(
             )
         per_layer_values.append({f"block{b}": dict(v) for b, v in layer_block_values.items()})
 
-        # Block 1：所有层都物化 cfg。layer 0 使用同一 truncation K 路径，但
-        # ``noise_enabled=False``，因此不启用历史上被排除的 Gaussian/SF 噪声。
+
         if only_block in (None, 1):
             b1 = _build_block1_action(
                 li,
@@ -1483,34 +1304,32 @@ def action_vector_to_cfgs(
                 ),
                 noise_enabled=(li != 0),
             )
-        # Block 2
+
         if only_block in (None, 2):
             b2 = _build_block2_action(li, layer_block_values[2])
             block2_cfgs[li] = build_block2_cfg_from_action(
                 b2, N=_block_default_N(2, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
             )
-        # Block 3 (degree-aware)
+
         if only_block in (None, 3):
             b3 = _build_block3_action(li, layer_block_values[3], attn_degree=li_attn_degree)
             block3_cfgs[li] = build_block3_cfg_from_action(
                 b3, N=_block_default_N(3, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
             )
-        # Block 4
+
         if only_block in (None, 4):
             b4 = _build_block4_action(li, layer_block_values[4])
             block4_cfgs[li] = build_block4_cfg_from_action(
                 b4, N=_block_default_N(4, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
             )
-        # Block 5 (gelu degree-aware)
+
         if only_block in (None, 5):
             b5 = _build_block5_action(li, layer_block_values[5], gelu_degree=li_gelu_degree)
             block5_cfgs[li] = build_block5_cfg_from_action(
                 b5, N=_block_default_N(5, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
             )
 
-    # 尾部 first_input_sf：语义已废弃（"第一个 HE 配置无损"，不再注入 layer 0
-    # input 端的 fresh 噪声）。保留槽位以维持 policy 网络 shape 与旧 checkpoint
-    # 兼容；下游 bridge.apply 完全忽略此字段。``first_input_sf`` 始终回 0 作占位。
+
     return ActionDecodeResult(
         block1_cfgs=block1_cfgs,
         block2_cfgs=block2_cfgs,
@@ -1633,7 +1452,7 @@ def distinct_sf_level_indices(
     for idx in range(int(levels)):
         v = vals[idx]
         if v is None:
-            continue  # R idx0 = drop — never enumerable
+            continue
         if v in seen:
             continue
         seen.add(v)
@@ -1651,21 +1470,16 @@ def _operation_name(block_idx: int, field_name: str, kind: str) -> str:
 
 
 def _short_field_label(field_name: str, kind: str) -> str:
-    """Compact field tag for ``slot_label`` (logs / dashboards).
-
-    Goal: minimum-character disambiguation while staying derivable from the
-    full field name. See CLAUDE.md "Critical mental model" #3 — every action
-    must be locatable in BLB flow without consulting an extra table.
-    """
+    """Return a compact, deterministic field tag for action reports."""
     if str(kind) == "K":
-        return ""  # the "K" kind in the label itself already carries this
+        return ""
     f = str(field_name)
     if f.startswith("square_rescale_sf_"):
-        return "sq" + f.rsplit("_", 1)[-1]            # block3 softmax square rescales
+        return "sq" + f.rsplit("_", 1)[-1]
     if f.startswith("gelu_power_rescale_sf_"):
-        return "gp" + f.rsplit("_", 1)[-1]            # block5 GELU power rescales
+        return "gp" + f.rsplit("_", 1)[-1]
     if f.startswith("gelu_coeff_mul_rescale_sf_"):
-        return "gc" + f.rsplit("_", 1)[-1]            # block5 GELU coeff-mul rescales
+        return "gc" + f.rsplit("_", 1)[-1]
     if f.endswith("_rescale_sf"):
         return f[: -len("_rescale_sf")] + "_r"
     if f.endswith("_sf"):
@@ -1689,47 +1503,36 @@ def make_slot_label(
     """
     short = _short_field_label(field_name, kind)
     if block_idx is None:
-        # First-input fresh: outside all 5 blocks.
+
         return f"L{int(layer_idx)}.first_input.{str(kind)}"
     base = f"L{int(layer_idx)}.B{int(block_idx)}.{str(kind)}"
     return base if not short else f"{base}.{short}"
 
 
-# Compat-extra slots: kept in the action vector for registry/back-compat but the
-# cfg path forces these fields to None (or binds them to another slot), so the
-# RL action value at these slots does NOT affect the noise installed in the
-# model nor the optimizer's modulus-chain math. ``describe_action_vector`` /
-# ``effective_action_hash`` use this to mark them inactive.
 _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
-    # BINDINGS + BOUND rescale slots only. Whether a FREE rescale slot is
-    # effective now follows the live skeleton (skeleton_stage_map active set, via
-    # the "R"-kind check in _is_action_field_effective), so free rescale slots
-    # are no longer hard-listed here and a skeleton regen auto-updates them.
+
+
     1: frozenset(),
     2: frozenset({
-        # Q-side encodes bound to K-side; Wv has no RO node; x_centered bound to
-        # inv_std ("x2" side of ctct_x_mean_over_std).
+
+
         "wq_sf", "q_mask1_sf", "q_mask2_sf", "wv_sf", "x_centered_fresh_sf",
-        # Q-side / Wq / Wv rescales are bound to K-side or non-existent — never a
-        # free slot regardless of skeleton (the q_mask*_r values mirror kt_mask*_r).
+
+
         "wq_rescale_sf", "wv_rescale_sf", "q_mask1_rescale_sf", "q_mask2_rescale_sf",
     }),
     3: frozenset(),
     4: frozenset({
-        # v_mask is bound to softmax_out_mask (one shared mask2 node) — encode + rescale.
+
         "v_mask_sf", "v_mask_rescale_sf",
     }),
     5: frozenset({
-        # inv_std_fresh bound to x_centered_fresh ("x2" side of ctct_xmean_over_std).
+
         "inv_std_fresh_sf",
     }),
 }
 
 
-# ---------------------------------------------------------------------------
-# Skeleton-driven active rescale slots (consumes skeleton_stage_map SSOT so a
-# skeleton regen auto-changes which rescale slots are active / installed).
-# ---------------------------------------------------------------------------
 _ACTIVE_RESCALE_SETS_CACHE: Optional[Dict[str, frozenset]] = None
 
 
@@ -1781,8 +1584,8 @@ def active_rescale_rl_fields(block_idx: int, gelu_degree: int = 4, attn_degree: 
     gk = _graph_key_for(block_idx, gelu_degree, attn_degree, profile)
     if gk in sets:
         return sets[gk]
-    # Only mrpc has skeleton data; block1/2 graph keys embed the profile, so a
-    # display-time profile like "default" falls back to the mrpc graph.
+
+
     return sets.get(_graph_key_for(block_idx, gelu_degree, attn_degree, "mrpc"), frozenset())
 
 
@@ -1806,8 +1609,8 @@ def _is_action_field_effective(
         gelu_degree: int,
         profile: str = "mrpc",
         ) -> Tuple[bool, str]:
-    # Layer 0 keeps its historical no-noise semantics, but its K slot is now
-    # active and installed through a truncation-only Block 1 cfg.
+
+
     if int(layer_idx) == 0 and int(block_idx) == 1:
         if str(field_name) == "output_truncation_k":
             return True, ""
@@ -1820,21 +1623,16 @@ def _is_action_field_effective(
             "compat-extra slot retained for action-vector back-compat; cfg field "
             "is forced None / bound elsewhere so this action value has no effect"
         )
-    # Rescale "R" slots: effective iff the CURRENT skeleton selects this rescale
-    # point (skeleton_stage_map active set). This replaces the old per-block
-    # degree gates (block3 square / block5 power / block5 coeff-mul) with one
-    # skeleton-driven rule, so report effectiveness auto-follows a regen. Bound
-    # rescale slots are already filtered above by _COMPAT_EXTRA_FIELDS.
+
+
     if _field_kind(int(block_idx), str(field_name)) == "R":
         active = active_rescale_rl_fields(
             int(block_idx), gelu_degree=int(gelu_degree),
             attn_degree=int(attn_degree), profile=str(profile))
         if str(field_name) not in active:
             return False, "not a rescale stage on the current skeleton"
-    # degree 0 = ReLU：block5_n0 graph 无 GELU 多项式系数 encode（ctpt_gelu_coeff）。
-    # 该 slot 的动作既不进模型噪声（ReLU 跳过 GELU 安装）也不进 optimizer cost，故无效。
-    if int(block_idx) == 5 and str(field_name) == "gelu_coeff_sf" and int(gelu_degree) == 0:
-        return False, "GELU degree 0 (ReLU) has no polynomial coefficient encode"
+
+
     return True, ""
 
 
@@ -1889,9 +1687,8 @@ def describe_action_vector(
                 gelu_degree=li_gelu_degree,
                 profile=str(profile),
             )
-            # Layer-0 Block1 SF/noise values remain inactive artifacts. Its K
-            # is different: it is effective and must remain visible in action
-            # export/report round-trips.
+
+
             if (
                     int(li) == 0
                     and int(block_idx) == 1
@@ -1933,9 +1730,8 @@ def describe_action_vector(
 
     first_idx = int(arr[-1])
     first_value = int(_decode_first_input_sf(first_idx, max_sfs))
-    # NOTE: first_input fresh 噪声在新语义下不再注入（"第一个 HE 配置无损"）。
-    # 保留 slot 描述方便审阅旧 checkpoint / candidate；effective=False 表明它
-    # 不影响 cost / 模型 forward。
+
+
     records.append({
         "global_index": int(arr.size - 1),
         "layer": 0,
@@ -1989,9 +1785,6 @@ def describe_action_vector(
     }
 
 
-# ---------------------------------------------------------------------------
-# 全 max-action / 全 min-action helper（baseline / sanity）
-# ---------------------------------------------------------------------------
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
     """生成 baseline 动作向量：SF 字段取最高档，K 取该 block 的 baseline K 值。
 
@@ -2096,9 +1889,6 @@ def sum_truncation_k_in_action(
     return int(total)
 
 
-# ---------------------------------------------------------------------------
-# config_name <-> (block_idx, layer_idx) 编解码
-# ---------------------------------------------------------------------------
 def make_config_name(profile: str, block_idx: int, layer_idx: int, cfg: object = None) -> str:
     """Build the layered Rescale_optimizer config key.
 
@@ -2164,7 +1954,7 @@ def build_optimizer_requests(
             continue
         for layer_idx, cfg in layer_cfgs.items():
             if int(block_idx) == 1 and int(layer_idx) == 0:
-                # Layer-0 Block1 只有 K，不发给 SF/fusion 的 RO。
+
                 continue
             cn = make_config_name(profile, block_idx, int(layer_idx), cfg=cfg)
             out[cn] = (str(block_name), cfg)

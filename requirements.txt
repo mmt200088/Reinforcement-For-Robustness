@@ -1,45 +1,13 @@
-# BLB Stage-2 RL · Python dependencies
-# ----------------------------------------------------------------------
-# Goal: a reproducible-ish env for the noise / approximation search code.
-# Versions use lower bounds (>=) instead of exact pins so a fresh server
-# install can pick up minor security patches; for fully reproducible runs,
-# capture the exact resolved set with::
-#
-#   pip freeze --exclude-editable > requirements-frozen.txt
-#
-# and commit that frozen file alongside the run manifest. The Dockerfile
-# in this repo runs the freeze step automatically inside the build.
-#
-# Notes:
-# - torch wheel is platform-specific (CUDA vs CPU vs MPS). If a server already
-#   has a working CUDA torch in the supported range, keep it and install this
-#   file for the rest. If a CUDA 12.4 fallback env is needed, install
-#   requirements-torch-cu124.txt first.
-# - bitsandbytes is optional and only works on Linux+CUDA (not macOS).
-# - evaluate / accelerate are pulled in transitively by transformers >= 4.30
-#   but pinned here for clarity.
-
-# Core ML stack ------------------------------------------------------------
+# Install the platform-specific PyTorch wheel before these dependencies.
 torch>=2.0,<3.0
 transformers==4.44.2
 datasets>=2.10
 numpy>=1.22,<2.0
 scipy>=1.10
 scikit-learn>=1.2
-
-# Plot + reporting --------------------------------------------------------
 matplotlib>=3.7
-
-# CLI / utilities ---------------------------------------------------------
 fire>=0.5
 tqdm>=4.65
-
-# HF auxiliaries ----------------------------------------------------------
 accelerate>=0.20
 safetensors>=0.3
 evaluate>=0.4
-
-# CUDA-only (Linux+CUDA); on macOS the line is silently skipped at install
-# because pip will refuse to find a compatible wheel. The launcher feature
-# flags any code path that imports `bitsandbytes` is opt-in.
-bitsandbytes>=0.41 ; sys_platform == 'linux'

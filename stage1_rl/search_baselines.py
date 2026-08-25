@@ -462,7 +462,7 @@ class SearchConfig:
     ga_no_improvement_patience: int = 5
     ga_stop_on_no_improvement: bool = True
     ga_require_full_generations: bool = False
-    # Compatibility-only fields retained in serialized historical configs.
+
     ga_tournament_size: int = 3
     ga_crossover_probability: float = 0.0
     ga_mutation_max_layers: int = 4
@@ -843,11 +843,6 @@ class _EvaluationCache:
         return self._best
 
 
-# ---------------------------------------------------------------------------
-# Deterministic structured and maximin design helpers
-# ---------------------------------------------------------------------------
-
-
 def _candidate_stream(
         space: Stage1SearchSpace,
         rng: np.random.Generator,
@@ -1011,11 +1006,6 @@ def _history_row(
     }
 
 
-# ---------------------------------------------------------------------------
-# Deterministic multi-start 1-opt / 2-opt best-improvement search
-# ---------------------------------------------------------------------------
-
-
 def _scan_neighborhood(
         cache: _EvaluationCache,
         actions: Iterable[Stage1Action],
@@ -1157,11 +1147,6 @@ def _run_greedy(
     )
 
 
-# ---------------------------------------------------------------------------
-# Constrained categorical random-forest Bayesian optimization
-# ---------------------------------------------------------------------------
-
-
 def _default_surrogate_factory(config: SearchConfig) -> SurrogateFactory:
     def factory(seed: int) -> Any:
         try:
@@ -1257,9 +1242,8 @@ def _cost_hint(evaluator: EvaluationFn, action: Stage1Action) -> float:
     cost_for_action = getattr(evaluator, "cost_for_action", None)
     if callable(cost_for_action):
         return float(cost_for_action(action))
-    # Categories 0/1/2 decode to degrees 4/2/1, so larger category sums are a
-    # deterministic lower-cost proxy when a synthetic evaluator exposes no
-    # separate cost-only seam.
+
+
     return -float(sum(action))
 
 
@@ -1460,11 +1444,6 @@ def _run_bo_rf(
     )
 
 
-# ---------------------------------------------------------------------------
-# Structured elitist Stage-1 GA (P64/E7, 800 update generations by default)
-# ---------------------------------------------------------------------------
-
-
 def _population_diversity(
         space: Stage1SearchSpace,
         population: Sequence[SearchEvaluation],
@@ -1638,7 +1617,7 @@ def _crossover(
     if space.num_layers == 1:
         return lhs if float(rng.random()) < 0.5 else rhs
     if float(rng.random()) < 0.5:
-        # Atomic two-point crossover: boundaries are between whole layer genes.
+
         boundaries = sorted(
             int(value)
             for value in rng.choice(space.num_layers + 1, size=2, replace=False)
@@ -1704,10 +1683,7 @@ def _breed_unique_child(
         if child not in blocked and not cache.contains(child):
             return child, False
 
-    # A finite random retry budget proves only that those draws collided, not
-    # that the population has no unseen mesh neighbor. Preserve the random
-    # path above, then fail closed only after checking every allowed adjacent
-    # mutation deterministically.
+
     max_changed_layers = min(
         int(config.ga_mutation_max_layers),
         int(space.num_layers),

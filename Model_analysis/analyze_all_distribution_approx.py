@@ -40,7 +40,7 @@ Config schema (JSON)
         "per_layer":      { "0": 2, "11": 3 } // 覆盖 default
       },
       "gelu": {
-        "default_degree": 2,                 // 0..4  (GELU_COEEF keys); null => off
+        "default_degree": 2,                 // 1, 2, or 4; null => off
         "per_layer":      { "0": 0, "5": 4 }
       }
     }
@@ -48,8 +48,6 @@ Config schema (JSON)
 Usage
 -----
 ::
-
-    cd /var/tmp/root-home/Reinforcement-For-Robustness/Model_analysis
 
     python analyze_all_distribution_approx.py \
         --tasks mrpc \
@@ -61,7 +59,6 @@ Usage
 """
 
 import argparse
-import copy
 import csv
 import json
 import os
@@ -69,9 +66,7 @@ import queue
 import sys
 import threading
 
-# ``function_handler.py`` lives in the parent ``Reinforcement-For-Robustness/``
-# directory, while this script sits under ``Model_analysis/``. Make the parent
-# directory importable regardless of where the user launches Python from.
+
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
 for _p in (_PARENT_DIR, _THIS_DIR):
@@ -86,7 +81,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-# ---- Reuse building blocks from the plain analyzer ------------------------
+
 import analyze_all_distribution_new as base
 from analyze_all_distribution_new import (
     GLOBAL_PROBES,
@@ -121,45 +116,12 @@ from transformers import (
     AutoTokenizer,
 )
 
-# ---- Approximation constants/utilities (reuse; do NOT modify function_handler) ----
+
 from function_handler import Exp_bound, GELU_COEEF, polynomial
 
 
-# ============================================================================
-# Extend base module's probe tables with the approximation-internal probes
-# ============================================================================
-
-#
-# Probe inventory for the approximation internals
-# ----------------------------------------------
-# Softmax exp chain (iterated-squaring Taylor).  Every intermediate is
-# recorded raw; the only sanitisation is dropping positions where the
-# logged value is non-finite or has |value| > 1e30 — this removes the
-# padding-mask sentinel (x_shifted ≈ ±3.4e38 and the inf it becomes after
-# a few squarings) without touching any real-data positions.  No lb-clip
-# is applied to any chain probe, so sub-bound positions show their true
-# (possibly very large) Taylor values and you can see how far the
-# approximation drifts before the final algorithmic clip kicks in.
-#   softmax_x_shifted      x - x.max()                         (mask-filter)
-#   softmax_exp_scaled     x_shifted / 2^n                     (mask-filter)
-#   softmax_exp_base       1 + x_shifted / 2^n                 (mask-filter)
-#   softmax_exp_sq1..sq6   base^(2^i) after each squaring      (mask-filter)
-#                                      (layer fills up to i=n)
-#   softmax_exp_raw        final exp approx = sq{n}            (mask-filter)
-#   softmax_exp_out        exp_raw · 1[x_shifted ≥ lb]   (lb-clip is HERE,
-#                                                        inside the algorithm)
-#   softmax_sum_exp        Σ exp_out over last dim
-#
-# GELU polynomial (piecewise, Bumblebee):
-#   gelu_x2, gelu_x3, gelu_x4   pure powers of gelu_input (x itself = gelu_input)
-#   gelu_neg_t0..t4             per-term c_i * x^i  for the negative branch
-#   gelu_pos_t0..t4             per-term c_i * x^i  for the positive branch
-#   gelu_poly_neg / _pos        branch polynomial = Σ_i c_i x^i (kept)
-#
-# For a layer whose degree is d, only the first (d+1) term-probes and the
-# first d squaring-probes are populated; the rest stay empty.
-_SOFTMAX_EXP_SQ_MAX = 6    # Exp_bound supports degrees 1..6
-_GELU_TERM_MAX     = 4     # GELU_COEEF supports degrees 0..4 → up to c4*x^4
+_SOFTMAX_EXP_SQ_MAX = 6
+_GELU_TERM_MAX     = 4
 
 APPROX_PROBES = [
     "softmax_x_shifted",
@@ -196,16 +158,11 @@ _PROBE_DISPLAY_ADD = {
     "gelu_poly_pos":       "GELU poly (pos branch)",
 }
 
-# Magnitude histograms (log-binned) give the real picture; these linear-bin
-# ranges are just for the readable "distribution" PNGs.  Values outside the
-# range are clipped to the edge bins.
+
 _PROBE_HIST_RANGE_ADD = {
     "softmax_x_shifted":  (-50.0,   1.0, 300),
-    # No lb-clip is applied to any chain probe, so sq_i / exp_raw can be
-    # arbitrarily large when base is negative (sub-bound regime).  Linear-bin
-    # histograms are inevitably coarse for such wide supports; the log-scale
-    # magnitude bars (*_magnitude_bar.png) are what you want for the real
-    # shape.  Values falling outside the range pile into the edge bin.
+
+
     "softmax_exp_scaled": (-20.0,     0.5, 300),
     "softmax_exp_base":   (-20.0,     1.5, 300),
     "softmax_exp_sq1":    ( -5.0,   300.0, 300),
@@ -276,27 +233,6 @@ base.PROBE_COLORS.update(_PROBE_COLORS_ADD)
 PROBE_POINTS = base.PROBE_POINTS
 
 
-# ============================================================================
-# Approximation config handling
-# ============================================================================
-
-DEFAULT_APPROX_CONFIG = {
-    "softmax": {"default_degree": 4, "per_layer": {}},
-    "gelu":    {"default_degree": 2, "per_layer": {}},
-}
-
-
-def _is_legacy_flat_format(cfg):
-    """Legacy schema: top-level 'softmax'/'gelu' dicts with default_degree/per_layer."""
-    for k in ("softmax", "gelu"):
-        if (
-            k in cfg and isinstance(cfg[k], dict)
-            and ("default_degree" in cfg[k] or "per_layer" in cfg[k])
-        ):
-            return True
-    return False
-
-
 def _array_to_per_layer(arr, section_name):
     if not isinstance(arr, list):
         raise ValueError(
@@ -307,11 +243,7 @@ def _array_to_per_layer(arr, section_name):
 
 
 def load_approx_config(path, task_name=None, stage="stage1"):
-    """Load approximation config.
-
-    Supports two formats:
-
-    1. Dataset-keyed (preferred; written as arrays)::
+    """Load one dataset and stage from the production approximation config.
 
         {
           "mrpc": {
@@ -323,33 +255,13 @@ def load_approx_config(path, task_name=None, stage="stage1"):
           "sst2": { "stage1": { ... } }
         }
 
-       When this format is used, ``task_name`` must be supplied; the array
-       index ``i`` is the transformer-layer index.  Use ``null`` in an array
-       slot to skip approximation for that single layer.
-
-    2. Legacy flat (still supported)::
-
-        {
-          "softmax": {"default_degree": 4, "per_layer": {"0": 2}},
-          "gelu":    {"default_degree": 2, "per_layer": {}}
-        }
+    ``task_name`` selects the dataset and array index ``i`` selects the layer.
     """
     if path is None:
-        return copy.deepcopy(DEFAULT_APPROX_CONFIG)
+        raise ValueError("approx_config is required")
     with open(path, "r") as f:
         cfg = json.load(f)
 
-    if _is_legacy_flat_format(cfg):
-        out = copy.deepcopy(DEFAULT_APPROX_CONFIG)
-        for section in ("softmax", "gelu"):
-            if section in cfg:
-                if "default_degree" in cfg[section]:
-                    out[section]["default_degree"] = cfg[section]["default_degree"]
-                if "per_layer" in cfg[section]:
-                    out[section]["per_layer"] = cfg[section]["per_layer"]
-        return out
-
-    # Dataset-keyed format
     datasets = [k for k in cfg.keys() if not k.startswith("_")]
     if task_name is None:
         raise ValueError(
@@ -432,16 +344,11 @@ def resolve_gelu_degree(cfg, layer_idx):
     d = _resolve_degree(cfg["gelu"], layer_idx)
     if d is None:
         return None
-    if d not in GELU_COEEF:
+    if d not in (1, 2, 4):
         raise ValueError(
-            f"[approx_config] gelu degree {d} not in GELU_COEEF={sorted(GELU_COEEF)}"
+            f"[approx_config] gelu degree {d} must be 1, 2, or 4"
         )
     return d
-
-
-# ============================================================================
-# Approximation primitives (mirror function_handler.py, plus per-step stats)
-# ============================================================================
 
 
 def _approx_exp(x, degree):
@@ -482,8 +389,8 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
     two_d = 2 ** degree
 
     def _softmax_fn(x, dim=-1):
-        # Assumes dim == -1 (every HF attention uses -1). We keep the parameter
-        # for signature compatibility with ``F.softmax``.
+
+
         x_max = x.max(dim=-1, keepdim=True)[0]
         x_shifted = x - x_max + 1e-9
         _enqueue_mask_filtered("softmax_x_shifted", layer_idx, x_shifted.detach(), q)
@@ -501,12 +408,10 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
                 f"softmax_exp_sq{i}", layer_idx, current.detach(), q
             )
 
-        exp_raw = current  # = base^(2^degree)
+        exp_raw = current
         _enqueue_mask_filtered("softmax_exp_raw", layer_idx, exp_raw.detach(), q)
 
-        # The final output still applies the lb-clip that the original
-        # algorithm (function_handler.py) uses — this is the only place the
-        # clip happens.  Its probe logs the post-clip values as-is.
+
         exp_out = torch.where(
             x_shifted < lower_bound, torch.zeros_like(x_shifted), exp_raw
         )
@@ -515,11 +420,7 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
         sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
         _enqueue("softmax_sum_exp", layer_idx, sum_exp.detach().squeeze(-1), q)
 
-        # Full approximated softmax output — this is what gets fed into the
-        # attention weighted sum.  Distinct from ``attn_probs`` because the
-        # latter is also populated on layers that do NOT use approximation
-        # (where it equals the real F.softmax output); ``softmax_approx_out``
-        # only fires when we are actually running the Taylor approximation.
+
         approx_out = exp_out / sum_exp
         _enqueue("softmax_approx_out", layer_idx, approx_out.detach(), q)
 
@@ -584,14 +485,6 @@ class StatsPolynomialGELU(nn.Module):
         return powers
 
     def forward(self, x):
-        if self.degree == 0:
-            # degree-0 collapses to a single polynomial across the entire
-            # input, identical to PolynomialGELU(degree=0).
-            powers = [None, x]
-            y = self._branch_poly(x, 1, "neg", powers)
-            _enqueue("gelu_poly_neg", self.layer_idx, y.detach(), self.q)
-            return y
-
         powers = self._compute_powers(x)
         y1 = self._branch_poly(x, 1, "neg", powers)
         y2 = self._branch_poly(x, 0, "pos", powers)
@@ -608,11 +501,6 @@ class StatsPolynomialGELU(nn.Module):
         out = torch.where(mask_pos, y2, out)
         out = torch.where(mask_high, x, out)
         return out
-
-
-# ============================================================================
-# Attention wrapper with pluggable softmax
-# ============================================================================
 
 
 def _make_attn_wrapper_with_softmax(fwd, li, q, softmax_fn):
@@ -679,16 +567,11 @@ def _make_attn_wrapper_with_softmax(fwd, li, q, softmax_fn):
     return _wrapped
 
 
-# ============================================================================
-# BERT hook installer with approximation
-# ============================================================================
-
-
 def _install_bert_hooks_approx(model, q, approx_cfg):
     handles = []
     restore = []
 
-    # Global: input_ids
+
     def _ids_hook(_mod, inp):
         if inp[0] is not None:
             _enqueue("input_ids", 0, inp[0].detach().float(), q)
@@ -705,7 +588,7 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
     for i, layer in enumerate(model.bert.encoder.layer):
         sa = layer.attention.self
 
-        # Q / K / V
+
         for probe, mod in [
             ("query_proj", sa.query),
             ("key_proj", sa.key),
@@ -715,7 +598,7 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
             handles.append(mod.register_forward_hook(
                 _make_pre_bias_hook(f"{probe}_nobias", i, q)))
 
-        # --- Attention wrapper, optionally with approx softmax ---
+
         sm_degree = resolve_softmax_degree(approx_cfg, i)
         if sm_degree is None:
             sm_fn = None
@@ -730,7 +613,7 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
         sa.forward = _make_attn_wrapper_with_softmax(orig_fwd, i, q, sm_fn)
         restore.append(("fwd", sa, orig_fwd))
 
-        # Linear projections (post-bias + pre-bias)
+
         for probe, mod in [
             ("attn_output", layer.attention.output.dense),
             ("gelu_input", layer.intermediate.dense),
@@ -740,7 +623,7 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
             handles.append(mod.register_forward_hook(
                 _make_pre_bias_hook(f"{probe}_nobias", i, q)))
 
-        # LayerNorm outputs (post-β + pre-β)
+
         for probe, mod in [
             ("post_attn_ln", layer.attention.output.LayerNorm),
             ("post_ffn_ln", layer.output.LayerNorm),
@@ -759,7 +642,7 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
             )
         )
 
-        # --- GELU: optionally replace with StatsPolynomialGELU ---
+
         gelu_degree = resolve_gelu_degree(approx_cfg, i)
         orig_act = layer.intermediate.intermediate_act_fn
         if gelu_degree is None:
@@ -777,16 +660,10 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
     return handles, restore
 
 
-
 def install_hooks_approx(model, arch, q, approx_cfg):
     if arch != "bert":
         raise ValueError(f"Unsupported architecture: {arch}")
     return _install_bert_hooks_approx(model, q, approx_cfg)
-
-
-# ============================================================================
-# Per-task driver (mirrors base.process_task, with approx config recording)
-# ============================================================================
 
 
 def _layer_probes():
@@ -858,7 +735,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
     worker.join()
     remove_hooks(handles, restore)
 
-    # ---- Persist the effective approximation config beside outputs ----
+
     eff_cfg_path = os.path.join(output_dir, f"{task_name}_approx_config.json")
     eff_cfg = {
         "model": cfg["model_name"],
@@ -882,7 +759,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
         json.dump(eff_cfg, fout, indent=2)
     print(f"  Saved: {eff_cfg_path}")
 
-    # ---- Text summary ----
+
     txt_path = os.path.join(output_dir, f"{task_name}_all_stats.txt")
     with open(txt_path, "w") as fout:
         fout.write(f'Model: {cfg["model_name"]}  Arch: {arch}  Layers: {num_layers}\n')
@@ -911,7 +788,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
                     print(line)
     print(f"  Saved: {txt_path}")
 
-    # ---- CSV ----
+
     csv_path = os.path.join(output_dir, f"{task_name}_all_stats.csv")
     with open(csv_path, "w", newline="") as fout:
         writer = csv.writer(fout)
@@ -939,7 +816,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
                     ])
     print(f"  Saved: {csv_path}")
 
-    # ---- Magnitude text summary ----
+
     mag_txt_path = os.path.join(output_dir, f"{task_name}_magnitude_stats.txt")
     mag_bin_labs = _mag_bin_labels()
     with open(mag_txt_path, "w") as fout:
@@ -983,7 +860,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
                 print(line)
     print(f"  Saved: {mag_txt_path}")
 
-    # ---- Magnitude CSV ----
+
     mag_csv_path = os.path.join(output_dir, f"{task_name}_magnitude_stats.csv")
     with open(mag_csv_path, "w", newline="") as fout:
         writer = csv.writer(fout)
@@ -1027,7 +904,7 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
                     ] + [f"{v:.4f}" for v in agg["pct_bins"]])
     print(f"  Saved: {mag_csv_path}")
 
-    # ---- Plots ----
+
     for probe in PROBE_POINTS:
         plot_probe_histograms(collector, probe, task_name, output_dir, num_layers)
     plot_overview(collector, task_name, output_dir, num_layers)
@@ -1042,11 +919,6 @@ def process_task_approx(task_name, cfg, approx_cfg, output_dir, device,
     del model, collector
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-
-# ============================================================================
-# CLI
-# ============================================================================
 
 
 def main():
@@ -1065,10 +937,12 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--max_samples", type=int, default=0,
                         help="Formal probe size; accepted values are 0 and 256")
-    parser.add_argument("--approx_config", type=str, default=None,
-                        help="Path to approximation config JSON. "
-                             "Supports dataset-keyed (recommended) or legacy "
-                             "flat format; see load_approx_config docstring.")
+    parser.add_argument(
+        "--approx_config",
+        type=str,
+        required=True,
+        help="Dataset-keyed JSON path for per-layer degrees.",
+    )
     parser.add_argument("--stage", type=str, default="stage1",
                         help="Stage name inside a dataset-keyed config "
                              "(default: stage1)")
@@ -1088,15 +962,15 @@ def main():
     print(f"Batch size    : {args.batch_size}")
     print(f"Max length    : {args.max_length}")
     print(f'Max samples   : {"all" if args.max_samples == 0 else args.max_samples}')
-    print(f"Approx config : {args.approx_config or '<default>'}")
+    print(f"Approx config : {args.approx_config}")
     print(f"Stage         : {args.stage}")
 
     for task_name in tasks:
         if task_name not in TASK_REGISTRY:
             print(f'\n[Warning] Unknown task "{task_name}", skipping')
             continue
-        # Load approx config per-task (dataset-keyed format reads the right
-        # section; legacy flat format just returns the same dict every time).
+
+
         approx_cfg = load_approx_config(
             args.approx_config, task_name=task_name, stage=args.stage
         )

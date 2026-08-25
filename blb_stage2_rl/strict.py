@@ -117,7 +117,7 @@ class strict_guard:
         if exc_type is None:
             return False
         if is_strict():
-            return False  # re-raise
+            return False
         try:
             self._log_fn(
                 f"[strict-swallow] {self._reason} → "
@@ -125,7 +125,7 @@ class strict_guard:
             )
         except Exception:
             pass
-        return True   # swallow
+        return True
 
 
 __all__ = ["is_strict", "swallow", "strict_guard"]

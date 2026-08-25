@@ -28,7 +28,7 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
         sys.path.insert(0, p)
 
 import noise_tables as nt  # noqa: E402  (torch-free: parses function_handler text)
-import precision_boost as pb  # noqa: E402
+from blb_stage2_rl import precision_boost as pb  # noqa: E402
 
 _RO_ROOT = str(_REPO / "Rescale_optimizer")
 
@@ -75,7 +75,7 @@ class FunctionHandlerAboveTableTest(unittest.TestCase):
         for sf in (tbl_max + 1, tbl_max + 3, 60):
             for dist in ("encoding", "fresh", "rescale"):
                 self.assertEqual(fh.get_input_noise_variance_by_N(sf, dist, N), 0.0)
-        # within table unchanged; below min still raises.
+
         self.assertGreater(fh.get_input_noise_variance_by_N(tbl_max, "encoding", N), 0.0)
         with self.assertRaises(ValueError):
             fh.get_input_noise_variance_by_N(min(fh.NOISE_VARIANCE_TABLE_BY_N[N]) - 1, "encoding", N)
@@ -86,32 +86,30 @@ class TargetOutputSFTest(unittest.TestCase):
     the block's RO config (general; a changed JSON yields a changed target)."""
 
     def test_target_matches_formula_for_every_block(self):
-        # (graph_key, expected) — q_tail 60, h_sf 2, amplitude[-1] from each JSON.
+
         cases = {
-            "block2_mrpc": 46,  # 60 - 12 - 2
-            "block4": 53,       # 60 -  5 - 2
-            "block5_n1": 48,    # 60 - 10 - 2
-            "block5_n2": 43,    # 60 - 15 - 2
-            "block5_n4": 43,    # 60 - 15 - 2
+            "block2_mrpc": 46,
+            "block4": 53,
+            "block5_n1": 48,
+            "block5_n2": 43,
+            "block5_n4": 43,
         }
         for gk, want in cases.items():
             got = pb.target_output_sf(gk, profile="mrpc", root=_RO_ROOT)
             self.assertEqual(got, want, f"{gk}: target {got} != {want}")
 
 
-# phase-1-boosted bases (the committed fusion maps' fc=1 explicit_field_values,
-# restricted to the topology slots). output SF = last_rescale.sf_post + final_encode.
-BASE2_P1 = {  # block2: output = 28 + 15 = 43, last prime 60
+BASE2_P1 = {
     "inv_std_fresh_sf": 21, "gamma_sf": 15, "wk_sf": 16, "kt_mask1_sf": 16,
     "kt_mask2_sf": 15, "qkt_merge_mask_sf": 15, "gamma_rescale_sf": 28,
     "kt_mask1_rescale_sf": 29, "qkt_matmul_rescale_sf": 28,
 }
-BASE4_P1 = {  # block4: output = 31 + 20 = 51, last prime 59
+BASE4_P1 = {
     "softmax_out_fresh_sf": 21, "v_fresh_sf": 17, "softmax_out_mask_sf": 14,
     "softmax_v_mask_sf": 13, "wo_sf": 13, "ln_mean_inv_d_sf": 13, "ln_var_inv_d_sf": 20,
     "softmax_v_matmul_rescale_sf": 39, "ln_mean_rescale_sf": 45, "ln_square_rescale_sf": 31,
 }
-BASE5_P1 = {  # block5_n2: output = 31 + 0 = 31 (NO final encode), last prime 60
+BASE5_P1 = {
     "x_centered_fresh_sf": 26, "gamma_sf": 21, "wffn1_sf": 21, "gelu_coeff_sf": 23,
     "normalize_rescale_sf": 31, "wffn1_rescale_sf": 34, "gelu_coeff_mul_rescale_sf_0": 31,
 }
@@ -132,27 +130,27 @@ class Phase2CandidateGenTest(unittest.TestCase):
         return out
 
     def test_block2_three_methods(self):
-        # base output 43 -> target 46 (delta 3), last prime 60.
+
         cands = pb.generate_phase2_candidates(
             pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, target_output_sf=46, base_last_prime=60,
         )
-        # every candidate reaches output 46 = sf_post + final_encode.
+
         for c in cands:
             sp = c.edits["qkt_matmul_rescale_sf"]
             fe = c.edits["qkt_merge_mask_sf"]
             self.assertEqual(sp + fe, 46, f"output != 46 in {c.edits}")
-        # M1: all on the final encode (sf_post stays 28).
+
         self.assertTrue(self._by_field(cands, qkt_merge_mask_sf=18, qkt_matmul_rescale_sf=28))
-        # M3: split 30/16.
+
         self.assertTrue(self._by_field(cands, qkt_merge_mask_sf=16, qkt_matmul_rescale_sf=30))
-        # M2: final encode at floor 15, sf_post 31.
+
         self.assertTrue(self._by_field(cands, qkt_merge_mask_sf=15, qkt_matmul_rescale_sf=31))
-        # the final encode never goes below the hardcoded floor 15.
+
         self.assertTrue(all(c.edits["qkt_merge_mask_sf"] >= 15 for c in cands))
 
     def test_block4_ln_var_guard_blocks_decrease_to_floor_when_uncapped(self):
-        # block4's final encode is ln_var_inv_d_sf. It feeds the LayerNorm variance
-        # inverse path and must not be lowered below the base action's SF.
+
+
         cands = pb.generate_phase2_candidates(
             pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, target_output_sf=53, base_last_prime=59,
             max_installed_sf=60,
@@ -163,10 +161,8 @@ class Phase2CandidateGenTest(unittest.TestCase):
         self.assertTrue(all(c.edits["ln_var_inv_d_sf"] >= BASE4_P1["ln_var_inv_d_sf"] for c in cands))
 
     def test_block4_ln_var_guard_applies_under_default_cap(self):
-        # ADR (SF>46 = no noise): the default install cap is now q_max=60, not 46.
-        # The cap no longer blocks over-46 compensation rescales, so this test must
-        # explicitly lock the semantic guard: ln_var_inv_d_sf cannot drop below the
-        # baseline/pre-phase2 value even though the scale-only route exists.
+
+
         cands = pb.generate_phase2_candidates(
             pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, target_output_sf=53, base_last_prime=59,
         )
@@ -179,17 +175,16 @@ class Phase2CandidateGenTest(unittest.TestCase):
         self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=20, ln_square_rescale_sf=33))
 
     def test_generality_composition_adapts_to_chain_change(self):
-        # The user's automation requirement: nothing is hardcoded to the committed
-        # chain. The budget is derived from base_last_prime (a replan output) and the
-        # target, so changing either yields a correspondingly different composition.
+
+
         def sigset(cands):
             return sorted(tuple(sorted(c.edits.items())) for c in cands)
-        # (a) a different last prime (60 vs 59) changes the pre-scale budget.
+
         c60 = pb.generate_phase2_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, 46, base_last_prime=60)
         c59 = pb.generate_phase2_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, 46, base_last_prime=59)
         self.assertTrue(c60 and c59)
         self.assertNotEqual(sigset(c60), sigset(c59), "composition must depend on the last prime")
-        # (b) a different target changes Δ → different sf_post / final-encode split.
+
         c46 = pb.generate_phase2_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, 46, base_last_prime=60)
         c45 = pb.generate_phase2_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, 45, base_last_prime=60)
         self.assertNotEqual(sigset(c46), sigset(c45), "composition must depend on the target")
@@ -197,28 +192,25 @@ class Phase2CandidateGenTest(unittest.TestCase):
             self.assertEqual(c.edits["qkt_matmul_rescale_sf"] + c.edits["qkt_merge_mask_sf"], 45)
 
     def test_block5_no_final_encode_sf_post_only(self):
-        # base output 31 -> target 43 (delta 12), no final encode, last prime 60.
+
         cands = pb.generate_phase2_candidates(
             pb.BLOCK5_N2_MRPC_TOPOLOGY, BASE5_P1, target_output_sf=43, base_last_prime=60,
         )
         self.assertTrue(cands)
         for c in cands:
-            # output is entirely the last rescale sf_post (no final encode).
+
             self.assertEqual(c.edits["gelu_coeff_mul_rescale_sf_0"], 43)
             self.assertNotIn("qkt_merge_mask_sf", c.edits)
             self.assertNotIn("ln_var_inv_d_sf", c.edits)
 
 
-# block5 n=4 phase-1-boosted base (output = 31 + 0 = 31, last prime 60, keeps the
-# middle prime 31 from phase-1).
 BASE5N4_P1 = {
     "x_centered_fresh_sf": 26, "gamma_sf": 20, "wffn1_sf": 21, "gelu_coeff_sf": 21,
     "normalize_rescale_sf": 31, "wffn1_rescale_sf": 33, "gelu_power_rescale_sf_0": 35,
     "gelu_coeff_mul_rescale_sf_0": 31,
 }
 
-# block5 n=1 base (NO phase-1 boost — already all-q_max; output = 31, no final encode,
-# config ceiling 48 but a single output rescale install-clamps to 46).
+
 BASE5N1 = {
     "x_centered_fresh_sf": 22, "gamma_sf": 15, "wffn1_sf": 16, "gelu_coeff_sf": 16,
     "normalize_rescale_sf": 28, "gelu_coeff_mul_rescale_sf_0": 31,
@@ -235,7 +227,7 @@ class EffectiveTargetTest(unittest.TestCase):
         cases = {
             "block2_mrpc": (pb.BLOCK2_MRPC_TOPOLOGY, 46, 46),
             "block4": (pb.BLOCK4_MRPC_TOPOLOGY, 53, 53),
-            "block5_n1": (pb.BLOCK5_N1_MRPC_TOPOLOGY, 48, 48),  # 48 reached (was 46)
+            "block5_n1": (pb.BLOCK5_N1_MRPC_TOPOLOGY, 48, 48),
             "block5_n2": (pb.BLOCK5_N2_MRPC_TOPOLOGY, 43, 43),
             "block5_n4": (pb.BLOCK5_N4_MRPC_TOPOLOGY, 43, 43),
         }
@@ -244,8 +236,8 @@ class EffectiveTargetTest(unittest.TestCase):
             self.assertEqual(pb.effective_output_target(topo, cfg), eff, f"{gk} effective")
 
     def test_effective_target_still_clamps_above_qmax(self):
-        # a (hypothetical) config beyond q_max IS still clamped — to q_max for a
-        # no-final-encode block, 2*q_max for a final-encode block.
+
+
         self.assertEqual(pb.effective_output_target(pb.BLOCK5_N1_MRPC_TOPOLOGY, 999), 60)
         self.assertEqual(pb.effective_output_target(pb.BLOCK4_MRPC_TOPOLOGY, 999), 120)
 
@@ -279,7 +271,7 @@ class Phase2BoostReplanTest(unittest.TestCase):
         from rescale_optimizer import ReplanSession
         cls.S = ReplanSession.from_profile(profile="mrpc", root=_RO_ROOT)
 
-    # -- per-block real-replan probes (return t_final so output can be checked) --
+
     def _probe2(self, s):
         t = [s["inv_std_fresh_sf"], s["gamma_rescale_sf"], s["kt_mask1_rescale_sf"], s["qkt_matmul_rescale_sf"]]
         d = {"ctct_x_mean_over_std": "x2", "ctpt_gama1": s["gamma_sf"], "ctpt_wq_wk": s["wk_sf"],
@@ -324,7 +316,7 @@ class Phase2BoostReplanTest(unittest.TestCase):
         )
 
     def _cases(self):
-        # (graph_key, topology, base_slots, config_target, final_encode_field, probe)
+
         return [
             ("block2_mrpc", pb.BLOCK2_MRPC_TOPOLOGY, BASE2_P1, 46, "qkt_merge_mask_sf", self._probe2),
             ("block4", pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, 53, "ln_var_inv_d_sf", self._probe4),
@@ -337,7 +329,7 @@ class Phase2BoostReplanTest(unittest.TestCase):
         for gk, topo, base, config_target, final_field, probe in self._cases():
             with self.subTest(block=gk):
                 noise_fn = _noise_fn_for(topo)
-                # the driver clamps the config ceiling to what the model can install.
+
                 target = pb.effective_output_target(topo, config_target)
                 base_probe = probe(dict(base))
                 self.assertTrue(base_probe.valid)
@@ -347,18 +339,18 @@ class Phase2BoostReplanTest(unittest.TestCase):
                 )
                 self.assertIsNotNone(res, f"{gk}: phase-2 returned None")
                 self.assertEqual(res.output_sf, target)
-                # the chosen slots replan to: valid, same fusion_count, every prior
-                # prime preserved, and output == (clamped) target.
+
+
                 p = probe(res.boosted_slots)
                 self.assertTrue(p.valid)
                 self.assertEqual(p.fusion_count, base_probe.fusion_count)
                 self.assertEqual(p.q_final[:-1], base_probe.q_final[:-1], f"{gk}: prior primes changed")
                 fe = int(res.boosted_slots[final_field]) if final_field else 0
                 self.assertEqual(int(p.t_final[-1]) + fe, target, f"{gk}: output != target")
-                # the last prime is as high as possible (q_max, or q_max-1 on a parity degrade).
+
                 self.assertGreaterEqual(int(p.q_final[-1]), 59)
-                # INDEPENDENT min-noise check: no other replan-valid candidate that
-                # reaches target with fusion+prior primes preserved has lower noise.
+
+
                 best = None
                 for c in pb.generate_phase2_candidates(topo, base, target, int(base_probe.q_final[-1]), q_max=60):
                     slots = dict(base)
@@ -372,13 +364,13 @@ class Phase2BoostReplanTest(unittest.TestCase):
                         best = v if best is None else min(best, v)
                 self.assertIsNotNone(best)
                 self.assertLessEqual(res.total_variance, best + 1e-18, f"{gk}: not the min-noise composition")
-                # every installed point stays within the modulus limit q_max (points
-                # in (46, 60] install with no noise; >60 would be a modulus violation).
+
+
                 self.assertLessEqual(max(int(v) for v in res.boosted_slots.values()), 60)
 
     def test_phase2_target_is_not_hardcoded(self):
-        # generality: feed a DIFFERENT (non-config) target and the driver hits it,
-        # proving the output target flows through (not baked to one value per block).
+
+
         noise_fn = _noise_fn_for(pb.BLOCK2_MRPC_TOPOLOGY)
         for tgt in (44, 45):
             res = pb.boost_option_phase2(
@@ -391,18 +383,17 @@ class Phase2BoostReplanTest(unittest.TestCase):
             self.assertEqual(int(p.t_final[-1]) + int(res.boosted_slots["qkt_merge_mask_sf"]), tgt)
 
     def test_block4_user_special_case_now_installable(self):
-        # The user's worked example (ln_var 20->15, sf_post 31->38) needs ln_mean_rescale
-        # 45 -> 49. Under the ADR (SF>46 = no noise), 49 IS now installable (its noise is
-        # negligible), so this decrease route is the realized block4 phase-2 result.
+
+
         slots = dict(BASE4_P1)
         slots.update({"ln_var_inv_d_sf": 15, "ln_square_rescale_sf": 38,
                       "ln_mean_inv_d_sf": 17, "ln_mean_rescale_sf": 49})
         p = self._probe4(slots)
-        self.assertTrue(p.valid)                       # the modulus chain is valid...
-        self.assertEqual(int(p.q_final[-1]), 60)       # ...the last prime reaches 60...
-        self.assertEqual(int(p.t_final[-1]) + 15, 53)  # ...and the output reaches the target 53
-        self.assertGreater(int(p.t_final[1]), 46)      # ln_mean_rescale > 46 ...
-        self.assertEqual(nt.variance(16384, int(p.t_final[1]), "rescale"), 0.0)  # ...installs no noise
+        self.assertTrue(p.valid)
+        self.assertEqual(int(p.q_final[-1]), 60)
+        self.assertEqual(int(p.t_final[-1]) + 15, 53)
+        self.assertGreater(int(p.t_final[1]), 46)
+        self.assertEqual(nt.variance(16384, int(p.t_final[1]), "rescale"), 0.0)
 
 
 if __name__ == "__main__":

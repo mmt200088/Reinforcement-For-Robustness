@@ -33,13 +33,13 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import fusion_enum as fe
+from blb_stage2_rl import fusion_enum as fe
 
 
 class KeptOptionGoldenVerifyTest(unittest.TestCase):
     def _opts(self):
-        # option 0 = baseline (fc 0); option 1 = the fusion option whose rescale
-        # slots sit at the lex-min index (the rte block2 shape).
+
+
         return [
             {"option_id": 0, "fusion_count": 0, "total_bits": 100, "action_indices": [14, 14, 14]},
             {"option_id": 1, "fusion_count": 1, "total_bits": 90, "action_indices": [7, 14, 1]},
@@ -58,8 +58,8 @@ class KeptOptionGoldenVerifyTest(unittest.TestCase):
         self.assertEqual(fe.verify_kept_options_golden(None, self._opts(), eval_fn=ev), [])
 
     def test_fusion_count_mismatch_reported(self):
-        # the exact rte block2 bug: claims fc=1, golden replan says fc=0.
-        # (total_bits kept equal here to isolate the fusion_count assertion).
+
+
         ev = self._ev({
             (14, 14, 14): {"valid": True, "fusion_count": 0, "total_bits": 100},
             (7, 14, 1): {"valid": True, "fusion_count": 0, "total_bits": 90},
@@ -87,7 +87,7 @@ class KeptOptionGoldenVerifyTest(unittest.TestCase):
         self.assertIn("total_bits", probs[0][1])
 
     def test_baseline_consistent_option_zero_never_flagged_spuriously(self):
-        # a correct map (mrpc shape): every kept option reproduces under golden.
+
         opts = [
             {"option_id": 0, "fusion_count": 0, "total_bits": 100, "action_indices": [14, 14, 14]},
             {"option_id": 1, "fusion_count": 1, "total_bits": 90, "action_indices": [7, 14, 14]},

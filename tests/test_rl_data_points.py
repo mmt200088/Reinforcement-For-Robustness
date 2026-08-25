@@ -111,7 +111,7 @@ class RLDataPointWriterTest(unittest.TestCase):
                 best_reward_so_far=1.0,
             )
             first.flush_mandatory()
-            # Simulate a crash after the primary append but before its mirror.
+
             writer_episode_path = writer.run_dir / "episodes.jsonl"
             writer_episode_path.write_text("", encoding="utf-8")
             first._close_primary_jsonl()

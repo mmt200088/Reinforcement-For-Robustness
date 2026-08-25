@@ -150,9 +150,7 @@ def load_action_grid_config(
 
     num_layers = int(payload.get("num_layers", 0) or num_layers_hint or 0)
 
-    # Detect shape: slot-form (1) / base+overrides (2) takes precedence over
-    # the legacy action_vec form (3); falling through both leaves the legacy
-    # path (just fixed/ranges, no base) (4).
+
     has_slots = (
         isinstance(payload.get("slots"), (list, Mapping))
         and bool(payload.get("slots"))
@@ -170,7 +168,7 @@ def load_action_grid_config(
     base_action_vec: Optional[np.ndarray | str] = None
     coercion_notes: List[Dict[str, object]] = []
     if (has_slots or has_overrides) and num_layers > 0:
-        # New schema — convert via blb_stage2_rl.action_io.
+
         try:
             from blb_stage2_rl.action_io import slots_payload_to_action_vec
         except ImportError as exc:  # pragma: no cover
@@ -190,10 +188,8 @@ def load_action_grid_config(
                 if isinstance(base_value, (list, tuple, str)):
                     slot_payload["base"] = base_value
                     break
-        # ``slots_payload_to_action_vec`` keeps legacy ``action_vec`` support
-        # for old configs, but this branch has already selected the slot-form
-        # schema.  Remove flat-vector fallbacks so real slots cannot be shadowed
-        # by stale map action indices.
+
+
         for stale_key in ("action_vec", "base_action_vec", "base_action"):
             slot_payload.pop(stale_key, None)
         vec, coercion_notes = slots_payload_to_action_vec(
@@ -205,17 +201,17 @@ def load_action_grid_config(
         )
         base_action_vec = np.asarray(vec, dtype=int)
     elif has_action_vec:
-        # Legacy shape — flat action_vec.
+
         base_raw = (
             payload.get("action_vec")
             or payload.get("base_action_vec")
             or payload.get("base_action")
         )
         base_action_vec = _parse_base_action_vec(base_raw, int(num_layers))
-    # else: no base at all → caller decides (typically "max" inside build_action_candidates).
+
 
     if coercion_notes:
-        # Surface coercions to the operator so silent snapping is auditable.
+
         try:
             from sys import stderr
             stderr.write(
@@ -551,12 +547,12 @@ def build_cost_matched_random_action_candidates(
         vec = rng.integers(low=0, high=dims, size=dims.shape[0], dtype=np.int64)
         if parsed_fixed_specs:
             _apply_fixed(vec)
-        # Cheap pre-filter: sum_k can be computed directly from the action.
+
         sum_k = sum_truncation_k_in_action(vec, int(num_layers))
         if int(sum_k) != target_sum_k:
             prefilter_n += 1
             continue
-        # Decode + optimizer call (this is the expensive bit).
+
         decoded = action_vector_to_cfgs(
             action_vec=vec,
             max_sfs=max_sfs,
@@ -572,8 +568,8 @@ def build_cost_matched_random_action_candidates(
             if log_fn is not None:
                 log_fn(f"  [cost-match][attempt {attempts}] optimizer error: {exc}")
             continue
-        # Aggregate (import locally to avoid pulling rescale_optimizer_bridge
-        # into action_grid's import chain at module load time).
+
+
         from rescale_optimizer_bridge import aggregate_optimizer_signals as _agg
         signals = _agg(outputs)
         if bool(signals.any_invalid):
@@ -853,12 +849,8 @@ def _canonical_field_name(name: str) -> str:
         "wffn1": "wffn1_sf",
         "wffn1_rescale": "wffn1_rescale_sf",
         "wffn2": "wffn2_sf",
-        # ``wffn2_rescale`` alias removed 2026-05-14:
-        # ``wffn2_rescale_sf`` RL slot was deleted because mrpc baseline skeleton
-        # never places a rescale at ctct_ffn2_rescale. Cfg's ``wffn2_result_rescale``
-        # is fixed to None. Selectors mentioning ``wffn2_rescale`` now resolve to
-        # the literal text (no slot match) and the action-grid expansion errors
-        # explicitly — which is the desired behaviour.
+
+
     }
     return aliases.get(text, text)
 

@@ -11,7 +11,7 @@
     "Degree keys:",
     "  softmax: 1..6  (Exp_bound keys in function_handler.py;",
     "                  lower_bound is automatically looked up)",
-    "  gelu:    0..4  (GELU_COEEF keys in function_handler.py)",
+    "  gelu:    1, 2, or 4",
     "  Use null in a slot to skip approximation for that single layer.",
     "",
     "Select a stage at runtime with --stage (default: stage1)."

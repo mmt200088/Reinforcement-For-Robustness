@@ -20,10 +20,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Seque
 from json_utils import stable_json_hash, to_jsonable
 from jsonl_utils import iter_jsonl
 
-try:
-    from .statistical_constraints import TrialSeries
-except ImportError:  # Standalone diagnostics/tests load this module from its path.
-    from statistical_constraints import TrialSeries
+from .statistical_constraints import TrialSeries
 
 FIDELITY_ORDER = {
     "F0": 0,
@@ -43,14 +40,6 @@ _COMPACT_RECORD_TYPES = frozenset({
     "candidate_trial_group_v2", "candidate_promotion_status_v2",
 })
 _INDEXED_RECORD_TYPES = _TRIAL_GROUP_RECORD_TYPES | _PROMOTION_STATUS_RECORD_TYPES
-
-
-# Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
-# removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
-# forward) → F1 (small probe + few MC trials during training) → F4 (full
-# validation_full final eval with real BLB install). Old JSONL records with
-# ``fidelity="F2"`` / ``"F3"`` get rank ``-1`` from ``fidelity_rank`` and
-# surface as legacy entries — they are not lost, just not promotable.
 
 
 def normalize_trial_result_values(
@@ -761,9 +750,7 @@ class CandidateStore:
                         (offset, handle.tell(), checkpoint_size, generation)
                     )
 
-        # The newest marker selects a checkpointed logical prefix plus its own
-        # tail. Repeating that rule through older markers excludes every
-        # abandoned branch without rewriting any complete JSONL row.
+
         self._recovery_layout_size = file_size
         self._recovery_markers = tuple(markers)
         self._active_spans = self._resolve_active_spans(markers, file_size)

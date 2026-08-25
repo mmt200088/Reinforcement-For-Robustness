@@ -25,7 +25,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimi
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import precision_boost as pb
+from blb_stage2_rl import precision_boost as pb
 
 PROFILES = ["mrpc", "rte", "sst2", "mrpc_large", "rte_large", "sst2_large"]
 
@@ -35,7 +35,7 @@ class TopologyForGraphKeyTest(unittest.TestCase):
         for pf in PROFILES:
             topo = pb.topology_for_graph_key(f"block2_{pf}")
             self.assertIsNotNone(topo, f"block2_{pf} did not resolve to a topology")
-            # same shared block2 structure for every profile
+
             self.assertIs(topo, pb.BLOCK2_MRPC_TOPOLOGY)
 
     def test_profile_agnostic_keys_match_exactly(self):
@@ -45,14 +45,13 @@ class TopologyForGraphKeyTest(unittest.TestCase):
         self.assertIs(pb.topology_for_graph_key("block5_n4"), pb.BLOCK5_N4_MRPC_TOPOLOGY)
 
     def test_block1_never_boosted(self):
-        # block1 is fusion-degenerate (no topology); must resolve to None for every
-        # profile so the boost leaves it alone.
+
+
         for pf in PROFILES:
             self.assertIsNone(pb.topology_for_graph_key(f"block1_{pf}"))
 
     def test_unknown_key_is_none(self):
-        self.assertIsNone(pb.topology_for_graph_key("block5_n0"))  # degree-0 disabled
-        self.assertIsNone(pb.topology_for_graph_key("block3_exp_n4"))  # frozen
+        self.assertIsNone(pb.topology_for_graph_key("block3_exp_n4"))
 
 
 if __name__ == "__main__":

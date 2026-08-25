@@ -10,8 +10,8 @@ import sys
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-# Import the torch-free module BARE (stage1_rl/ on path) so this runs without
-# torch — importing stage1_rl as a package would pull parallel_runner -> torch.
+
+
 if str(_REPO / "stage1_rl") not in sys.path:
     sys.path.insert(0, str(_REPO / "stage1_rl"))
 
@@ -45,7 +45,7 @@ class AssignGlobalEpisodesTest(unittest.TestCase):
                 )
 
     def test_balanced_within_one(self):
-        chunks = assign_global_episodes(120, 7)   # 120 -> 18,17,17,17,17,17,17
+        chunks = assign_global_episodes(120, 7)
         counts = [len(c) for c in chunks]
         self.assertEqual(sum(counts), 120)
         self.assertLessEqual(max(counts) - min(counts), 1)

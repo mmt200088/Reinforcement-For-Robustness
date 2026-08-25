@@ -44,10 +44,6 @@ from .graph import (
 logger = logging.getLogger("rescale_optimizer")
 
 
-# ---------------------------------------------------------------------------
-# FindMinSF
-# ---------------------------------------------------------------------------
-
 def find_min_sf(
     amplitude: AmplitudeProfile,
     snr: SNRRequirement,
@@ -71,8 +67,8 @@ def find_min_sf(
 
     若噪声表为空或所有 sf 都不满足，返回最大可用 sf_bits（并发出警告）。
     """
-    # Use the (1 - p) quantile so that "percentile = 0.8" really means
-    # "protect 80% of the data (the top 80% by magnitude)".
+
+
     q = max(0.0, min(1.0, 1.0 - snr.percentile))
     a = amplitude.get_value_at(q)
     max_err = snr.max_relative_error
@@ -99,10 +95,6 @@ def find_min_sf(
     return int(available[-1])
 
 
-# ---------------------------------------------------------------------------
-# Main entry point:  build_feasibility_dag
-# ---------------------------------------------------------------------------
-
 def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
     """
     填充 graph 的 baseline_scale_bits / target_scale_bits / stage_edges /
@@ -120,7 +112,7 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
     q_min = graph.q_legal_min
     q_max = graph.q_legal_max
 
-    # ----- 1. baseline scale for every real cut point ---------------------
+
     for j in range(M + 1):
         cp = graph.cut_points[j]
         t_base = find_min_sf(cp.amplitude_profile, cp.snr_requirement,
@@ -131,17 +123,12 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
                      j, cp.node.name, cp.baseline_scale_bits,
                      cp.target_scale_bits)
 
-    # DUMMY_SINK (index M+1) has no scale
+
     dummy = graph.cut_points[M + 1]
     dummy.baseline_scale_bits = 0
     dummy.target_scale_bits = 0
 
-    # ----- 2. collect nodes in each stage --------------------------------
-    # stage k covers non-cut-point nodes with stage_anchor == k, plus
-    # the cut-point c_{k+1} itself (i.e. the multiplication at the end).
-    #
-    # We build a map stage_nodes[k] = list of ComputeNode (in topo order),
-    # NOT including c_k itself but INCLUDING c_{k+1}.
+
     cut_point_index_by_node_id: Dict[int, int] = {}
     for cp in graph.cut_points:
         cut_point_index_by_node_id.setdefault(id(cp.node), cp.index)
@@ -150,7 +137,7 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
         if node.node_type == NodeType.DUMMY_SINK:
             continue
         if node.is_cut_point:
-            # c_{idx} belongs to stage (idx-1), as the *endpoint*.
+
             idx = cut_point_index_by_node_id.get(id(node))
             if idx is None:
                 continue
@@ -164,27 +151,27 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
                 logger.warning("Node %s has stage_anchor=%d out of range",
                                node.name, k)
 
-    # Sort every stage's node list by topo_order so propagation is correct.
+
     for k in range(M + 1):
         stage_nodes[k].sort(key=lambda n: n.topo_order)
 
-    # Store into graph for downstream use (Alg 8 ValidateCutPoints)
+
     graph.stage_node_lists = stage_nodes
 
-    # ----- 3. build stage edges & tail edges -----------------------------
+
     graph.stage_edges.clear()
     graph.tail_edges.clear()
 
     for i in range(M + 1):
         t_i = graph.cut_points[i].target_scale_bits
-        # Accumulate path from c_i outward.
+
         cumulative_nodes: List[ComputeNode] = []
         cumulative_slope = 0.0
         cumulative_intercept = 0.0
         s_pre = int(t_i)
 
         for v in range(i + 1, M + 1):
-            # extend cumulative_nodes with stage (v-1) -> ending at c_v
+
             stage_chunk = stage_nodes[v - 1]
             if stage_chunk:
                 cumulative_nodes.extend(stage_chunk)
@@ -196,7 +183,7 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
             t_v = graph.cut_points[v].target_scale_bits
             d = s_pre - t_v
 
-            # ---- stage edge (i, v) -----
+
             if q_min <= d <= q_max:
                 edge = StageEdge(
                     start=i, end=v,
@@ -208,9 +195,7 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
                 )
                 graph.stage_edges[(i, v)] = edge
 
-        # ---- tail edge (i, M+1) ----
-        #   γ_tail(i) = max over v ∈ (i, M] of ( s_hat(i,v) + A_v^{budget} )
-        #   tail nodes = union of stage_nodes[i]..stage_nodes[M-1]  (ends at c_M)
+
         tail_nodes: List[ComputeNode] = []
         tail_intercept = 0.0
         tail_scale = int(t_i)
@@ -227,10 +212,7 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
             if val > gamma_tail:
                 gamma_tail = val
 
-        # When i == M the tail has no intermediate cut point -> gamma = -∞
-        # we still allow a tail edge (i=M → M+1) if M itself has a budget
-        # (the algorithm says we check intermediate v in (i, M]; if empty,
-        # there is nothing to violate, so tail is trivially feasible)
+
         if i == M:
             gamma_tail = 0
 

@@ -426,7 +426,7 @@ class LayerwiseSearchSpace:
         self.num_layers = int(num_layers)
         if self.num_layers < 1:
             raise ValueError("num_layers must be positive")
-        # Preserve the legacy flattened runtime-coordinate contract.
+
         self.dimensions = tuple(
             value
             for _layer_idx in range(self.num_layers)
@@ -655,7 +655,7 @@ class SearchConfig:
     seed: int = 42
     initial_design_size: int = 64
     candidate_pool_size: int = 512
-    # Kept for runner/config compatibility. The Stage-2 GA uses ga_population_size.
+
     population_size: int = 64
     patience_generations: int = 20
     mutation_max_coordinates: int = 4
@@ -1201,10 +1201,10 @@ def _run_greedy(
                 break
             if two_improved:
                 current = two_best
-                # The next loop always returns to exhaustive 1-opt.
+
                 continue
 
-            # Both neighborhoods for this exact point were exhaustively scanned.
+
             history.append(_best_history_row(
                 cache,
                 phase="greedy_final_verification",
@@ -1276,14 +1276,14 @@ def _candidate_pool(
             pool.append(owned)
             seen.add(owned)
 
-    # Half of every pool is globally uniform, avoiding categorical prefix bias.
+
     global_target = max(1, target // 2)
     attempts = 0
     while len(pool) < global_target and attempts < max(1000, 40 * target):
         attempts += 1
         add(space.random_action(rng))
 
-    # One quarter is atomic local search around feasibility-ranked incumbents.
+
     ranked = heapq.nlargest(
         min(16, len(cache.observations)),
         cache.observations,
@@ -1302,7 +1302,7 @@ def _candidate_pool(
             if len(pool) >= local_limit:
                 break
 
-    # The remainder is uniform again, independent of incumbent quality.
+
     attempts = 0
     while len(pool) < target and attempts < max(2000, 80 * target):
         attempts += 1

@@ -46,13 +46,9 @@ from .reward import (
 from .statistical_constraints import TrialSeries, assess_candidate
 
 
-# Reusable no-op context for the single-worker-per-device path.
 _NULL_CTX = contextlib.nullcontext()
 
 
-# ---------------------------------------------------------------------------
-# 评估子集 / forward 钩子（薄薄一层，绕过 evaluator 的 attention noise 输入参数）
-# ---------------------------------------------------------------------------
 @dataclass
 class ProbeBatch:
     """一个评估 mini-batch 的 (input_ids, attention_mask, labels, token_type_ids?)。"""
@@ -72,9 +68,6 @@ class ProbeBatch:
         return cls(input_ids=ii, attention_mask=am, labels=lb, token_type_ids=tt)
 
 
-# ---------------------------------------------------------------------------
-# Env 主类
-# ---------------------------------------------------------------------------
 def summarize_optimizer_invalid_outputs(
         outputs: Mapping[str, Any],
         *,
@@ -110,18 +103,12 @@ def summarize_optimizer_invalid_outputs(
 class BLBStage2EnvConfig:
     """``BLBStage2Env`` 的运行参数。"""
     profile: str = "mrpc"
-    num_trials_per_step: int = 3            # spec §5.3 推荐 3 次取 std
-    # ADR-012 borderline retest (2026-06-12): a metric fail whose worst
-    # per-channel deficit is within reward_weights.near_miss_band gets ONE
-    # fresh re-measurement with multiplier x num_trials_per_step trials
-    # (salted deterministic probe seed); the retest verdict replaces the
-    # first. The 2nd 60k showed ~8% of fusion-era episodes were borderline
-    # probe-quantization P1s (m1 a hair under threshold, ZERO catastrophic) —
-    # a stochastic -46 hammer that killed all fusion exploration. Only active
-    # on the deterministic probe path (probe_noise_seed set).
+    num_trials_per_step: int = 3
+
+
     borderline_retest_enabled: bool = True
     borderline_retest_trials_multiplier: int = 2
-    probe_batch_count: int = 4              # 每次 trial 跑多少 mini-batch
+    probe_batch_count: int = 4
     deterministic_eval: bool = False
     rotation_name_map: Optional[Mapping[Tuple[int, str], Mapping[str, str]]] = None
     persistent_probe_install: bool = False
@@ -187,18 +174,14 @@ class BLBStage2Env:
         self.baseline = baseline
         self.reward_weights = reward_weights
         self.acc_threshold = float(acc_threshold)
-        # v3 (2026-05-20): second metric (m2) joins the metric_ok gate. When the
-        # caller doesn't supply a per-m2 threshold, fall back to the m1
-        # threshold (preserves single-metric semantics for legacy code paths).
+
+
         self.acc_threshold_m2: Optional[float] = (
             float(acc_threshold_m2) if acc_threshold_m2 is not None else None
         )
         self.stab_threshold = float(stab_threshold)
-        # 2026-06-15: loss_mean lower-better hard threshold. Set post-construction by
-        # sequential_runner (noisy baseline × (1+limit_tol)) and read ONLY by its
-        # strict-feasibility selection — loss is a deterministic selection-only gate,
-        # NOT a per-episode reward term (ADR-016 / the 77ffdc0 determinism fix), so it
-        # is not threaded into compute_reward.
+
+
         self.loss_threshold: Optional[float] = None
         self.statistical_reference = None
         self.statistical_gate_probability = 0.50
@@ -213,47 +196,35 @@ class BLBStage2Env:
         self.env_cfg = env_cfg or BLBStage2EnvConfig()
 
         self.bridge = BLBNoiseRLBridge(handler, layers_attribute=layers_attribute)
-        # Multi-GPU probe parallelism: when set, install/clear/_eval_on_probe
-        # route to the runner instead of (self.bridge, self.model). Single-GPU
-        # runs leave this None and the existing path runs bitwise-unchanged.
+
+
         self.probe_runner = probe_runner
         self._last_probe_diagnostics: Dict[str, Any] = {}
         self._installed_config_fingerprint: Optional[str] = None
         self.pareto_cost_archive = None
-        # Counter for derive_probe_base_seed; bumped every action eval so two
-        # consecutive actions in the same episode get different seed streams.
+
+
         self._probe_eval_counter: int = 0
-        # Deterministic probe noise (2026-06-10, episode-parallel path): when
-        # set (derived from (run_seed, global_episode) by the runner), the K
-        # probe trials run serially on this env's device with the dedicated
-        # noise generator reseeded per trial — no wall clock, no global RNG
-        # mutation, identical results for any GPU count / trial scheduling.
-        # None (default) keeps the legacy true-random behavior bit-for-bit.
+
+
         self.probe_noise_seed: Optional[int] = None
-        # Per-device lock fallback for deterministic probes that still share
-        # the legacy per-device noise generator. Episode-parallel workers set
-        # probe_noise_scope below, which gives same-device siblings separate
-        # generators and avoids this lock on the hot path.
+
+
         self.probe_device_lock: Optional[Any] = None
-        # Only needed when multiple episode workers share one CUDA device and
-        # no scoped noise generator is set. In that legacy fallback case CUDA
-        # kernels are asynchronous, so the worker must finish the forward
-        # before a sibling can reseed the same device noise stream.
+
+
         self.probe_device_lock_requires_sync: bool = False
-        # Optional thread-local noise RNG scope. Episode-parallel workers set
-        # this to a unique value so same-device siblings use separate
-        # deterministic noise generators while keeping the same per-trial seed
-        # stream. None keeps the legacy per-device generator behavior.
+
+
         self.probe_noise_scope: Optional[str] = None
-        # Optional worker-local CUDA stream for same-device episode workers.
-        # It is set only by the episode-parallel runner when multiple workers
-        # share a GPU; single-worker/device runs keep the default stream.
+
+
         self.probe_cuda_stream: Optional[Any] = None
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
 
-        # state 设计：spec §5.1 minimal state
+
         self._last_total_bits_norm: float = 0.0
         self._last_fusion_count: float = 0.0
         self._last_invalid_rate: float = 0.0
@@ -286,9 +257,7 @@ class BLBStage2Env:
                 (int(block_idx), str(profile)), {}
             )
 
-        # apply_optimizer_outputs_to_cfgs remains an implementation detail of
-        # materialize_action_for_model; executable env paths do not write back
-        # optimizer results independently.
+
         return materialize_action_for_model(
             action_vec,
             profile=self.env_cfg.profile,
@@ -426,13 +395,11 @@ class BLBStage2Env:
                 updates["gelu_degree"] = list(gelu_degrees)
         return updates
 
-    # ------------------------------------------------------------------
-    # gym-like 接口
-    # ------------------------------------------------------------------
+
     @property
     def state_dim(self) -> int:
-        # 见 _build_state（与设计保持同步）
-        return 6 + 4 + self.num_layers     # static + last + per-layer step indicator
+
+        return 6 + 4 + self.num_layers
 
     def reset(
             self,
@@ -440,7 +407,7 @@ class BLBStage2Env:
             seed: Optional[int] = None,
             ) -> np.ndarray:
         """清掉所有 legacy 噪声 + BLB 残留，回到干净状态；返回 obs。"""
-        # 1) 防御式清掉旧版 stage2 RL legacy 噪声
+
         try:
             self.handler.restore_layer_input_noise(layer_indices=list(range(self.num_layers)))
         except Exception:
@@ -457,9 +424,7 @@ class BLBStage2Env:
             except Exception:
                 pass
 
-        # 2) 清掉本 env 之前可能装过的 BLB 噪声（重复 clear 安全）。
-        # Multi-GPU persistent mode deliberately keeps wrappers/hooks installed
-        # across episodes and only updates cfgs when the next action arrives.
+
         if not bool(getattr(self.env_cfg, "persistent_probe_install", False)):
             try:
                 self.clear_installed_blb()
@@ -1136,7 +1101,7 @@ class BLBStage2Env:
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
         decoded = materialized.decoded
 
-        # 1) 调 Rescale_optimizer 拿 cost 信号
+
         opt_outputs = materialized.outputs
         opt_signals = materialized.signals
         any_invalid = not bool(materialized.model_ready)
@@ -1147,8 +1112,7 @@ class BLBStage2Env:
         replan_application = materialized.replan_application
         per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
 
-        # 3) 基础诊断信息。只有完整物化的配置可以进入模型；optimizer-invalid
-        #    动作与有效但不完整的 write-back 都在下方 fail closed，不执行 forward。
+
         info: Dict[str, Any] = {
             "decoded": decoded,
             "opt_signals": opt_signals,
@@ -1171,21 +1135,7 @@ class BLBStage2Env:
             info["optimizer_cfg_overrides"] = per_config_overrides
         info["replan_application"] = replan_application
 
-        # 3.5) Short-circuit: if Rescale_optimizer already marked any block as
-        # invalid_chain, the assembled cfg is incoherent — installing it would
-        # produce NaN/inf logits and the model forward is wasted compute.
-        # Skip steps 4–6 entirely; emit a priority-3 cost-only reward (with the
-        # invalid_penalty docked) using baseline-derived placeholder metrics.
-        # This is what the user asked for on 2026-05-17: "出现invalid chain
-        # 再去做推理就没有意义了，不用再去做推理了".
-        #
-        # Placeholder metrics MUST clear the acc / stab gates so the reward
-        # ``priority`` label reflects the actual failure mode (invalid_chain →
-        # cost-layer priority=3) rather than a spurious acc-violation triggered
-        # by the placeholder defaults. We use the noisy baseline metric (if the
-        # runner has calibrated one) and otherwise fall back to the threshold
-        # value itself, which leaves ``acc_violation = stab_excess = 0`` so the
-        # only reward contribution from the gate path is ``invalid_term``.
+
         if any_invalid:
             placeholder_metric1 = float(self.baseline.metric1_mean or 0.0)
             if placeholder_metric1 < float(self.acc_threshold):
@@ -1197,9 +1147,8 @@ class BLBStage2Env:
             if placeholder_loss_std > float(self.stab_threshold):
                 placeholder_loss_std = float(self.stab_threshold)
             placeholder_loss_mean = float(self.baseline.loss_mean or 0.0)
-            # v3 stability path: m1_std/m2_std also enter combined_stab_excess.
-            # Use baseline stds (which v3 thresholds will treat as "passing" by
-            # construction) so the short-circuit can't trip stab_violation.
+
+
             placeholder_m1_std = float(self.baseline.metric1_std or 0.0)
             placeholder_m2_std = float(self.baseline.metric2_std or 0.0)
             metrics = EpisodeMetrics(
@@ -1238,12 +1187,7 @@ class BLBStage2Env:
             self._last_fusion_count = float(opt_signals.total_fusion_count)
             return self._build_state(), float(breakdown.reward), True, info
 
-        # 4) 装 BLB 噪声
-        # first_input fresh 噪声不再注入。Layer-0 Block1 以 K-only cfg 安装：
-        # Gaussian/rotation 关闭，但 policy 选出的 truncation K 会真实执行。
-        # first_input_sf 字段只保留为占位 0，不传给 bridge。
-        # When probe_runner is set (multi-GPU), install on every worker so each
-        # GPU's model carries the same BLB cfg before its trial subset runs.
+
         persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))
         config_fingerprint = materialized.final_config_fingerprint
         install_skipped = False
@@ -1277,7 +1221,7 @@ class BLBStage2Env:
                 pass
             timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
             timing["probe_install_skipped"] = float(0.0)
-            # 互斥校验失败，按 invalid 处理
+
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
             breakdown = self._compute_terminal_reward(
                 metrics,
@@ -1305,7 +1249,7 @@ class BLBStage2Env:
         timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
         timing["probe_install_skipped"] = float(1.0 if install_skipped else 0.0)
 
-        # 5) forward + metrics（多 trial）
+
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
             info["forward_ran"] = True
@@ -1360,7 +1304,7 @@ class BLBStage2Env:
                 diag["probe_clear_skipped"] = bool(persistent_install)
                 info["probe_diagnostics"] = diag
 
-        # 6) reward
+
         breakdown = self._compute_terminal_reward(
             metrics,
             opt_signals,
@@ -1377,7 +1321,7 @@ class BLBStage2Env:
         info["action_hash"] = action_vec_hash
         info["metrics"] = metrics
 
-        # state 更新
+
         self._step_idx += 1
         self._last_invalid_rate = 1.0 if any_invalid else 0.0
         self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
@@ -1385,9 +1329,7 @@ class BLBStage2Env:
 
         return self._build_state(), float(breakdown.reward), True, info
 
-    # ------------------------------------------------------------------
-    # Multi-GPU probe seed derivation
-    # ------------------------------------------------------------------
+
     def _derive_probe_base_seed(self) -> int:
         """Per-action probe seed for the ProbeRunner.
 
@@ -1404,9 +1346,7 @@ class BLBStage2Env:
             ) & 0x7FFFFFFFFFFFFFFF
         )
 
-    # ------------------------------------------------------------------
-    # 评估子集 forward（单层 K-trials）
-    # ------------------------------------------------------------------
+
     def _acc_worst_deficit_norm(self, metrics: EpisodeMetrics) -> float:
         """Worst per-channel accuracy deficit normalized by |baseline - thr|.
 
@@ -1465,7 +1405,7 @@ class BLBStage2Env:
         mult = max(1, int(getattr(self.env_cfg, "borderline_retest_trials_multiplier", 2)))
         retest_k = mult * max(1, int(self.env_cfg.num_trials_per_step))
         first_seed = int(self.probe_noise_seed)
-        # Golden-ratio salt -> a disjoint deterministic trial-seed stream.
+
         self.probe_noise_seed = int(
             (first_seed ^ 0x9E3779B97F4A7C15) & 0x7FFFFFFFFFFFFFFF
         )
@@ -1493,13 +1433,11 @@ class BLBStage2Env:
         """
         k = max(1, int(k_trials))
 
-        # Deterministic episode-parallel path: keyed noise, own-device only,
-        # NO global RNG save/restore (set_rng_state_all from concurrent worker
-        # threads would clobber sibling workers' freshly-seeded generators).
+
         if self.probe_noise_seed is not None and self.probe_runner is None:
             return self._eval_on_probe_deterministic(k)
 
-        # 保存外层 RNG 状态以避免污染
+
         cpu_rng = torch.get_rng_state()
         cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
         np_rng = np.random.get_state()
@@ -1512,7 +1450,7 @@ class BLBStage2Env:
 
         try:
             if self.probe_runner is not None:
-                # ---- Multi-GPU path: fan out via ProbeRunner ----
+
                 base_seed = (
                     int(self.probe_noise_seed)
                     if self.probe_noise_seed is not None
@@ -1528,20 +1466,20 @@ class BLBStage2Env:
                     )
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
-                        # NaN/inf from a probe trial is kept and handled below
-                        # via _LOSS_CAP clamping (same semantics as single-GPU).
+
+
                         per_trial_loss.append(float(loss) if loss is not None else float("nan"))
                     else:
                         per_trial_loss.append(float(loss))
                     per_trial_metric1.append(float(m1))
                     per_trial_metric2.append(float(m2))
             else:
-                # ---- Single-GPU path (unchanged from pre-multi-GPU era) ----
+
                 was_training = self.model.training
                 self.model.eval()
                 try:
                     for trial_idx in range(k):
-                        # 独立 trial seed —— 让噪声采样独立，但模型权重 / data 不变
+
                         seed = (int(time.time_ns()) ^ (trial_idx * 1_000_003)) & 0x7FFFFFFFFFFFFFFF
                         torch.manual_seed(seed)
                         np.random.seed(seed % (2**32))
@@ -1718,13 +1656,7 @@ class BLBStage2Env:
         m1_arr = np.array(per_trial_metric1, dtype=float)
         m2_arr = np.array(per_trial_metric2, dtype=float)
 
-        # Clamp non-finite cross-entropy outputs (heavy BLB noise can push some
-        # trials to inf/nan via logit overflow). Without the clamp a *single*
-        # overflowing trial would make np.std → inf, every action would land in
-        # the same priority-2 fallback bucket (terminal_reward ≡ -150), and PPO
-        # would see no gradient between candidates. Clamping to 100 (≫ a
-        # normal MRPC cross_entropy in [0, 5]) preserves rank order while
-        # keeping the std finite and comparable across actions.
+
         _LOSS_CAP = 100.0
         loss_arr = np.nan_to_num(loss_arr, nan=_LOSS_CAP, posinf=_LOSS_CAP, neginf=_LOSS_CAP)
         loss_arr = np.clip(loss_arr, 0.0, _LOSS_CAP)
@@ -1747,9 +1679,7 @@ class BLBStage2Env:
             trial_seeds=normalized_trial_seeds,
         )
 
-    # ------------------------------------------------------------------
-    # state 构造
-    # ------------------------------------------------------------------
+
     def _build_state(self) -> np.ndarray:
         """spec §5.1 最小 state（带 per-layer indicator 占位）。
 
@@ -1764,7 +1694,7 @@ class BLBStage2Env:
             float(self.gelu_degree_state),
             float(self.num_layers),
         ]
-        # profile ID hash → 2 维 [-1, 1]
+
         h = abs(hash(self.env_cfg.profile)) & 0xFFFFFFFF
         prof = [
             ((h % 1009) / 1009.0) * 2.0 - 1.0,
@@ -1778,7 +1708,7 @@ class BLBStage2Env:
         ]
         per_layer = [(li % 12) / 12.0 for li in range(self.num_layers)]
         state = np.asarray(static + prof[:1] + last + per_layer, dtype=np.float32)
-        # 保证 state_dim 一致
+
         target_dim = self.state_dim
         if state.shape[0] < target_dim:
             pad = np.zeros(target_dim - state.shape[0], dtype=np.float32)
@@ -1788,9 +1718,6 @@ class BLBStage2Env:
         return state
 
 
-# ---------------------------------------------------------------------------
-# Baseline 计算辅助（spec §6.3）
-# ---------------------------------------------------------------------------
 def estimate_baseline_cost_stats(
         env: BLBStage2Env,
         sample_count: int = 1,
@@ -1824,8 +1751,7 @@ def estimate_baseline_cost_stats(
     baseline_fusion_count = int(precomputed_baseline_signals.get("total_fusion_count", 0))
     baseline_avg_k = float(precomputed_baseline_signals.get("avg_k", max(K_LEVELS)))
 
-    # 估计典型 drop —— 仍然走 RO 评估，因为我们需要"random action 相对 baseline 的 cost
-    # 差"来反推 reward 权重。precomputed 路径下 baseline_total_bits 是权威值。
+
     bits_drops: List[float] = []
     fusion_counts: List[float] = []
     k_drops: List[float] = []

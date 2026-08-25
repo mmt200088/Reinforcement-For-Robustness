@@ -105,6 +105,11 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "rl_ga_compare_runner.py",
             "--stage2-rl-variant",
             "legacy_v2",
+            "--use_ist",
+            "--adapter_name",
+            "--target_modules",
+            "--micro_batch_size",
+            "--num_epochs",
         ):
             self.assertNotIn(removed, source)
         self.assertIn("python rl_tune.py", source)

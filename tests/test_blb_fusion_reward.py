@@ -1,102 +1,18 @@
-"""Torch-free tests for the Stage-2 fusion-count reward redesign (2026-06-03).
-
-Covers the pure per-block weighted cost helper (``fusion_cost``) and the
-``external_cost`` threading in ``reward.compute_reward``. Both modules are torch-free
-and imported by bare name with ``blb_stage2_rl/`` on ``sys.path`` (the package
-``__init__`` pulls torch, which the local box lacks).
-"""
+"""Stage-2 fusion-count reward invariants."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-import importlib.util
-import pathlib
-import sys
 import unittest
-from unittest import mock
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import fusion_cost
-import fusion_count_map as fcm
-import fusion_enum
-import layerwise_action
-import reward as rwd
+from blb_stage2_rl import action_space as _asp
+from blb_stage2_rl import fusion_cost
+from blb_stage2_rl import fusion_count_map as fcm
+from blb_stage2_rl import fusion_enum
+from blb_stage2_rl import layerwise_action
+from blb_stage2_rl import reward as rwd
 
 
-_MISSING_MODULE = object()
-
-
-@contextmanager
-def _load_standalone_without_sibling_path(filename):
-    module_name = f"_fusion_reward_{pathlib.Path(filename).stem}_standalone"
-    original_path = list(sys.path)
-    previous_module = sys.modules.pop(module_name, _MISSING_MODULE)
-    previous_truncation = sys.modules.pop("truncation_levels", _MISSING_MODULE)
-    try:
-        blb_dir = _BLB_DIR.resolve()
-        sys.path[:] = [
-            entry
-            for entry in sys.path
-            if pathlib.Path(entry or ".").resolve() != blb_dir
-        ]
-        spec = importlib.util.spec_from_file_location(
-            module_name,
-            _BLB_DIR / filename,
-        )
-        if spec is None or spec.loader is None:
-            raise AssertionError(f"cannot load standalone module: {filename}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        sys.path[:] = original_path
-        sys.modules.pop(module_name, None)
-        if previous_module is not _MISSING_MODULE:
-            sys.modules[module_name] = previous_module
-        sys.modules.pop("truncation_levels", None)
-        if previous_truncation is not _MISSING_MODULE:
-            sys.modules["truncation_levels"] = previous_truncation
-
-
-try:  # action_space transitively imports torch (blb_rl_bridge) — skip locally if absent
-    import action_space as _asp
-    _HAS_ASP = True
-except Exception:
-    _HAS_ASP = False
-
-# Spec weights: block1:block2:block4:block5:truncation = 80:150:130:40:50.
 FW = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
 TW = 50.0
-
-
-class StandaloneImportCompatibilityTest(unittest.TestCase):
-    def test_fusion_cost_loads_without_sibling_path_or_cached_module(self):
-        with _load_standalone_without_sibling_path("fusion_cost.py") as module:
-            self.assertEqual((module.K_MAX_BITS, module.K_MIN_BITS), (13, 6))
-
-    def test_reward_cost_fraction_uses_k6_k13_domain_when_loaded_standalone(self):
-        with _load_standalone_without_sibling_path("reward.py") as module:
-            baseline = module.BaselineCostStats(total_bits_sum=200, avg_k=13.0)
-            weights = module.RewardWeights()
-            for action_avg_k, expected in (
-                (13.0, 0.0),
-                (8.0, 5.0 / 7.0),
-                (6.0, 1.0),
-            ):
-                with self.subTest(action_avg_k=action_avg_k):
-                    actual = module._stage1_aligned_cost_fraction(
-                        external_cost_score=None,
-                        baseline=baseline,
-                        opt_total_bits=200.0,
-                        action_avg_k=action_avg_k,
-                        weights=weights,
-                    )
-                    self.assertAlmostEqual(actual, expected)
 
 
 class _Sig:
@@ -225,8 +141,8 @@ def _baseline():
 
 
 def _weights():
-    # The active default is Stage-1-aligned; these tests assert the historical
-    # TIERED P3≈40 behavior, so pin tiered.
+
+
     return rwd.RewardWeights(baseline_metric1=0.85, baseline_metric2=0.85,
                              reward_design="tiered")
 
@@ -243,7 +159,7 @@ def _bc(block_idx, fusion_count, max_fusion, k_value, graph_key="g"):
 
 class FusionCostSavingTest(unittest.TestCase):
     def test_baseline_zero_saving(self):
-        # All option 0 (fusion_count=0) + K=max(13) => zero saving.
+
         choices = [
             _bc(2, 0, 1, 13),
             _bc(5, 0, 1, 13),
@@ -253,11 +169,11 @@ class FusionCostSavingTest(unittest.TestCase):
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertEqual(res.cost_norm, 0.0)
         self.assertEqual(res.cost_rank, 0.0)
-        # denom = block2 fusion 150 + block5 fusion 40 + 4 * trunc 50 = 390.
+
         self.assertAlmostEqual(res.max_actual, 390.0)
 
     def test_full_saving_normalizes_to_one(self):
-        # fusion_count == max_fusion AND K=min(6) on every fusable lever.
+
         choices = [
             _bc(2, 1, 1, 6),
             _bc(5, 1, 1, 6),
@@ -269,18 +185,18 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(res.cost_rank, 390.0)
 
     def test_block1_block4_fusion_inert(self):
-        # max_fusion==0 => fusion weight never contributes (even with a bogus count),
-        # and the 80/130 fusion weights are absent from the normalizer.
+
+
         choices = [_bc(1, 99, 0, 6), _bc(4, 99, 0, 6)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
-        self.assertAlmostEqual(res.max_actual, 100.0)  # 2 * trunc only, no 80/130
-        self.assertAlmostEqual(res.cost_rank, 100.0)   # 2 * (50 * trunc_saving=1)
+        self.assertAlmostEqual(res.max_actual, 100.0)
+        self.assertAlmostEqual(res.cost_rank, 100.0)
         for pb in res.per_block:
             self.assertEqual(pb["fusion_contrib"], 0.0)
             self.assertEqual(pb["fusion_saving"], 0.0)
 
     def test_trunc_saving_linear(self):
-        # K=13 -> 0, K=6 -> 1; check the intermediate K=11 -> (13-11)/7.
+
         choices = [_bc(2, 0, 1, 11)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         trunc_saving = (13.0 - 11.0) / 7.0
@@ -301,7 +217,7 @@ class FusionCostSavingTest(unittest.TestCase):
         res = fusion_cost.compute_fusion_cost_saving(
             choices, fusion_w=FW, trunc_w=TW, max_actual=400.0
         )
-        # actual = 150 + 50 = 200 ; norm = 200/400 = 0.5.
+
         self.assertAlmostEqual(res.cost_norm, 0.5)
         self.assertAlmostEqual(res.max_actual, 400.0)
 
@@ -318,7 +234,7 @@ class FusionCostSavingTest(unittest.TestCase):
         finally:
             fusion_cost.max_actual_for_choices = original
 
-        # denom = fusable block2+block5 fusion weights + 3 truncation weights.
+
         self.assertAlmostEqual(res.max_actual, 150.0 + 40.0 + 3 * 50.0)
 
 
@@ -337,8 +253,8 @@ class NearMissGradedTierTest(unittest.TestCase):
     THR = 0.858
 
     def _reward(self, m1):
-        # ADR-013: the near-miss tier is now the legacy fallback (the log-barrier
-        # supersedes it by default); test it explicitly with the barrier off.
+
+
         w = rwd.RewardWeights(
             baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1,
             acc_barrier_enabled=False, reward_design="tiered",
@@ -371,11 +287,11 @@ class NearMissGradedTierTest(unittest.TestCase):
         self.assertGreaterEqual(b.reward, 40.0)
 
     def test_tiny_miss_graded_not_cliff(self):
-        b = self._reward(0.8570)   # ~1 probe quantum below thr
-        self.assertEqual(b.priority, 1)        # selection semantics unchanged
+        b = self._reward(0.8570)
+        self.assertEqual(b.priority, 1)
         self.assertTrue(b.near_miss)
-        self.assertGreater(b.reward, 25.0)     # nowhere near the -5 cliff
-        self.assertLess(b.reward, 40.0)        # strictly below ANY P3
+        self.assertGreater(b.reward, 25.0)
+        self.assertLess(b.reward, 40.0)
 
     def test_grading_monotonic_in_deficit(self):
         rewards = [self._reward(m1).reward for m1 in (0.857, 0.854, 0.851, 0.849)]
@@ -420,7 +336,7 @@ class NearMissGradedTierTest(unittest.TestCase):
         self.assertLess(b.reward, 0.0)
 
     def test_near_miss_below_every_p3(self):
-        # max near-miss (deficit -> 0+) must stay under min P3 (tier 40 + >=0).
+
         nm = self._reward(self.THR - 1e-5)
         p3_floor = self._reward(self.THR + 1e-5)
         self.assertTrue(nm.near_miss)
@@ -440,7 +356,7 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertEqual(res.fusion_norm, 0.0)
         self.assertEqual(res.trunc_norm, 0.0)
-        # fusion max counts only fusable levers (block2 + block5); trunc max = 3 blocks.
+
         self.assertAlmostEqual(res.fusion_max_actual, 190.0)
         self.assertAlmostEqual(res.trunc_max_actual, 150.0)
 
@@ -477,8 +393,8 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         self.assertAlmostEqual(res.trunc_norm, 1.0)
 
     def test_fusion_degenerate_schedule_has_zero_fusion_max(self):
-        # all-block1/block4 schedule: no fusion lever anywhere -> fusion_norm
-        # pinned 0 with no division blowup.
+
+
         choices = [_bc(1, 0, 0, 6), _bc(4, 0, 0, 6)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertEqual(res.fusion_max_actual, 0.0)
@@ -486,10 +402,8 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         self.assertAlmostEqual(res.trunc_norm, 1.0)
 
     def test_split_budget_marginal_fusion_visible(self):
-        # mrpc-47-like schedule: 12x block2 + 12x block4 + 12x block5 fusable,
-        # 11x block1 K-only (47 blocks). With budget 4.5 split equally between
-        # fusion and K, one block5 flip must stay visible and block2 must be
-        # larger by the configured block-type weight ratio.
+
+
         baseline = (
             [_bc(2, 0, 1, 13) for _ in range(12)]
             + [_bc(4, 0, 1, 13) for _ in range(12)]
@@ -507,7 +421,7 @@ class BudgetSplitComponentsTest(unittest.TestCase):
             r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=FW, trunc_w=TW)
             return r.fusion_norm * budget * frac + r.trunc_norm * budget * (1 - frac)
         self.assertAlmostEqual(score(baseline), 0.0)
-        # fusion max = 12*150 + 12*130 + 12*40 = 3840
+
         self.assertAlmostEqual(score(one_b5), 40.0 / 3840.0 * 2.25)
         self.assertGreaterEqual(score(one_b5), 0.02)
         self.assertAlmostEqual(score(one_b2), 150.0 / 3840.0 * 2.25)
@@ -536,7 +450,7 @@ class ExternalCostThreadingTest(unittest.TestCase):
         self.assertEqual((rwd.K_MAX_BITS, rwd.K_MIN_BITS), (13, 6))
 
     def test_p3_uses_external_cost(self):
-        # accuracy ok (m == baseline) + stability ok (std 0) => P3; external cost used.
+
         metrics = rwd.EpisodeMetrics(
             loss_mean=0.3, loss_std=0.0,
             metric1_mean=0.85, metric2_mean=0.85,
@@ -549,7 +463,7 @@ class ExternalCostThreadingTest(unittest.TestCase):
         self.assertEqual(bd.priority, 3)
         self.assertAlmostEqual(bd.cost_score, 3.0)
         self.assertAlmostEqual(bd.cost_rank_score, 999.0)
-        self.assertGreater(bd.reward, 40.0)  # tier +40 floor + margin + cost
+        self.assertGreater(bd.reward, 40.0)
 
     def test_external_cost_clipped_to_budget(self):
         metrics = rwd.EpisodeMetrics(
@@ -562,10 +476,10 @@ class ExternalCostThreadingTest(unittest.TestCase):
             metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=w,
             external_cost_score=999.0, external_cost_rank=999.0,
         )
-        self.assertAlmostEqual(bd.cost_score, float(w.p3_cost_budget))  # clipped
+        self.assertAlmostEqual(bd.cost_score, float(w.p3_cost_budget))
 
     def test_p1_ignores_external_cost(self):
-        # accuracy fail (m below threshold) => P1; external cost must not contribute.
+
         metrics = rwd.EpisodeMetrics(
             loss_mean=2.0, loss_std=0.0,
             metric1_mean=0.50, metric2_mean=0.50,
@@ -581,7 +495,7 @@ class ExternalCostThreadingTest(unittest.TestCase):
         self.assertLessEqual(bd.reward, 0.0)
 
     def test_none_external_cost_preserves_legacy_path(self):
-        # Without external cost the old aggregate path still produces a P3 reward.
+
         metrics = rwd.EpisodeMetrics(
             loss_mean=0.3, loss_std=0.0,
             metric1_mean=0.85, metric2_mean=0.85,
@@ -591,7 +505,7 @@ class ExternalCostThreadingTest(unittest.TestCase):
             metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=_weights(),
         )
         self.assertEqual(bd.priority, 3)
-        # legacy path: cost_score comes from the aggregate scalar (no exception).
+
         self.assertIsInstance(bd.cost_score, float)
 
 
@@ -615,7 +529,7 @@ class RealMapIntegrationTest(unittest.TestCase):
     _SCHED = ((1, "block1_mrpc", 11), (2, "block2_mrpc", 12), (4, "block4", 12), (5, "block5_n4", 12))
 
     def test_block2_block5_fusable_and_all_maps_load(self):
-        # block2 / block5_n4 fuse under any map version; block1/block4 are {0 or 1}.
+
         self.assertGreaterEqual(self._max_fusion("block2_mrpc"), 1)
         self.assertGreaterEqual(self._max_fusion("block5_n4"), 1)
         self.assertIn(self._max_fusion("block1_mrpc"), (0, 1))
@@ -673,16 +587,16 @@ class PinClassificationCriterionTest(unittest.TestCase):
 
     def test_joint_encode_kept_by_bits_proxy(self):
         base_key = (0, 100)
-        # an encode lowered alone: fusion UNCHANGED (it is only a joint lever), but
-        # total_bits drops -> the (fusion, bits) probe must force enumeration.
+
+
         probe = {"valid": True, "fusion_count": 0, "total_bits": 96}
         self.assertTrue(fusion_enum._level_breaks_pin(probe, base_key))
-        # the latent bug it guards: fusion alone is unchanged, so a fusion-only
-        # predicate would (wrongly) keep the slot pinnable.
+
+
         self.assertEqual(int(probe["fusion_count"]), base_key[0])
 
     def test_truly_inert_slot_is_pinnable(self):
-        # moves neither fusion nor bits -> safe to pin at baseline (min noise).
+
         self.assertFalse(fusion_enum._level_breaks_pin({"valid": True, "fusion_count": 0, "total_bits": 100}, (0, 100)))
 
     def test_fusion_change_breaks_pin(self):
@@ -702,8 +616,8 @@ class ShardedReduceEquivalenceTest(unittest.TestCase):
 
         rng = random.Random(1234)
         EC = fusion_enum.EvaluatedConfig
-        cfgs = [EC((9, 9, 9), 0, 100, 1.0, (-1,), {})]  # baseline: fc0, global-min var
-        # explicit fc=1 ties at the fc=1 minimum (distinct signatures, all kept).
+        cfgs = [EC((9, 9, 9), 0, 100, 1.0, (-1,), {})]
+
         cfgs += [EC((1, 2, 3), 1, 90, 1.2, (-2,), {}),
                  EC((3, 2, 1), 1, 95, 1.2, (-3,), {}),
                  EC((2, 1, 3), 1, 88, 1.2, (-4,), {})]
@@ -729,7 +643,7 @@ class ShardedReduceEquivalenceTest(unittest.TestCase):
             merged.extend(r.results())
         sharded = fusion_enum.group_min_noise_options(merged, baseline)
         self.assertEqual(self._keys(batch), self._keys(sharded))
-        # the fc=1 minimum has 3 tied members; all must survive both paths.
+
         fc1_batch = [o for o in batch if o["fusion_count"] == 1]
         self.assertEqual(len(fc1_batch), 3)
 
@@ -738,11 +652,10 @@ class ShardedReduceEquivalenceTest(unittest.TestCase):
         r = fusion_enum._MinNoiseReducer()
         for ec in cfgs:
             r.add(ec)
-        self.assertEqual(r.num_valid, len(cfgs))  # true count preserved
-        self.assertLess(len(r.results()), len(cfgs))  # kept set is small
+        self.assertEqual(r.num_valid, len(cfgs))
+        self.assertLess(len(r.results()), len(cfgs))
 
 
-@unittest.skipUnless(_HAS_ASP, "action_space requires torch (server contract gate)")
 class UniformStep1DecodeTest(unittest.TestCase):
     """2026-06-11 rule (supersedes the 2026-06-04 hybrid 2/1 sweep): all SF kinds
     use a UNIFORM step-1 downward sweep from the baseline SF, 15 levels max, no
@@ -755,18 +668,18 @@ class UniformStep1DecodeTest(unittest.TestCase):
         self.assertEqual(_asp.LEVELS_W, 15)
         self.assertEqual(_asp.LEVELS_MS, 15)
         self.assertEqual(_asp.LEVELS_R, 15)
-        self.assertFalse(hasattr(_asp, "MIN_SF_FLOOR"))  # no floor (user spec)
+        self.assertFalse(hasattr(_asp, "MIN_SF_FLOOR"))
 
     def test_step1_sweep_full_integer_range(self):
-        # baseline 30 -> 30,29,28,...,16 (idx 14..0, uniform step 1).
+
         got = [_asp.sf_from(i, 30, 15) for i in range(14, -1, -1)]
         self.assertEqual(got, list(range(30, 15, -1)))
 
     def test_rescale_idx0_none_max_idx_is_baseline(self):
         self.assertIsNone(_asp._rescale_sf_from_index(0, 30))
-        self.assertEqual(_asp._rescale_sf_from_index(14, 30), 30)  # max idx -> baseline SF
-        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 17)   # offset 13 (step-1)
-        # baseline invariant: max idx decodes to max_sf so option0 == baseline.
+        self.assertEqual(_asp._rescale_sf_from_index(14, 30), 30)
+        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 17)
+
         self.assertEqual(_asp._rescale_sf_from_index(_asp.LEVELS_R - 1, 27), 27)
 
     def test_field_level_values_rescale_and_fresh(self):
@@ -778,36 +691,34 @@ class UniformStep1DecodeTest(unittest.TestCase):
         self.assertEqual([int(v) for v in f], list(range(16, 31)))
 
     def test_low_baseline_sf_snaps_to_floor(self):
-        # baseline SF 14: deep levels fall below 10 -> snapped to 10.
+
         vlow = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=14, N=16384)
         self.assertTrue(all(int(v) >= 10 for v in vlow))
-        self.assertEqual(int(vlow[-1]), 14)   # max idx -> baseline SF
+        self.assertEqual(int(vlow[-1]), 14)
 
     def test_distinct_level_indices_skip_duplicate_values_only(self):
-        # baseline 30: all 15 step-1 values distinct -> all 15 enumerable.
+
         self.assertEqual(
             _asp.distinct_sf_level_indices(kind="F", levels=15, max_sf=30, N=16384),
             list(range(15)),
         )
-        # baseline 20: values 20..10 then snap-duplicates of 10 below -> keep
-        # the LOWEST index per value (lex-min representative the post-eval
-        # signature dedup would keep): [0] + idx 5..14 = 11 levels (20..10).
+
+
         d20 = _asp.distinct_sf_level_indices(kind="F", levels=15, max_sf=20, N=16384)
         self.assertEqual(d20, [0] + list(range(5, 15)))
         vals20 = _asp._field_level_values(kind="F", levels=15, max_sf=20, N=16384)
         self.assertEqual(sorted(int(vals20[i]) for i in d20), list(range(10, 21)))
-        # baseline 14: distinct values {14,13,12,11,10} -> [0, 11, 12, 13, 14].
+
         self.assertEqual(
             _asp.distinct_sf_level_indices(kind="F", levels=15, max_sf=14, N=16384),
             [0, 11, 12, 13, 14],
         )
-        # R: idx0 (None/drop) never enumerable; baseline 30 keeps idx 1..14.
+
         dr = _asp.distinct_sf_level_indices(kind="R", levels=15, max_sf=30, N=16384)
         self.assertEqual(dr, list(range(1, 15)))
 
     def test_block_default_N_forced_to_16384(self):
         for b in (1, 2, 3, 4, 5):
-            self.assertEqual(_asp._block_default_N(b, gelu_degree=0, attn_degree=2), 16384)
             self.assertEqual(_asp._block_default_N(b, gelu_degree=4, attn_degree=4), 16384)
 
 

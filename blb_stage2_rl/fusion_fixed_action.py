@@ -111,10 +111,7 @@ def reconstruct_fusion_group(
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    try:  # torch-free test lane (blb_stage2_rl on sys.path)
-        from action_space import K_LEVELS, step_schedule
-    except ImportError:  # package context
-        from .action_space import K_LEVELS, step_schedule
+    from .action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     schedule = step_schedule(
@@ -134,9 +131,8 @@ def reconstruct_fusion_group(
         graph_key = str(step.graph_key_suffix)
         graph = fusion_map.graphs.get(graph_key)
         if graph is None:
-            # Layerwise Stage-2 owns only K for Blocks 1 and 3. Their SF chain
-            # stays on the calibrated baseline, so large-profile map bundles
-            # intentionally omit these non-fusion graphs.
+
+
             if int(step.block_idx) in (1, 3):
                 continue
             raise KeyError(f"fusion map missing graph {graph_key!r}")
@@ -211,10 +207,7 @@ def build_boosted_overrides_from_group(
     if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
         raise ValueError("fusion group requires option_by_step or option_by_graph")
 
-    try:  # torch-free test lane (blb_stage2_rl on sys.path)
-        from action_space import K_LEVELS, step_schedule
-    except ImportError:  # package context
-        from .action_space import K_LEVELS, step_schedule
+    from .action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
@@ -342,10 +335,7 @@ def build_fusion_fixed_config(
     directly consumable by the GLUE / final-eval paths without separate Stage-1
     args, and ``group.option_by_step`` so the boost is replayed."""
     if fusion_map is None:
-        try:  # torch-free test lane
-            from fusion_count_map import FusionCountMap
-        except ImportError:  # package context
-            from .fusion_count_map import FusionCountMap
+        from .fusion_count_map import FusionCountMap
         fusion_map = FusionCountMap.load(str(profile))
 
     group = reconstruct_fusion_group(
@@ -364,8 +354,8 @@ def build_fusion_fixed_config(
         "source": source or "reconstructed_from_flat_best_action",
         "source_path": str(source_path),
         "action_vec": [int(x) for x in action_arr.tolist()],
-        # Stage-1 ladder travels with the action so a single JSON fully specifies
-        # the deployed config (boost replayed via group, degrees via these).
+
+
         "gelu_degree": [int(x) for x in gelu],
         "attn_degree": [int(x) for x in softmax],
         "group": {

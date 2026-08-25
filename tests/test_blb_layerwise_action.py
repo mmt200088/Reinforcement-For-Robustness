@@ -11,16 +11,17 @@ from unittest import mock
 import numpy as np
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-for _path in (str(_REPO_ROOT), str(_BLB_DIR)):
+for _path in (str(_REPO_ROOT),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-import fusion_count_map as fcm
-import layerwise_action as layerwise
+from blb_stage2_rl import fusion_count_map as fcm
+from blb_stage2_rl import layerwise_action as layerwise
 
 try:
-    from action_space import make_all_max_action_vector as _make_all_max_action_vector
+    from blb_stage2_rl.action_space import (
+        make_all_max_action_vector as _make_all_max_action_vector,
+    )
 except ImportError:
     _make_all_max_action_vector = None
 

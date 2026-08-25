@@ -6,14 +6,12 @@ from dataclasses import dataclass
 import math
 from typing import Tuple
 
-try:
-    from .truncation_levels import K_LEVELS
-except ImportError:  # pragma: no cover - legacy top-level import compatibility
-    from truncation_levels import K_LEVELS
+from .truncation_levels import K_LEVELS
 
 
 @dataclass(frozen=True)
 class PrecisionPreset:
+    # Ciphertext K is report metadata; simulation K is installed in the model.
     name: str
     ciphertext_k_by_block: Tuple[int, int, int, int, int]
     simulation_k_by_block: Tuple[int, int, int, int, int]

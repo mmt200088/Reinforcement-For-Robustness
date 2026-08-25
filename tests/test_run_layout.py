@@ -46,7 +46,7 @@ class ComboAndPathTest(unittest.TestCase):
             rl.stage_working_dir(2, "bert-large", "rte", root=root),
             os.path.join(root, "stage2", "bert large rte"),
         )
-        # 没有冗余的内层 stage1/ — 直接 {combo}。
+
         self.assertNotIn(
             os.path.join("bert base mrpc", "stage1"),
             rl.stage_working_dir(1, "bert-base", "mrpc", root=root),
@@ -62,7 +62,7 @@ class ComboAndPathTest(unittest.TestCase):
         self.assertEqual(
             rl.run_id("bert-base", "rte", 1, "20260530"), "bert base rte 1 20260530"
         )
-        # 带时间的时间戳取前 8 位日期。
+
         self.assertEqual(
             rl.run_id("bert-base", "mrpc", 12, "20260531_141500"),
             "bert base mrpc 12 20260531",
@@ -91,21 +91,21 @@ class RunNumberScanTest(unittest.TestCase):
     def test_combos_are_independent(self):
         self._mk_record(1, "bert base rte 1 20260530")
         self._mk_record(1, "bert base mrpc 1 20260530")
-        # rte 已有 1 -> 下一个 2；mrpc 已有 1 -> 下一个 2；互不影响。
+
         self.assertEqual(rl.next_run_number(1, "bert-base", "rte", root=self.tmp), 2)
         self.assertEqual(rl.next_run_number(1, "bert-base", "mrpc", root=self.tmp), 2)
-        # sst2 没有 record -> 1。
+
         self.assertEqual(rl.next_run_number(1, "bert-base", "sst2", root=self.tmp), 1)
 
     def test_sst2_number_in_combo_parses(self):
-        # combo 自身以数字结尾（sst2），序号解析不能被它干扰。
+
         self._mk_record(1, "bert base sst2 1 20260530")
         self._mk_record(1, "bert base sst2 2 20260531")
         self.assertEqual(rl.next_run_number(1, "bert-base", "sst2", root=self.tmp), 3)
         self.assertEqual(
             rl.existing_run_numbers(1, "bert-base", "sst2", root=self.tmp), [1, 2]
         )
-        # bert large sst2 是不同 combo，不该被 bert base sst2 计入。
+
         self.assertEqual(rl.next_run_number(1, "bert-large", "sst2", root=self.tmp), 1)
 
     def test_stage1_stage2_independent(self):
@@ -115,18 +115,18 @@ class RunNumberScanTest(unittest.TestCase):
     def test_garbage_entries_ignored(self):
         self._mk_record(1, "bert base rte 1 20260530")
         self._mk_record(1, "not-a-run-id")
-        self._mk_record(1, "bert base rte X 20260530")  # 序号非数字
-        self._mk_record(1, "bert base rte 2 2026")      # 日期非 8 位
+        self._mk_record(1, "bert base rte X 20260530")
+        self._mk_record(1, "bert base rte 2 2026")
         self.assertEqual(rl.next_run_number(1, "bert-base", "rte", root=self.tmp), 2)
 
     def test_find_record_dir(self):
         self._mk_record(2, "bert base mrpc 1 20260530")
         d2 = self._mk_record(2, "bert base mrpc 2 20260531")
-        # 缺省取最大 N。
+
         self.assertEqual(
             rl.find_record_dir(2, "bert-base", "mrpc", root=self.tmp), d2
         )
-        # 指定 run_id_name 精确匹配。
+
         self.assertEqual(
             rl.find_record_dir(
                 2, "bert-base", "mrpc", run_id_name="bert base mrpc 1 20260530",
@@ -134,7 +134,7 @@ class RunNumberScanTest(unittest.TestCase):
             ),
             os.path.join(rl.stage_record_root(2, root=self.tmp), "bert base mrpc 1 20260530"),
         )
-        # 不存在 -> None。
+
         self.assertIsNone(
             rl.find_record_dir(2, "bert-base", "rte", root=self.tmp)
         )
@@ -172,7 +172,7 @@ class ConstraintGuardTest(unittest.TestCase):
             "stage2_stability_tolerance": 0.005,
         }
         current = {
-            "stage1_accuracy_tolerance": "0.005",  # 字符串 vs float 容忍
+            "stage1_accuracy_tolerance": "0.005",
             "stage2_limit_tolerance": 0.005,
             "stage2_stability_tolerance": 0.005,
         }
@@ -186,7 +186,7 @@ class ConstraintGuardTest(unittest.TestCase):
         self.assertIn("stage1_accuracy_tolerance", msg)
 
     def test_missing_side_skipped(self):
-        # 旧 metadata 缺约束键时不报不一致（向后兼容）。
+
         self.assertIsNone(rl.constraint_mismatch({}, {"stage1_accuracy_tolerance": 0.005}))
         self.assertIsNone(rl.constraint_mismatch({"stage2_limit_tolerance": 0.005}, {}))
 
@@ -235,7 +235,7 @@ class SnapshotHelperTest(unittest.TestCase):
         for fn in ("final_config.json", "final_eval.json", "metadata.json", "report.md", "ppo_training_curve.png"):
             self.assertTrue(os.path.isfile(os.path.join(rdir, fn)), fn)
         self.assertTrue(rl.is_completed(wd))
-        # second snapshot increments N
+
         _, _, n2 = rl.snapshot_decoupled_record(
             1, "bert base mrpc", wd, final_config={}, final_eval={}, root=self.tmp,
         )

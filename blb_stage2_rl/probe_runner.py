@@ -51,8 +51,8 @@ from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
 from .action_space import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
-# We use BLBNoiseRLBridge for noise install/clear; defer import to avoid the
-# heavy chain at module-load time when this file is imported by tests.
+
+
 try:
     from blb_rl_bridge import BLBNoiseRLBridge
 except Exception:  # pragma: no cover — torch-free import path
@@ -123,10 +123,6 @@ def resolve_probe_intraop_threads() -> int:
 def resolve_probe_interop_threads() -> int:
     return _resolve_probe_thread_count("BLB_STAGE2_PROBE_INTEROP_THREADS")
 
-
-# ---------------------------------------------------------------------------
-# Trial / split helpers
-# ---------------------------------------------------------------------------
 
 def enable_cuda_reward_probe_fast_math() -> None:
     """Enable fast FP32 matmul modes that are appropriate for reward probes.
@@ -282,10 +278,6 @@ def _group_action_trial_tasks(
     return groups
 
 
-# ---------------------------------------------------------------------------
-# Probe batch transfer (cheap one-time copy per worker)
-# ---------------------------------------------------------------------------
-
 def _move_probe_batch_to_device(batch: Any, device: torch.device) -> Any:
     """Return a copy of ``batch`` with every tensor field moved to ``device``.
 
@@ -304,8 +296,8 @@ def _move_probe_batch_to_device(batch: Any, device: torch.device) -> Any:
             moved[f] = t.to(device, non_blocking=True)
         else:
             moved[f] = t
-    # Reconstruct via the original class so downstream code reads identical
-    # attributes (handles ProbeBatch as a dataclass / namedtuple / plain obj).
+
+
     cls = batch.__class__
     try:
         return cls(**moved)
@@ -333,21 +325,17 @@ def _freeze_probe_batches(batches: Sequence[Any]) -> Tuple[Any, ...]:
     return frozen
 
 
-# ---------------------------------------------------------------------------
-# ProbeWorker — one per device
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ProbeWorker:
     """Per-GPU state: replicated model + its own handler/bridge/probe_batches."""
     device: torch.device
     model: nn.Module
-    handler: Any  # ReversibleLayerHandler
-    bridge: Any   # BLBNoiseRLBridge
+    handler: Any
+    bridge: Any
     probe_batches: Sequence[Any]
     is_regression: bool
     metric_profile: str = ""
-    role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
+    role: str = "primary"
     probe_batch_sets: Dict[str, Tuple[Any, ...]] = field(
         init=False, repr=False,
     )
@@ -741,10 +729,6 @@ class _ProcessProbeWorker:
                 pass
 
 
-# ---------------------------------------------------------------------------
-# ProbeRunner — distributes k trials across workers
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ProbeRunnerDiagnostics:
     """Per-call timing snapshot. Captured each ``run_trials`` invocation;
@@ -1132,8 +1116,8 @@ class ProbeRunner:
             try:
                 w.clear()
             except Exception:
-                # Defensive: clearing should never fail, but if it does we
-                # still want to attempt the other workers.
+
+
                 pass
         self._for_each_worker(clear_one)
 
@@ -1681,8 +1665,8 @@ class ProbeRunner:
             worker = self.workers[w_idx]
             t0 = time.perf_counter()
             try:
-                # Each worker installs the decoded cfg for its own action, then
-                # runs exactly one seeded trial for that action.
+
+
                 decoded = actions[w_idx]
                 worker.install(decoded)
                 res = worker.run_trial(
@@ -2330,10 +2314,6 @@ class ProbeRunnerView:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Factory: build_probe_runner
-# ---------------------------------------------------------------------------
-
 def parse_device_ids(spec: Any) -> List[int]:
     """Parse reward-probe device ids into ``[0, 1]`` style integers.
 
@@ -2382,9 +2362,9 @@ def parse_device_ids(spec: Any) -> List[int]:
 def build_probe_runner(
         *,
         primary_model: nn.Module,
-        primary_handler: Any,                 # ReversibleLayerHandler
-        primary_bridge: Any,                  # BLBNoiseRLBridge owned by the env
-        primary_probe_batches: Sequence[Any], # List[ProbeBatch]
+        primary_handler: Any,
+        primary_bridge: Any,
+        primary_probe_batches: Sequence[Any],
         layers_attribute: str,
         is_regression: bool,
         device_ids: Sequence[int],
@@ -2425,7 +2405,7 @@ def build_probe_runner(
 
     workers: List[ProbeWorker] = []
 
-    # ---- worker 0: reuse env's existing primary model + handler + bridge ----
+
     primary_device = torch.device(f"cuda:{int(device_ids[0])}")
     workers.append(ProbeWorker(
         device=primary_device,
@@ -2446,9 +2426,8 @@ def build_probe_runner(
         process_workers: List[_ProcessProbeWorker] = []
         context = mp.get_context("spawn")
         try:
-            # Children must not inherit an initialized CUDA context. Build one
-            # CPU template and let torch multiprocessing share its storages
-            # while each spawn child moves its own copy to its assigned GPU.
+
+
             model_template = copy.deepcopy(primary_model).to(torch.device("cpu"))
             model_template.eval()
             probe_batches_cpu = [
@@ -2495,15 +2474,15 @@ def build_probe_runner(
                 f"failed to start persistent probe processes: {exc!r}"
             ) from exc
         finally:
-            # Release the temporary GPU allocation created by deepcopy before
-            # it was moved to CPU. This does not affect the primary model.
+
+
             try:
                 torch.cuda.empty_cache()
             except Exception:
                 pass
         return ProbeRunner(workers, process_workers=process_workers)
 
-    # ---- workers 1+: deepcopy the primary model onto each extra device ----
+
     for d in device_ids[1:]:
         device = torch.device(f"cuda:{int(d)}")
         try:
@@ -2537,10 +2516,6 @@ def build_probe_runner(
 
     return ProbeRunner(workers)
 
-
-# ---------------------------------------------------------------------------
-# Diagnostic helpers (for the env to format the speedup log line)
-# ---------------------------------------------------------------------------
 
 def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
     """One-line summary suitable for ``pruning_search_log.txt``.

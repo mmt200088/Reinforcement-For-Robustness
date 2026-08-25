@@ -1,23 +1,7 @@
-"""Unified final-evaluation module.
+"""Evaluate selected two-stage configurations on full validation data.
 
-合并了旧版 stage1 (``FinalEvaluationModule``) 与 stage2 (``NoiseFinalEvaluationModule``)。
-在一次 ``run()`` 里同时解析并评估两阶段的 optimized 配置，并生成 7 个组别的结果：
-
-1. ``Baseline``      — stage-1 exact baseline (gelu=4, softmax=6)，无噪声。
-2. ``Optimized``     — 两阶段各自的 optimized 配置 + 噪声注入。
-3. ``Stage1Budget``  — stage1 在与 optimized **stage1 总代价相同** 下随机，
-                       stage2 = optimized。
-4. ``Stage2Budget``  — stage1 = optimized，stage2 在与 optimized
-                       **stage2 总代价相同** 下随机。
-5. ``Perm``          — stage1 (gelu/softmax) 与 stage2 (x/wq/wk/wv/wo/wffn1/wffn2)
-                       各自按层随机排列 (permutation)，两阶段总代价自动保持不变。
-6. ``Equiv``         — 每个类型的总代价分别与 optimized 匹配：
-                       stage1 的 gelu、softmax；stage2 的 x/wq/wk/wv/wo/wffn1/wffn2。
-7. ``Budget``        — stage1 总代价 = optimized_stage1 总代价，
-                       stage2 总代价 = optimized_stage2 总代价（两阶段各自约束，
-                       不是两者之和）。
-
-除 Baseline 以外所有组别都使用 ``evaluate_model_with_attention_noise`` 进行评估。
+The module also constructs the fixed cost-matched and permutation controls used
+by the final report. Search state is never updated from these evaluations.
 """
 
 import itertools
@@ -216,9 +200,6 @@ class UnifiedFinalEvaluationModule:
             )
         )
 
-    # ------------------------------------------------------------------
-    # Public entry
-    # ------------------------------------------------------------------
 
     def run(
         self,
@@ -250,9 +231,7 @@ class UnifiedFinalEvaluationModule:
             "metric2": float(limit_s),
         }
 
-        # ------------------------------------------------------------------
-        # Resolve optimized configs (stage1 + stage2 together).
-        # ------------------------------------------------------------------
+
         (
             opt_gelu,
             opt_softmax,
@@ -264,7 +243,7 @@ class UnifiedFinalEvaluationModule:
             total_layers=total_layers,
         )
 
-        # Cost references for optimized.
+
         opt_stage1_tot_c, opt_g_c, opt_s_c = ev.get_simulated_cost(opt_gelu, opt_softmax)
         opt_stage2_tot_c, opt_breakdown = ev.get_noise_simulated_cost(**opt_noise_cfg)
         opt_stage2_tot_c = self._stage2_cost_key(opt_stage2_tot_c) / 40.0
@@ -287,10 +266,7 @@ class UnifiedFinalEvaluationModule:
         )
         ev.log("=" * 60)
 
-        # ------------------------------------------------------------------
-        # Baseline group: stage-1 exact, NO noise. Clean baseline is
-        # deterministic, so evaluate it once even when noisy groups repeat.
-        # ------------------------------------------------------------------
+
         baseline_repeat = None
         ev.log("\n--- Baseline (Stage-1 Exact) : single deterministic evaluation ---")
         baseline_single = ev.evaluate_model(
@@ -315,9 +291,7 @@ class UnifiedFinalEvaluationModule:
             single_result=baseline_single,
         )
 
-        # ------------------------------------------------------------------
-        # Optimized group + random groups — all noise-evaluated.
-        # ------------------------------------------------------------------
+
         eval_cache: Dict = {}
         repeat_cache: Dict = {}
         variance_cache: Dict = {}
@@ -502,13 +476,12 @@ class UnifiedFinalEvaluationModule:
                 result["variance_evaluation"] = variance_repeat
             return result, repeat
 
-        # 2. Optimized
+
         optimized_result, optimized_repeat = _build_noise_result(
             "Optimized", "Optimized", opt_gelu, opt_softmax, opt_noise_cfg, want_repeat=True
         )
 
-        # 2b. Fixed stage-1 config + maximum scaling factors. This is the
-        # requested stability reference for final-eval variance comparisons.
+
         stage1_fixed_max_noise_cfg = self._build_max_noise_config(total_layers)
         stage1_fixed_max_noise_result, stage1_fixed_max_noise_repeat = _build_noise_result(
             "Stage1Fixed+MaxSF",
@@ -519,7 +492,7 @@ class UnifiedFinalEvaluationModule:
             want_repeat=True,
         )
 
-        # 3–7. Random groups.
+
         if self.include_random_groups:
             random_results = self._generate_random_results(
                 opt_gelu=opt_gelu,
@@ -541,7 +514,7 @@ class UnifiedFinalEvaluationModule:
         )
         self._attach_relative_metrics(baseline_result, all_results, num_metrics)
 
-        # Summaries / logs / outputs.
+
         summary = self._summarize_random_results(optimized_result, random_results, num_metrics)
         self._log_performance_table(
             metric_short_names,
@@ -616,9 +589,6 @@ class UnifiedFinalEvaluationModule:
             "variance_plot_path": variance_plot_path,
         }
 
-    # ------------------------------------------------------------------
-    # Config resolution (merged JSON: stage1 + stage2)
-    # ------------------------------------------------------------------
 
     def resolve_stage1_only(self, search_best_stage1, total_layers):
         """解析 stage-1 (gelu/softmax) 配置，用于 stage-2 RL 把 stage-1 固定下来。
@@ -835,18 +805,10 @@ class UnifiedFinalEvaluationModule:
 
         total_layers = int(getattr(self.evaluator, "total_layers", 12) or 12)
         explicit = getattr(self.evaluator, "model_type", None)
-        if explicit in ("bert-base", "bert-large", "gpt-2"):
+        if explicit in ("bert-base", "bert-large"):
             variant = explicit
         else:
-            model = getattr(self.evaluator, "model", None)
-            is_gpt2 = bool(
-                model is not None
-                and getattr(model, "transformer", None) is not None
-                and hasattr(model.transformer, "h")
-            )
-            if is_gpt2:
-                variant = "gpt-2"
-            elif total_layers >= 24:
+            if total_layers >= 24:
                 variant = "bert-large"
             else:
                 variant = "bert-base"
@@ -867,9 +829,6 @@ class UnifiedFinalEvaluationModule:
             )
         return entry.get("stage1"), entry.get("stage2")
 
-    # ------------------------------------------------------------------
-    # Random group generation
-    # ------------------------------------------------------------------
 
     def _generate_random_results(
         self,
@@ -883,8 +842,8 @@ class UnifiedFinalEvaluationModule:
         build_result,
     ):
         ev = self.evaluator
-        # 用 OS 熵源构造 RNG，确保 final-eval-only 两次运行采到的随机配置不同；
-        # 同时把本轮种子记下来，方便复查某一次 final-eval-only 的随机组。
+
+
         if self.final_eval_only:
             self.random_group_seed = (
                 int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
@@ -936,7 +895,7 @@ class UnifiedFinalEvaluationModule:
             results.append(res)
             return True
 
-        # --- Stage1Budget: random stage1 @ stage1 total cost, stage2 = optimized ---
+
         if self.stage1_budget_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.stage1_budget_trials} Stage1Budget configs...")
             gelu_solution_map, softmax_solution_map = stage1_solution_maps()
@@ -949,7 +908,7 @@ class UnifiedFinalEvaluationModule:
                 g, sm = pair
                 register(f"Stage1Budget_{idx + 1}", "Stage1Budget", g, sm, opt_noise_cfg)
 
-        # --- Stage2Budget: stage1 = optimized, random stage2 @ stage2 total cost ---
+
         if self.stage2_budget_trials > 0:
             ev.log(f"Generating {self.stage2_budget_trials} Stage2Budget configs...")
             for idx in range(self.stage2_budget_trials):
@@ -958,7 +917,7 @@ class UnifiedFinalEvaluationModule:
                     continue
                 register(f"Stage2Budget_{idx + 1}", "Stage2Budget", opt_gelu, opt_softmax, cfg)
 
-        # --- Perm: permute stage1 + stage2 independently ---
+
         if self.permutation_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.permutation_trials} Perm configs...")
             for idx in range(self.permutation_trials):
@@ -972,7 +931,7 @@ class UnifiedFinalEvaluationModule:
                     if register(f"Perm_{idx + 1}", "Perm", g, sm, cfg):
                         break
 
-        # --- Equiv: per-type cost match on stage1 (gelu,softmax) + stage2 (7 types) ---
+
         if self.cost_equivalent_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.cost_equivalent_trials} Equiv configs...")
             gelu_solution_map, softmax_solution_map = stage1_solution_maps()
@@ -991,7 +950,7 @@ class UnifiedFinalEvaluationModule:
                 g, sm = pair
                 register(f"Equiv_{idx + 1}", "Equiv", g, sm, cfg)
 
-        # --- Budget: stage1 total match + stage2 total match (separately) ---
+
         if self.budget_equivalent_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.budget_equivalent_trials} Budget configs...")
             gelu_solution_map, softmax_solution_map = stage1_solution_maps()
@@ -1007,9 +966,6 @@ class UnifiedFinalEvaluationModule:
 
         return results
 
-    # ------------------------------------------------------------------
-    # Stage-1 cost sampling
-    # ------------------------------------------------------------------
 
     def _sample_stage1_total_cost(
         self, rng, gelu_solution_map, softmax_solution_map, target_total_cost
@@ -1098,9 +1054,6 @@ class UnifiedFinalEvaluationModule:
         rng.shuffle(arr)
         return arr
 
-    # ------------------------------------------------------------------
-    # Stage-2 cost sampling
-    # ------------------------------------------------------------------
 
     def _sample_stage2_equiv(self, rng, breakdown, total_layers):
         cfg = {}
@@ -1297,9 +1250,6 @@ class UnifiedFinalEvaluationModule:
             return ev.WFFN1_NOISE_COST_MAP
         return ev.WEIGHT_NOISE_COST_MAP
 
-    # ------------------------------------------------------------------
-    # Baseline (no-noise) repeated evaluation helper
-    # ------------------------------------------------------------------
 
     def _build_clean_result(
         self,
@@ -1371,9 +1321,6 @@ class UnifiedFinalEvaluationModule:
             )
         return result
 
-    # ------------------------------------------------------------------
-    # Summary / logging / plotting / persistence
-    # ------------------------------------------------------------------
 
     def _attach_relative_metrics(self, baseline, results, num_metrics):
         base_loss = float(baseline["loss"])
@@ -1921,7 +1868,7 @@ class UnifiedFinalEvaluationModule:
                 ax.margins(x=0.08, y=0.08)
                 ax.legend(loc="best", fontsize=8)
 
-            # Summary bar chart
+
             ax = axes[1, 1]
             families = []
             feasible = []
@@ -2285,9 +2232,6 @@ class UnifiedFinalEvaluationModule:
         self.evaluator.log(f"Unified final-eval summary saved to: {output_path}")
         return output_path
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     def _variance_repeat_count(self):
         stage2_k = getattr(self.evaluator, "stage2_k_trials", None)

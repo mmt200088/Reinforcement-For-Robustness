@@ -5,29 +5,15 @@ import re
 import glob
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, List, Union
+from typing import Any
 
 import fire
 import torch
 import transformers
 from datasets import DownloadConfig, load_dataset, load_from_disk
 from runtime_error_reporter import run_fire_entrypoint
-"""
-Unused imports:
-import torch.nn as nn
-import bitsandbytes as bnb
-"""
-sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-paper/peft/src/"))
-# from peft import (  # noqa: E402
-#     LoraConfig,
-#     DoraConfig,
-#     BottleneckConfig,
-#     PrefixTuningConfig,
-#     get_peft_model,
-#     get_peft_model_state_dict,
-#     prepare_model_for_int8_training,
-#     set_peft_model_state_dict,
-# )
+
+
 from transformers import (  # noqa: F402
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -93,7 +79,6 @@ def seed_everything(seed: int) -> int:
     except Exception:
         pass
     return seed
-
 
 
 GLUE_PARQUET_SPLITS = {
@@ -481,12 +466,8 @@ def load_glue_dataset_equivalent(
         ):
     task = str(task_name).strip().lower()
     validate_dataset(task)
-    # GLUE data loading has 4 possible routes (HF remote / local save_to_disk /
-    # local parquet / HF cache local-only). When debugging "why does this run
-    # see stale data?", knowing which route fired is essential — so we log
-    # the chosen route to stderr at the point of resolution. The fallback
-    # branches already log their own route; here we log when the primary
-    # remote loader succeeds.
+
+
     try:
         data = load_dataset_fn(
             "nyu-mll/glue",
@@ -568,56 +549,23 @@ def load_glue_dataset_equivalent(
         ) from primary_exc
 
 def train(
-        # model/data params
-        base_model: str = "",  # the only required argument
+        base_model: str = "",
         data_path: str = "mrpc",
-        output_dir: str = "./lora-alpaca",
+        output_dir: str = "./runs",
         glue_train_probe_fixture_path: str = "fixtures/reproducibility/glue_train_probe_v1.json",
         mrpc_reproducibility_fixture_path: str = "",
-        adapter_name: str = "lora",
-        load_8bit: bool = False,
-        # training hyperparams
         batch_size: int = 128,
-        micro_batch_size: int = 4,
-        num_epochs: int = 3,
-        learning_rate: float = 3e-4,
-        weight_decay: float = 0.0,
-        cutoff_len: int = 256,
-        val_set_size: int = 2000,
-        use_gradient_checkpointing: bool = False,
-        eval_step: int = 200,
-        save_step: int = 200,
-        # lora hyperparams
-        lora_r: int = 8,
-        lora_alpha: int = 16,
-        lora_dropout: float = 0.05,
-        lora_target_modules: List[str] = None,
-        # bottleneck adapter hyperparams
-        bottleneck_size: int = 256,
-        non_linearity: str = "tanh",
-        adapter_dropout: float = 0.0,
-        use_parallel_adapter: bool = True,
-        use_adapterp: bool = False,
-        target_modules: List[str] = None,
-        # Dora hyperparams
-        Wdecompose_target_modules: List[str] = None,
-        scaling: Union[float, str] = 1.0,
-        # prefix tuning hyperparams
-        num_virtual_tokens: int = 30,
-        # Sparse tuning hyperparams
-        use_ist: bool = False,
-        use_rst: bool = False,
-        rl_lr: float = 1e-4, 
+        rl_lr: float = 1e-4,
         stage1_rl_lr: float = None,
         stage2_rl_lr: float = None,
-        degree: int = 4,  # degree of polynomial for approximation
+        degree: int = 4,
         stage1_rl_episodes: int = 51000,
         stage2_rl_episodes: int = 0,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         stage1_entropy_stop_threshold: float = None,
-        ppo_update_interval: int = 120,  # PPO 更新间隔（episode 数）；同时决定 batch 大小与 details 分块大小
-        final_eval_config_source: str = "search",  # search | json | manual | max
+        ppo_update_interval: int = 120,
+        final_eval_config_source: str = "search",
         final_eval_config_path: str = "glue_final_configs_best_ppo.json",
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",
@@ -640,7 +588,7 @@ def train(
         final_eval_action_config: str = "",
         final_eval_action_ranges: str = "",
         final_eval_action_fixed: str = "",
-        # Same-cost random comparison group for the BLB Stage-2 final eval.
+
         final_eval_cost_match_count: int = 50,
         final_eval_cost_match_max_attempts: int = 5000,
         skip_noise_rl: bool = False,
@@ -648,10 +596,10 @@ def train(
         skip_final_eval: bool = False,
         final_eval_only: bool = False,
         resume_run_dir: str = "",
-        # 2026-06-01 解耦：新输出布局开关 + stage2-only 的前置 Stage-1 record 选择。
+
         decoupled_layout: bool = False,
         stage1_run_id: str = "",
-        # accuracy constraint params
+
         stage1_accuracy_tolerance: float = None,
         stage2_limit_tolerance: float = None,
         stage2_stability_tolerance: float = None,
@@ -660,7 +608,7 @@ def train(
         stage2_k_trials: int = None,
         stage2_probe_size: int = None,
         stage2_inference_batch_size: int = None,
-        # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
+
         blb_v3_rollout_size: int = None,
         blb_v3_eval_interval: int = None,
         blb_v3_save_interval: int = None,
@@ -695,15 +643,6 @@ def train(
         blb_v3_search_full_validation: bool = True,
         comparator_smoke: bool = False,
         comparator_stage1_only: bool = False,
-        # llm hyperparams
-        train_on_inputs: bool = True,  # if False, masks out inputs in loss
-        group_by_length: bool = False,  # faster, but produces an odd training loss curve
-        # wandb params
-        wandb_project: str = "",
-        wandb_run_name: str = "",
-        wandb_watch: str = "",  # options: false | gradients | all
-        wandb_log_model: str = "",  # options: false | true
-        resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
 ):
     data_path = validate_dataset(data_path)
     model_family = resolve_model_family(base_model)
@@ -776,10 +715,8 @@ def train(
         raise ValueError(
             "blb_v3_convergence_patience_updates must be at least 100"
         )
-    # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
-    # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
-    # 同时尝试从 resume_run_dir / output_dir 下读取之前搜索得到的最优配置作为 final-eval 输入。
-    # 该路径不会安装 graceful-stop 信号、不读写 RL 训练 checkpoint，因此不影响优雅停止与续训。
+
+
     if final_eval_only:
         if skip_final_eval:
             raise ValueError(
@@ -798,7 +735,6 @@ def train(
         stage2_rl_episodes_specified, "stage2_rl_episodes_specified"
     )
     batch_size = parse_positive_int(batch_size, "batch_size")
-    micro_batch_size = parse_positive_int(micro_batch_size, "micro_batch_size")
     if stage2_inference_batch_size in (None, ""):
         stage2_inference_batch_size = None
     else:
@@ -846,7 +782,7 @@ def train(
         )
     )
 
-    # 在创建 LayerImportanceEvaluator 之前覆盖 PPO 更新间隔及其派生常量
+
     import layer_importance_evaluator as _lie
     _lie.set_ppo_update_interval(ppo_update_interval)
     print(
@@ -855,65 +791,15 @@ def train(
     )
 
     print(
-        f"Finetuning model with params:\n"
+        "Running approximation search with parameters:\n"
         f"base_model: {base_model}\n"
         f"data_path: {data_path}\n"
         f"output_dir: {output_dir}\n"
         f"batch_size: {batch_size}\n"
-        f"micro_batch_size: {micro_batch_size}\n"
-        f"num_epochs: {num_epochs}\n"
-        f"learning_rate: {learning_rate}\n"
-        f"rl_lr: {rl_lr}\n"
-        f"stage1_rl_lr: {stage1_rl_lr}\n"
-        f"stage2_rl_lr: {stage2_rl_lr}\n"
-        f"cutoff_len: {cutoff_len}\n"
-        f"val_set_size: {val_set_size}\n"
-        f"use_gradient_checkpointing: {use_gradient_checkpointing}\n"
-        f"lora_r: {lora_r}\n"
-        f"lora_alpha: {lora_alpha}\n"
-        f"lora_dropout: {lora_dropout}\n"
-        f"lora_target_modules: {lora_target_modules}\n"
-        f"Wdecompose_target_modules: {Wdecompose_target_modules}\n"
-        f"bottleneck_size: {bottleneck_size}\n"
-        f"non_linearity: {non_linearity}\n"
-        f"adapter_dropout: {adapter_dropout}\n"
-        f"use_parallel_adapter: {use_parallel_adapter}\n"
-        f"use_adapterp: {use_adapterp}\n"
-        f"train_on_inputs: {train_on_inputs}\n"
-        f"scaling: {scaling}\n"
-        f"adapter_name: {adapter_name}\n"
-        f"target_modules: {target_modules}\n"
-        f"final_eval_config_source: {final_eval_config_source}\n"
-        f"final_eval_config_path: {final_eval_config_path}\n"
-        f"manual_stage1_gelu: {manual_stage1_gelu}\n"
-        f"manual_stage1_softmax: {manual_stage1_softmax}\n"
-        f"manual_stage2_noise: {manual_stage2_noise}\n"
         f"stage1_rl_episodes: {stage1_rl_episodes}\n"
-        f"stage1_entropy_stop_threshold: {stage1_entropy_stop_threshold}\n"
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
-        f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
-        f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
-        f"skip_noise_rl: {skip_noise_rl}\n"
-        f"final_eval_repeat_n: {final_eval_repeat_n}\n"
-        f"final_eval_preset: {final_eval_preset}\n"
-        f"final_eval_output_root: {final_eval_output_root}\n"
-        f"final_eval_run_name: {final_eval_run_name}\n"
-        f"final_eval_random_enabled: {final_eval_random_enabled}\n"
-        f"final_eval_action_config: {final_eval_action_config}\n"
-        f"final_eval_action_ranges: {final_eval_action_ranges}\n"
-        f"final_eval_action_fixed: {final_eval_action_fixed}\n"
-        f"skip_stage1_rl: {skip_stage1_rl}\n"
-        f"skip_final_eval: {skip_final_eval}\n"
-        f"comparator_stage1_only: {comparator_stage1_only}\n"
-        f"final_eval_only: {final_eval_only}\n"
-        f"group_by_length: {group_by_length}\n"
-        f"wandb_project: {wandb_project}\n"
-        f"wandb_run_name: {wandb_run_name}\n"
-        f"wandb_watch: {wandb_watch}\n"
-        f"wandb_log_model: {wandb_log_model}\n"
-        f"resume_from_checkpoint: {resume_from_checkpoint}\n"
-        f"resume_run_dir: {resume_run_dir}\n"
-        f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
+        f"search_backend: {blb_v3_search_backend}\n"
+        f"resume_run_dir: {resume_run_dir}"
     )
     run_output_dir = str(output_dir or "").strip()
     trainer_output_dir = (
@@ -924,27 +810,13 @@ def train(
     os.makedirs(trainer_output_dir, exist_ok=True)
     seed_everything(final_eval_random_seed)
 
-    # device_map = "gpu"
-    ddp = True  # Distributed Data Parallelism disabled
 
     device_map = "cuda"
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
     if ddp:
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
-    #     gradient_accumulation_steps = gradient_accumulation_steps // world_size
 
-    # Check if parameter passed or if set within environ
-    use_wandb = len(wandb_project) > 0 or (
-            "WANDB_PROJECT" in os.environ and len(os.environ["WANDB_PROJECT"]) > 0
-    )
-    # Only overwrite environ if wandb param passed
-    if len(wandb_project) > 0:
-        os.environ["WANDB_PROJECT"] = wandb_project
-    if len(wandb_watch) > 0:
-        os.environ["WANDB_WATCH"] = wandb_watch
-    if len(wandb_log_model) > 0:
-        os.environ["WANDB_LOG_MODEL"] = wandb_log_model
 
     tokenizer = AutoTokenizer.from_pretrained(
         base_model,
@@ -953,12 +825,6 @@ def train(
     )
     tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
 
-    model_load_kwargs = {}
-    if load_8bit:
-        from transformers import BitsAndBytesConfig
-        model_load_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_8bit=True
-        )
     model = AutoModelForSequenceClassification.from_pretrained(
         base_model,
         num_labels=2,
@@ -966,10 +832,9 @@ def train(
         trust_remote_code=True,
         pad_token_id=tokenizer.pad_token_id,
         **model_revision_kwargs,
-        **model_load_kwargs,
     )
 
-    # The backbone is inference-only; PPO updates only its policy/value network.
+
     for _param in model.parameters():
         _param.requires_grad_(False)
     model.eval()
@@ -991,52 +856,7 @@ def train(
             )
         return tokenized
 
-    # model = prepare_model_for_int8_training(model, use_gradient_checkpointing=use_gradient_checkpointing)
 
-    # if adapter_name == "lora":
-    #     config = LoraConfig(
-    #         r=lora_r,
-    #         lora_alpha=lora_alpha,
-    #         target_modules=target_modules,
-    #         lora_dropout=lora_dropout,
-    #         bias="none",
-    #         task_type="CAUSAL_LM",
-    #     )
-    # elif adapter_name == "dora":
-    #     dora_simple = True
-    #     config = DoraConfig(
-    #         r=lora_r,
-    #         lora_alpha=lora_alpha,
-    #         target_modules=target_modules,
-    #         lora_dropout=lora_dropout,
-    #         bias="none",
-    #         task_type="CAUSAL_LM",
-    #         dora_simple=dora_simple,
-    #         Wdecompose_target_modules=Wdecompose_target_modules
-    #     )
-    # elif adapter_name == "bottleneck":
-    #     config = BottleneckConfig(
-    #         bottleneck_size=bottleneck_size,
-    #         non_linearity=non_linearity,
-    #         adapter_dropout=adapter_dropout,
-    #         use_parallel_adapter=use_parallel_adapter,
-    #         use_adapterp=use_adapterp,
-    #         target_modules=target_modules,
-    #         scaling=scaling,
-    #         bias="none",
-    #         task_type="CAUSAL_LM",
-    #     )
-    # elif adapter_name == "prefix-tuning":
-    #     config = PrefixTuningConfig(
-    #         num_virtual_tokens=num_virtual_tokens,
-    #         task_type="CAUSAL_LM",
-    #     )
-    # model = get_peft_model(model, config)
-
-    if adapter_name == "prefix-tuning":
-        model.to("cuda") 
-    
-    print(model)
     data = load_glue_dataset_equivalent(
         data_path,
         route_log_dir=os.path.join(output_dir, "logs"),
@@ -1053,26 +873,6 @@ def train(
             data_path=data_path,
             fixture=mrpc_fixture,
         )
-
-    if resume_from_checkpoint:
-        # Check the available weights and load them
-        checkpoint_name = os.path.join(
-            resume_from_checkpoint, "pytorch_model.bin"
-        )  # Full checkpoint
-        if not os.path.exists(checkpoint_name):
-            checkpoint_name = os.path.join(
-                resume_from_checkpoint, "adapter_model.bin"
-            )  # only LoRA model - LoRA config above has to fit
-            resume_from_checkpoint = (
-                False  # So the trainer won't try loading its state
-            )
-        # The two files above have a different name depending on how they were saved, but are actually the same.
-        if os.path.exists(checkpoint_name):
-            print(f"Restarting from {checkpoint_name}")
-            # adapters_weights = torch.load(checkpoint_name)
-            # model = set_peft_model_state_dict(model, adapters_weights)
-        else:
-            print(f"Checkpoint {checkpoint_name} not found")
 
     train_data = glue_views.train_full.shuffle(
         seed=final_eval_random_seed
@@ -1115,242 +915,151 @@ def train(
             stability_probe=train_probe_data,
         )
 
-    # if not ddp and torch.cuda.device_count() > 1:
-    #     # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
-    #     model.is_parallelizable = True
-    #     model.model_parallel = True
+
     parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
     parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
     parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
     parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
     parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
-    trainer_callbacks = []
+    from layer_importance_evaluator import LayerImportanceEvaluator
 
-    if use_ist:
-        from layer_importance_evaluator import LayerImportanceEvaluator
-        print('Reinforcement Learning to evaluate layer sensitivity to approximation')
-        # Pass data_path so evaluator can detect dataset type and metrics.
-        importance_evaluator = LayerImportanceEvaluator(
-            model=model, 
-            train_data=train_data, 
-            # Keep the historical argument name; we pass validation data here.
-            test_data=val_data, 
-            data_collator=data_collator, 
-            batch_size=batch_size,
-            rl_lr=rl_lr, 
-            stage1_rl_lr=stage1_rl_lr,
-            stage2_rl_lr=stage2_rl_lr,
-            degree=degree,
-            stage1_rl_episodes=stage1_rl_episodes,
-            stage2_rl_episodes=stage2_rl_episodes,
-            stage1_rl_episodes_specified=stage1_rl_episodes_specified,
-            stage2_rl_episodes_specified=stage2_rl_episodes_specified,
-            stage1_entropy_stop_threshold=stage1_entropy_stop_threshold,
-            run_output_dir=run_output_dir,
-            final_eval_config_source=final_eval_config_source,
-            final_eval_config_path=final_eval_config_path,
-            manual_stage1_gelu=parsed_manual_stage1_gelu,
-            manual_stage1_softmax=parsed_manual_stage1_softmax,
-            manual_stage2_noise=parsed_manual_stage2_noise,
-            stage2_fixed_config_source=stage2_fixed_config_source,
-            stage2_fixed_config_path=stage2_fixed_config_path,
-            stage2_manual_gelu=parsed_stage2_manual_gelu,
-            stage2_manual_softmax=parsed_stage2_manual_softmax,
-            final_eval_random_seed=final_eval_random_seed,
-            final_eval_permutation_trials=final_eval_permutation_trials,
-            final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
-            final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
-            final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
-            final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
-            final_eval_repeat_n=final_eval_repeat_n,
-            final_eval_preset=final_eval_preset,
-            final_eval_output_root=final_eval_output_root,
-            final_eval_run_name=final_eval_run_name,
-            final_eval_random_enabled=final_eval_random_enabled,
-            final_eval_action_config=final_eval_action_config,
-            final_eval_action_ranges=final_eval_action_ranges,
-            final_eval_action_fixed=final_eval_action_fixed,
-            final_eval_cost_match_count=final_eval_cost_match_count,
-            final_eval_cost_match_max_attempts=final_eval_cost_match_max_attempts,
-            skip_noise_rl=skip_noise_rl,
-            skip_stage1_rl=skip_stage1_rl,
-            skip_final_eval=skip_final_eval,
-            final_eval_only=final_eval_only,
-            resume_run_dir=resume_run_dir,
-            decoupled_layout=decoupled_layout,
-            stage1_run_id=stage1_run_id,
-            data_path=data_path,
-            glue_data_protocol=glue_protocol_context,
-            mrpc_reproducibility=mrpc_reproducibility,
-            stage1_accuracy_tolerance=stage1_accuracy_tolerance,
-            stage2_limit_tolerance=stage2_limit_tolerance,
-            stage2_stability_tolerance=stage2_stability_tolerance,
-            stage2_stability_multiplier=stage2_stability_multiplier,
-            stage2_communication_importance_ratio=(
-                stage2_communication_importance_ratio
-            ),
-            stage2_k_trials=stage2_k_trials,
-            stage2_probe_size=stage2_probe_size,
-            stage2_inference_batch_size=stage2_inference_batch_size,
-            blb_v3_inproc_rescale_optimizer_root=(
-                blb_v3_inproc_rescale_optimizer_root
-                if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
-            ),
-            blb_v3_rollout_size=blb_v3_rollout_size,
-            blb_v3_eval_interval=blb_v3_eval_interval,
-            blb_v3_save_interval=blb_v3_save_interval,
-            blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
-            blb_v3_seed=blb_v3_seed,
-            blb_v3_reward_devices=blb_v3_reward_devices,
-            stage1_rl_devices=stage1_rl_devices,
-            blb_v3_online_k_trials=blb_v3_online_k_trials,
-            blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
-            blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
-            blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
-            blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
-            blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
-            blb_v3_baseline_groups=blb_v3_baseline_groups,
-            blb_v3_baseline_trials_per_group=blb_v3_baseline_trials_per_group,
-            blb_v3_constraint_bootstrap_samples=blb_v3_constraint_bootstrap_samples,
-            blb_v3_online_constraint_probability=blb_v3_online_constraint_probability,
-            blb_v3_promotion_constraint_probability=blb_v3_promotion_constraint_probability,
-            blb_v3_final_constraint_probability=blb_v3_final_constraint_probability,
-            blb_v3_min_convergence_episodes=blb_v3_min_convergence_episodes,
-            blb_v3_convergence_patience_updates=(
-                blb_v3_convergence_patience_updates
-            ),
-            blb_v3_search_backend=blb_v3_search_backend,
-            blb_v3_search_evaluation_budget=(
-                blb_v3_search_evaluation_budget
-            ),
-            blb_v3_search_initial_design_size=(
-                blb_v3_search_initial_design_size
-            ),
-            blb_v3_search_candidate_pool_size=(
-                blb_v3_search_candidate_pool_size
-            ),
-            blb_v3_search_population_size=blb_v3_search_population_size,
-            blb_v3_search_patience_generations=(
-                blb_v3_search_patience_generations
-            ),
-            blb_v3_search_mutation_max_coordinates=(
-                blb_v3_search_mutation_max_coordinates
-            ),
-            blb_v3_search_rf_n_estimators=blb_v3_search_rf_n_estimators,
-            blb_v3_search_rf_min_samples_leaf=(
-                blb_v3_search_rf_min_samples_leaf
-            ),
-            blb_v3_search_full_validation=(
-                blb_v3_search_full_validation
-            ),
-            comparator_smoke=comparator_smoke,
-            comparator_stage1_only=comparator_stage1_only,
-        )
-        trainer_callbacks.append(importance_evaluator)
-    # elif use_rst:
-    #     from rst import RSTCallback
-    #     print('Random Sparse Tuning activated')
-    #     rst_callback = RSTCallback(model)
-    #     trainer_callbacks.append(rst_callback)
-    else:
-        print('No sparse tuning activated')
-    
+    importance_evaluator = LayerImportanceEvaluator(
+        model=model,
+        train_data=train_data,
+
+        test_data=val_data,
+        data_collator=data_collator,
+        batch_size=batch_size,
+        rl_lr=rl_lr,
+        stage1_rl_lr=stage1_rl_lr,
+        stage2_rl_lr=stage2_rl_lr,
+        degree=degree,
+        stage1_rl_episodes=stage1_rl_episodes,
+        stage2_rl_episodes=stage2_rl_episodes,
+        stage1_rl_episodes_specified=stage1_rl_episodes_specified,
+        stage2_rl_episodes_specified=stage2_rl_episodes_specified,
+        stage1_entropy_stop_threshold=stage1_entropy_stop_threshold,
+        run_output_dir=run_output_dir,
+        final_eval_config_source=final_eval_config_source,
+        final_eval_config_path=final_eval_config_path,
+        manual_stage1_gelu=parsed_manual_stage1_gelu,
+        manual_stage1_softmax=parsed_manual_stage1_softmax,
+        manual_stage2_noise=parsed_manual_stage2_noise,
+        stage2_fixed_config_source=stage2_fixed_config_source,
+        stage2_fixed_config_path=stage2_fixed_config_path,
+        stage2_manual_gelu=parsed_stage2_manual_gelu,
+        stage2_manual_softmax=parsed_stage2_manual_softmax,
+        final_eval_random_seed=final_eval_random_seed,
+        final_eval_permutation_trials=final_eval_permutation_trials,
+        final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
+        final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
+        final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
+        final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
+        final_eval_repeat_n=final_eval_repeat_n,
+        final_eval_preset=final_eval_preset,
+        final_eval_output_root=final_eval_output_root,
+        final_eval_run_name=final_eval_run_name,
+        final_eval_random_enabled=final_eval_random_enabled,
+        final_eval_action_config=final_eval_action_config,
+        final_eval_action_ranges=final_eval_action_ranges,
+        final_eval_action_fixed=final_eval_action_fixed,
+        final_eval_cost_match_count=final_eval_cost_match_count,
+        final_eval_cost_match_max_attempts=final_eval_cost_match_max_attempts,
+        skip_noise_rl=skip_noise_rl,
+        skip_stage1_rl=skip_stage1_rl,
+        skip_final_eval=skip_final_eval,
+        final_eval_only=final_eval_only,
+        resume_run_dir=resume_run_dir,
+        decoupled_layout=decoupled_layout,
+        stage1_run_id=stage1_run_id,
+        data_path=data_path,
+        glue_data_protocol=glue_protocol_context,
+        mrpc_reproducibility=mrpc_reproducibility,
+        stage1_accuracy_tolerance=stage1_accuracy_tolerance,
+        stage2_limit_tolerance=stage2_limit_tolerance,
+        stage2_stability_tolerance=stage2_stability_tolerance,
+        stage2_stability_multiplier=stage2_stability_multiplier,
+        stage2_communication_importance_ratio=(
+            stage2_communication_importance_ratio
+        ),
+        stage2_k_trials=stage2_k_trials,
+        stage2_probe_size=stage2_probe_size,
+        stage2_inference_batch_size=stage2_inference_batch_size,
+        blb_v3_inproc_rescale_optimizer_root=(
+            blb_v3_inproc_rescale_optimizer_root
+            if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
+        ),
+        blb_v3_rollout_size=blb_v3_rollout_size,
+        blb_v3_eval_interval=blb_v3_eval_interval,
+        blb_v3_save_interval=blb_v3_save_interval,
+        blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
+        blb_v3_seed=blb_v3_seed,
+        blb_v3_reward_devices=blb_v3_reward_devices,
+        stage1_rl_devices=stage1_rl_devices,
+        blb_v3_online_k_trials=blb_v3_online_k_trials,
+        blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
+        blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
+        blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
+        blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
+        blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
+        blb_v3_baseline_groups=blb_v3_baseline_groups,
+        blb_v3_baseline_trials_per_group=blb_v3_baseline_trials_per_group,
+        blb_v3_constraint_bootstrap_samples=blb_v3_constraint_bootstrap_samples,
+        blb_v3_online_constraint_probability=blb_v3_online_constraint_probability,
+        blb_v3_promotion_constraint_probability=blb_v3_promotion_constraint_probability,
+        blb_v3_final_constraint_probability=blb_v3_final_constraint_probability,
+        blb_v3_min_convergence_episodes=blb_v3_min_convergence_episodes,
+        blb_v3_convergence_patience_updates=(
+            blb_v3_convergence_patience_updates
+        ),
+        blb_v3_search_backend=blb_v3_search_backend,
+        blb_v3_search_evaluation_budget=(
+            blb_v3_search_evaluation_budget
+        ),
+        blb_v3_search_initial_design_size=(
+            blb_v3_search_initial_design_size
+        ),
+        blb_v3_search_candidate_pool_size=(
+            blb_v3_search_candidate_pool_size
+        ),
+        blb_v3_search_population_size=blb_v3_search_population_size,
+        blb_v3_search_patience_generations=(
+            blb_v3_search_patience_generations
+        ),
+        blb_v3_search_mutation_max_coordinates=(
+            blb_v3_search_mutation_max_coordinates
+        ),
+        blb_v3_search_rf_n_estimators=blb_v3_search_rf_n_estimators,
+        blb_v3_search_rf_min_samples_leaf=(
+            blb_v3_search_rf_min_samples_leaf
+        ),
+        blb_v3_search_full_validation=(
+            blb_v3_search_full_validation
+        ),
+        comparator_smoke=comparator_smoke,
+        comparator_stage1_only=comparator_stage1_only,
+    )
+
     trainer = transformers.Trainer(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,
         args=transformers.TrainingArguments(
             output_dir=trainer_output_dir,
-            per_device_eval_batch_size=batch_size,  # 推理批次大小
-            disable_tqdm=False,  # Optional progress bar control
-            # per_device_train_batch_size=micro_batch_size,
-            # gradient_accumulation_steps=gradient_accumulation_steps,
-            # warmup_steps=100,
-            # num_train_epochs=num_epochs,
-            # learning_rate=learning_rate,
-            # weight_decay=weight_decay,
-            # # fp16=True,
-            # fp16=False,
-            # fp16_full_eval=False,
-            # logging_steps=10,
-            # optim="adamw_torch",
-            evaluation_strategy="steps" if val_set_size > 0 else "no",
-            # save_strategy="steps",
-            eval_steps=eval_step if val_set_size > 0 else None,
-            # save_steps=save_step,
-            # output_dir=output_dir,
-            # save_total_limit=3,
-            # load_best_model_at_end=True if val_set_size > 0 else False,
-            # ddp_find_unused_parameters=False if ddp else None,
-            # group_by_length=group_by_length,
-            # report_to="wandb" if use_wandb else None,
-            # run_name=wandb_run_name if use_wandb else None,
+            per_device_eval_batch_size=batch_size,
+            disable_tqdm=False,
         ),
         data_collator=data_collator,
-        callbacks=trainer_callbacks
+        callbacks=[importance_evaluator],
     )
 
     model.config.use_cache = False
     model.config.is_decoder = False
 
-    # old_state_dict = model.state_dict
-    # model.state_dict = (
-    #     lambda self, *_, **__: get_peft_model_state_dict(
-    #         self, old_state_dict()
-    #     )
-    # ).__get__(model, type(model))
 
-    print( "Model compile started")
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        model = torch.compile(model)
-    
-    
-    # trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-
-    # model.save_pretrained(output_dir)
-
-    print("Model compile finished")
     print("Starting evaluation...")
-
-    # trainer.predict(test_dataset=val_data, metric_key_prefix="predict")
-
-    for _ in range(1):
-        print(f"Round {_} of evaluation")
-        
-        print(val_data[0])  # Should be list[int]
-        print(val_data[0])   # Should be consistent
-
-        eval_results = trainer.evaluate(eval_dataset=val_data)
-        final_loss = eval_results["eval_loss"] if "eval_loss" in eval_results else None
-        print(f"Round {_}, Final evaluation loss: {final_loss}")
-
-    
-    print(
-        "\n If there's a warning about missing keys above, please disregard :)"
-    )
-
-
-def generate_prompt(data_point):
-    # sorry about the formatting disaster gotta move fast
-    if data_point["input"]:
-        return f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
-
-                ### Instruction:
-                {data_point["instruction"]}
-
-                ### Input:
-                {data_point["input"]}
-
-                ### Response:
-                {data_point["output"]}"""  # noqa: E501
-    else:
-        return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.  
-
-                ### Instruction:
-                {data_point["instruction"]}
-
-                ### Response:
-                {data_point["output"]}"""  # noqa: E501
+    eval_results = trainer.evaluate(eval_dataset=val_data)
+    print(f"Final evaluation loss: {eval_results.get('eval_loss')}")
 
 
 if __name__ == "__main__":

@@ -1,11 +1,6 @@
 from contextlib import contextmanager
 import importlib
-import json
-import os
-from pathlib import Path
-import subprocess
 import sys
-import tempfile
 import types
 import unittest
 from unittest import mock
@@ -76,17 +71,17 @@ def _stubbed_action_space():
 
 
 class TruncationLevelsTest(unittest.TestCase):
-    def test_default_domain_preserves_legacy_indices_and_adds_k6_k7(self):
+    def test_production_domain_has_the_fixed_action_order(self):
         self.assertEqual(
-            truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT,
+            truncation_levels.DEFAULT_K_LEVELS,
             (8, 9, 11, 13, 10, 12, 6, 7),
         )
         self.assertEqual(
-            truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT[:6],
+            truncation_levels.DEFAULT_K_LEVELS[:6],
             (8, 9, 11, 13, 10, 12),
         )
         self.assertEqual(
-            truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT[6:],
+            truncation_levels.DEFAULT_K_LEVELS[6:],
             (6, 7),
         )
         self.assertEqual(
@@ -97,40 +92,6 @@ class TruncationLevelsTest(unittest.TestCase):
             truncation_levels.SUPPORTED_K_VALUES,
             frozenset(range(6, 14)),
         )
-
-    def test_load_k_levels_defaults_and_preserves_override_order(self):
-        self.assertEqual(
-            truncation_levels.load_k_levels({}),
-            truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT,
-        )
-        self.assertEqual(
-            truncation_levels.load_k_levels(
-                {"BLB_TRUNCATION_K_LEVELS": ""}
-            ),
-            truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT,
-        )
-        self.assertEqual(
-            truncation_levels.load_k_levels(
-                {"BLB_TRUNCATION_K_LEVELS": "13, 6, 8, 7"}
-            ),
-            (13, 6, 8, 7),
-        )
-
-    def test_load_k_levels_rejects_duplicate_non_integer_and_empty_values(self):
-        with self.assertRaisesRegex(ValueError, "duplicate"):
-            truncation_levels.load_k_levels(
-                {"BLB_TRUNCATION_K_LEVELS": "8,9,8"}
-            )
-        with self.assertRaisesRegex(ValueError, "integers"):
-            truncation_levels.load_k_levels(
-                {"BLB_TRUNCATION_K_LEVELS": "8,nope,13"}
-            )
-        for raw in ("8,,13", "8, ,13"):
-            with self.subTest(raw=raw):
-                with self.assertRaisesRegex(ValueError, "non-empty"):
-                    truncation_levels.load_k_levels(
-                        {"BLB_TRUNCATION_K_LEVELS": raw}
-                    )
 
     def test_validate_exact_k_domain_accepts_any_exact_order(self):
         reordered = (13, 6, 12, 7, 11, 8, 10, 9)
@@ -210,7 +171,7 @@ class TruncationLevelsTest(unittest.TestCase):
     def test_baseline_k_index_prefers_k13_and_falls_back_to_maximum(self):
         self.assertEqual(
             truncation_levels.baseline_k_index(
-                truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT
+                truncation_levels.DEFAULT_K_LEVELS
             ),
             3,
         )
@@ -230,38 +191,6 @@ class TruncationLevelsTest(unittest.TestCase):
             self.assertEqual(action_space.K_LEVELS, truncation_levels.K_LEVELS)
             self.assertEqual(layerwise_action.K_LEVELS, truncation_levels.K_LEVELS)
             self.assertEqual(action_space.LEVELS_K, truncation_levels.LEVELS_K)
-
-    def test_top_level_import_works_with_only_stage2_package_on_pythonpath(self):
-        stage2_dir = Path(__file__).resolve().parents[1] / "blb_stage2_rl"
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(stage2_dir)
-        env.pop("BLB_TRUNCATION_K_LEVELS", None)
-        script = "\n".join(
-            (
-                "import json",
-                "import layerwise_action",
-                "import truncation_levels",
-                "print(json.dumps({",
-                '    "levels": list(truncation_levels.K_LEVELS),',
-                '    "layerwise_levels": list(layerwise_action.K_LEVELS),',
-                "}))",
-            )
-        )
-        with tempfile.TemporaryDirectory() as temp_dir:
-            completed = subprocess.run(
-                [sys.executable, "-c", script],
-                cwd=temp_dir,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        payload = json.loads(completed.stdout)
-        expected = list(truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT)
-        self.assertEqual(payload["levels"], expected)
-        self.assertEqual(payload["layerwise_levels"], expected)
 
     def test_action_space_stub_restores_global_module_state(self):
         package = importlib.import_module("blb_stage2_rl")

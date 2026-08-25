@@ -1,4 +1,4 @@
-"""Offline fusion-count map builder core (spec §3.2/§3.3/§3.4).
+"""Torch-free fusion-map enumeration and deterministic option ranking.
 
 Two layers:
 
@@ -15,7 +15,6 @@ Two layers:
   Rescale_optimizer imports are lazy (inside the function), so importing this
   module stays torch-free — mirrors ``blb_verify_noise_install.run_full``.
 
-See docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md.
 """
 
 from __future__ import annotations
@@ -25,18 +24,12 @@ from typing import Any, Dict, Hashable, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
-try:  # torch-free test lane (blb_stage2_rl on sys.path)
-    import fusion_count_map as fcm
-except ImportError:  # package context
-    from . import fusion_count_map as fcm  # type: ignore
+from . import fusion_count_map as fcm
 
 InstalledNoisePoint = fcm.InstalledNoisePoint
 NoiseOrder = fcm.NoiseOrder
 
 
-# ---------------------------------------------------------------------------
-# Pure core — group/dedup/order (torch-free, locally testable)
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class EvaluatedConfig:
     """One enumerated, valid SF config for a block-type after real replan.
@@ -93,12 +86,12 @@ def group_min_noise_options(
     for ec in evaluated:
         by_fc.setdefault(int(ec.fusion_count), []).append(ec)
 
-    kept: List[Tuple[EvaluatedConfig, int]] = []  # (config, tie_index)
+    kept: List[Tuple[EvaluatedConfig, int]] = []
     for _fc, members in by_fc.items():
         min_var = min(m.total_variance for m in members)
         at_min = [m for m in members if m.total_variance <= min_var + noise_tol]
-        # dedup configs that install the identical noise plan: keep the cheapest
-        # (lowest total_bits, then lexicographically smallest action vector).
+
+
         best_by_sig: Dict[Hashable, EvaluatedConfig] = {}
         for m in at_min:
             cur = best_by_sig.get(m.installed_signature)
@@ -111,9 +104,7 @@ def group_min_noise_options(
         for tie_idx, m in enumerate(uniq):
             kept.append((m, tie_idx))
 
-    # Order globally by (fusion asc, variance asc, bits asc, lexicographic). With
-    # rescale-None excluded from the enumeration, the all-max baseline is the
-    # lowest-fusion, globally-minimum-variance config, so it sorts to option 0.
+
     kept.sort(key=lambda mt: (mt[0].fusion_count, mt[0].total_variance, mt[0].total_bits, tuple(mt[0].action_indices)))
     options: List[Dict[str, Any]] = []
     for opt_id, (m, tie_idx) in enumerate(kept):
@@ -128,10 +119,8 @@ def group_min_noise_options(
                 "action_indices": [int(x) for x in m.action_indices],
             }
         )
-    # Loud guard: option 0 must be the baseline. A failure means a non-baseline
-    # config reached lower fusion or lower installed variance than all-max — i.e.
-    # the "baseline = lowest-fusion minimum-noise" invariant broke (re-examine the
-    # noise order or the enumeration domain).
+
+
     if options and tuple(options[0]["action_indices"]) != baseline_key:
         opt0_sig = kept[0][0].installed_signature
         if (
@@ -139,11 +128,8 @@ def group_min_noise_options(
             and int(options[0]["fusion_count"]) == 0
             and opt0_sig == baseline_installed_signature
         ):
-            # Result-equivalent to the baseline (identical installed noise plan):
-            # an SF-irrelevant rescale (no injected noise → all SF levels install
-            # the same) or a collapsed low-baseline slot made the min-noise dedup
-            # keep the lex-min index instead of the baseline's max index. Rewrite to
-            # the canonical baseline indices so the map's option 0 == all-max baseline.
+
+
             options[0]["action_indices"] = [int(x) for x in baseline_key]
         else:
             raise ValueError(
@@ -224,7 +210,7 @@ class _MinNoiseReducer:
 
     def __init__(self, noise_tol: float = 1e-18) -> None:
         self.noise_tol = float(noise_tol)
-        self.num_valid = 0  # total configs seen (diagnostic; the kept set is small)
+        self.num_valid = 0
         self._min: Dict[int, float] = {}
         self._by_sig: Dict[int, Dict[Hashable, EvaluatedConfig]] = {}
 
@@ -233,8 +219,8 @@ class _MinNoiseReducer:
         fc = int(ec.fusion_count)
         cur = self._min.get(fc)
         if cur is None or ec.total_variance < cur - self.noise_tol:
-            # strictly new minimum (or first) → this fc's old kept set is now > tol
-            # above the new min and is discarded.
+
+
             self._min[fc] = ec.total_variance
             self._by_sig[fc] = {ec.installed_signature: ec}
             return
@@ -308,9 +294,6 @@ def _iter_product_shard(
         yield tuple(int(choices[i][positions[i]]) for i in range(len(choices)))
 
 
-# ---------------------------------------------------------------------------
-# Enumeration driver (server-only; torch + Rescale_optimizer imported lazily)
-# ---------------------------------------------------------------------------
 _NOISE_DISTS = frozenset({"fresh", "encoding", "rescale", "rotation"})
 
 
@@ -347,9 +330,8 @@ class BlockTypeBuildContext:
     enum_choices: List[List[int]] = field(default_factory=list)
     pinned_positions: List[int] = field(default_factory=list)
     active_rescale_fields: List[str] = field(default_factory=list)
-    # installed-noise digest of the all-max baseline block config; lets
-    # group_min_noise_options accept a result-equivalent option 0 whose collapsed
-    # low-baseline slot uses the lex-min index instead of the baseline's max index.
+
+
     baseline_installed_signature: Hashable = None
 
     def enum_total(self) -> int:
@@ -399,7 +381,7 @@ def _installed_signature(points: Sequence[Any]) -> Tuple:
 def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dict[str, Any]:
     """Decode one block-slot vector exactly as the runtime env does, run real
     replan, and (if valid) return the post-override installed noise plan."""
-    from action_space import action_vector_to_cfgs
+    from .action_space import action_vector_to_cfgs
 
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -411,9 +393,8 @@ def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dic
 
     full = ctx.baseline_full.copy()
     full[ctx.block_offset : ctx.block_offset + ctx.block_num_slots] = np.asarray(block_indices, dtype=int)
-    # only=(ref_layer, block): the enumeration consumes exactly one cfg, and the
-    # full 12-layer decode dominated per-combo cost (the replan itself is sub-ms).
-    # Per-(layer, block) decode independence makes this bit-identical.
+
+
     decoded = action_vector_to_cfgs(
         full,
         ctx.max_sfs,
@@ -459,7 +440,7 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
     ``field_values`` (above-baseline SF allowed) — the precision boost evaluator.
     Returns valid / fusion_count / total_bits / q_initial / q_final / fusions /
     points (the chain fields come straight from the real replan result)."""
-    from action_space import build_block_cfg_from_field_values
+    from .action_space import build_block_cfg_from_field_values
 
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -525,25 +506,17 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     at target are left at whatever the earlier stage(s) produced (or unchanged).
     ``option0`` (fc=0) is never touched. Mutates + returns ``options``.
     """
-    try:
-        import fusion_count_map as _fcm
-        import precision_boost as _pb
-    except ImportError:
-        from . import fusion_count_map as _fcm, precision_boost as _pb
+    from . import fusion_count_map as _fcm, precision_boost as _pb
+    from .action_space import _decode_block_field_values
 
-    from action_space import _decode_block_field_values
 
-    # Resolve via the generalizing helper: block2's key is profile-suffixed
-    # (block2_<profile>) but its chain structure is profile-independent, so any
-    # block2_* maps to the shared block2 topology. block4/block5_n* match exactly;
-    # block1/block3/block5_n0 return None (never boosted) -> options left as-is.
     topo = _pb.topology_for_graph_key(ctx.graph_key)
     if topo is None:
-        return options  # block-type topology not registered (block1 fusion-degenerate / block3 frozen)
+        return options
     noise_order = _fcm.SummedInstalledVariance()
     li_gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
     li_attn = int(ctx.attn_per_layer[ctx.ref_layer])
-    # phase-2 output-SF ceiling (general; from the block's RO config).
+
     target_out = _pb.target_output_sf(ctx.graph_key, ctx.profile, ctx.rescale_optimizer_root)
     _last_idx, _last_field, final_field = _pb._last_rescale_and_final_encode(topo)
 
@@ -563,9 +536,7 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     def _sig(probe: Any) -> Any:
         return _installed_signature(probe.extra)
 
-    # Baseline SF for each topology rescale (the value the runtime t_new uses when
-    # the rescale's cfg field is None). Used to canonicalize noise-irrelevant
-    # rescales whose action decode sits below baseline (see canonicalize_*).
+
     rescale_baseline_sfs: Dict[str, int] = {}
     for _node in topo.nodes:
         if _node.kind == "rescale" and _node.cfg_field:
@@ -573,7 +544,7 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
                 rescale_baseline_sfs[_node.cfg_field] = int(
                     ctx.max_sfs.get(int(ctx.block_idx), _node.cfg_field, layer_idx=int(ctx.ref_layer))
                 )
-            except Exception:  # field absent from the calibrated table — skip (no canonicalization)
+            except Exception:
                 pass
 
     for opt in options:
@@ -584,40 +555,34 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
             action_slice=np.asarray(opt["action_indices"], dtype=int),
             max_sfs=ctx.max_sfs, attn_degree=li_attn, gelu_degree=li_gelu,
         )
-        # keep ints (incl. output_truncation_k); drop inactive-rescale None fields
-        # (their _build_block*_action reads are guarded by the active set).
+
+
         base_fv = {k: int(v) for k, v in base_fv_raw.items() if v is not None}
 
-        # Align the boost base with the RUNTIME chain: a noise-irrelevant topology
-        # rescale (None at runtime → t_new uses its baseline sf_post) may decode here
-        # to a below-baseline SF (the dedup kept a lex-min noise-tie representative);
-        # the boost would then replan a lower-precision chain than the runtime
-        # installs and stall the output below the ceiling (block2 rte/sst2 fc=1:
-        # rescales decode to SF 15 → boost 43; baseline 28 → 46, fc + installed
-        # signature identical — server-confirmed). Reset such rescales to baseline.
+
         base_fv = _pb.canonicalize_noise_irrelevant_rescales(
             base_fv, topo, rescale_baseline_sfs, probe_fn=_make_probe, sig_fn=_sig,
         )
 
-        # --- phase 1: raise the intermediate short primes ---
+
         res1 = _pb.boost_option(
             topology=topo, base_slots=base_fv,
             replan_fn=_make_probe, noise_fn=_noise, q_max=int(topo.q_max),
         )
         base_p2 = dict(res1.boosted_slots) if res1 is not None else dict(base_fv)
 
-        # --- phase 2: raise the final output scale to its ceiling ---
+
         res2 = _pb.boost_option_phase2(
             topology=topo, base_slots=base_p2, target_output_sf=int(target_out),
             replan_fn=_make_probe, noise_fn=_noise, q_max=int(topo.q_max),
         )
         if res1 is None and res2 is None:
-            continue  # nothing to boost — leave the option as-is
+            continue
 
         final_slots = dict(res2.boosted_slots) if res2 is not None else base_p2
         expected_qf = tuple(int(q) for q in (res2.boosted_q_final if res2 is not None else res1.boosted_q_final))
         boosted_var = float(res2.total_variance if res2 is not None else res1.total_variance)
-        # the achievable output target (clamped only at q_max now — block5_n1 reaches 48).
+
         eff_target = _pb.effective_output_target(topo, int(target_out), int(topo.q_max))
         descr = "; ".join(
             d for d in (
@@ -627,11 +592,8 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         )
 
         final = _eval_block_from_field_values(ctx, final_slots)
-        # hard build-time guard: a stored boost MUST be valid, keep fusion_count,
-        # reproduce the chain under an INDEPENDENT replan, hit the phase-2 output
-        # ceiling, and install nowhere above the modulus limit q_max (points in
-        # (46, q_max] install no noise; only >q_max is a real modulus violation).
-        # Any drift aborts the build.
+
+
         final_qf = tuple(int(q) for q in final.get("q_final", ()))
         final_tf = tuple(int(q) for q in final.get("t_final", ()))
         out_sf = (final_tf[-1] if final_tf else 0) + (int(final_slots[final_field]) if final_field else 0)
@@ -659,9 +621,9 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         opt["total_variance"] = boosted_var
         opt["total_bits"] = int(final.get("total_bits", opt.get("total_bits", 0)))
         opt["boost_description"] = descr
-        opt["output_sf"] = int(out_sf)              # achieved (install-clamped)
-        opt["output_sf_config_ceiling"] = int(target_out)  # q_tail - amplitude - h_sf
-        # refresh the human SF view for the topology's named slots
+        opt["output_sf"] = int(out_sf)
+        opt["output_sf_config_ceiling"] = int(target_out)
+
         slots_view = opt.get("slots") or {}
         for node in topo.nodes:
             if node.cfg_field and node.cfg_field in final_slots and node.cfg_field in slots_view:
@@ -688,8 +650,8 @@ def prepare_block_type_context(
     import json as _json
     import os as _os
 
-    import action_space as _action_space
-    from action_space import (
+    from . import action_space as _action_space
+    from .action_space import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,
@@ -700,21 +662,13 @@ def prepare_block_type_context(
 
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
 
-    try:
-        from skeleton_stage_map import build_stage_plans_from_archive as _build_stage_plans
-    except ImportError:
-        from blb_stage2_rl.skeleton_stage_map import build_stage_plans_from_archive as _build_stage_plans
-
-    try:
-        from baseline_bootstrap import (
-            load_static_skeletons_baseline,
-            static_skeletons_baseline_to_action,
-        )
-    except ImportError:
-        from blb_stage2_rl.baseline_bootstrap import (  # type: ignore
-            load_static_skeletons_baseline,
-            static_skeletons_baseline_to_action,
-        )
+    from .baseline_bootstrap import (
+        load_static_skeletons_baseline,
+        static_skeletons_baseline_to_action,
+    )
+    from .skeleton_stage_map import (
+        build_stage_plans_from_archive as _build_stage_plans,
+    )
 
     gelu_per_layer = [int(gelu_degree)] * int(num_layers)
     attn_per_layer = [int(attn_degree)] * int(num_layers)
@@ -739,12 +693,7 @@ def prepare_block_type_context(
     baseline_entry = (getattr(invoker, "baselines", {}) or {}).get(graph_key)
     baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
 
-    # Seed action_space's active-rescale cache from the EXPLICIT ro_root, so R-slot
-    # effectiveness never depends on action_space's __file__-relative archive load
-    # (``_load_active_rescale_sets`` silently returns {} on any path failure — the
-    # server temp-dir build hit exactly that, judged every rescale non-effective,
-    # never enumerated rescales, and produced rescale-free maps with fusion stuck
-    # at 0). The bootstrap above already proved this ro_root resolves the archive.
+
     _arch_path = _os.path.join(str(rescale_optimizer_root), "configs", str(profile), f"static_skeletons_{profile}.json")
     with open(_arch_path, encoding="utf-8") as _f:
         _archive = _json.load(_f)
@@ -790,36 +739,11 @@ def prepare_block_type_context(
     if not base_res.get("valid"):
         raise RuntimeError(f"{graph_key}: baseline (all-max) block config is invalid under replan")
     base_key = (int(base_res["fusion_count"]), int(base_res["total_bits"]))
-    # Record the baseline's installed-noise digest so group_min_noise_options can
-    # recognise a result-equivalent option 0 (collapsed low-baseline slot → lex-min
-    # index) and rewrite it to the canonical baseline indices instead of failing.
+
+
     ctx.baseline_installed_signature = _installed_signature(base_res["points"])
 
-    # Classify each effective non-K slot.
-    #
-    # Rescale (R) slots: enumerate SF VALUES ONLY (action indices 1..levels-1),
-    # never index 0 (= None = "drop this rescale"). Per the CKKS mental model
-    # (CLAUDE.md item 2) RL never decides whether a must-exist operation happens —
-    # the rescale points are fixed; the optimizer decides fusion via its response
-    # to the SF schedule. Enumerating index 0 let RL "drop" a rescale, which the
-    # optimizer honoured into a strictly-lower-noise / same-bits config that
-    # dominated the all-max baseline (2026-06-03 block1 crash).
-    #
-    # Non-rescale (F/W/M/S) slots: single-axis scan — pin at baseline (max) iff
-    # every level keeps the baseline ``(fusion_count, total_bits)``. The total_bits
-    # half is a build-time over-enumeration PROXY, not a reward term (bits left the
-    # reward 2026-06-03). It is REQUIRED for soundness: the committed ground-truth
-    # maps show every block's fusion>0 option is reached by lowering 2-4 non-rescale
-    # ENCODE SFs *jointly* while ALL rescales stay at baseline (e.g. block2 fc=1 =
-    # {inv_std_fresh 28->20, gamma 20->16, wk 22->16}; every block5_n* the same).
-    # No single encode moves fusion alone, so a fusion-only solo-probe pins every
-    # one of them and the map collapses to fusion={0} — the 2026-06-04 relaxation
-    # did exactly that and is REVERTED here. Because lowering any encode SF lowers
-    # total_bits, the (fusion, bits) probe keeps all such encodes in the enumerated
-    # set, and the downstream cartesian product over enumerated slots recovers the
-    # joint fusion configs. Pinning is thus restricted to slots that move NEITHER
-    # fusion nor bits (effectively inert). Scans every level (robust to non-monotone
-    # effects). Do NOT re-relax this to fusion-only without enumerating slots jointly.
+
     for pos, (fname, kind, _maxsf) in enumerate(fields):
         if kind == "K":
             continue
@@ -834,14 +758,8 @@ def prepare_block_type_context(
         if not eff:
             continue
         levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
-        # Acceleration (result-equivalent): enumerate only DISTINCT decoded
-        # values per slot. Under the hybrid sweep a low-baseline slot's deep
-        # levels all snap to the table-min SF=10 and decode to identical cfgs
-        # → identical replans; the lowest index per value is kept, which is
-        # exactly the lex-min representative the post-eval installed-signature
-        # dedup would have selected, so the emitted options (incl. their
-        # action_indices) match a full enumeration — only the valid_configs
-        # diagnostic count shrinks. R slots exclude idx 0 (= None/drop).
+
+
         field_max_sf = int(ctx.max_sfs.get(int(block_idx), str(fname), layer_idx=int(ref_layer)))
         distinct = distinct_sf_level_indices(
             kind=str(kind), levels=levels, max_sf=field_max_sf, N=int(ctx.N_block),
@@ -942,7 +860,7 @@ def degeneracy_probe(
             blk[pos] = int(lvl)
         return blk
 
-    corner = [ch[0] for ch in ctx.enum_choices]  # deepest level of every enum slot
+    corner = [ch[0] for ch in ctx.enum_choices]
     corner_res = _eval_block(ctx, _with(corner))
     rng = np.random.default_rng(int(seed))
 
@@ -978,7 +896,7 @@ def check_k_independence(
     confirm ``fusion_count`` does not change (spec §3.6). K is decided
     separately, so the map (built at baseline K) is only valid if K does not
     move fusion."""
-    from action_space import K_LEVELS
+    from .action_space import K_LEVELS
 
     violations: List[Dict[str, Any]] = []
     samples_checked = 0
@@ -1009,7 +927,7 @@ def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int])
     calibrated max_sfs). This avoids the action-field-name vs cfg-attr-name
     mismatch that previously left ``slots`` empty.
     """
-    from action_space import (
+    from .action_space import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,

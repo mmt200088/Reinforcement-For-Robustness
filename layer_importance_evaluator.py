@@ -1,29 +1,5 @@
-# ---------------------------------------------------------------------------
-# layer_importance_evaluator.py
-#
-# Stage-1 (GTrXL PPO over GELU/Softmax polynomial degrees) + integration glue
-# with the Stage-2 BLB RL runner, persistent-dir resolution, and unified
-# final-eval dispatch.
-#
-# Size warning: this file is ~6300 lines as of 2026-05-16. The ``LayerImportanceEvaluator``
-# class alone has ~150 methods. A refactor into smaller modules is a tracked
-# debt item (see ``docs/ENGINEERING_GAPS.md``); until then, prefer extending
-# via composition over adding more methods here.
-#
-# Type-hint policy (2026-05-16):
-#   - **Public API** (callable from outside this file: top-level helpers,
-#     LayerImportanceEvaluator.__init__ signature, plus the methods most
-#     callers depend on — ``evaluate_model``, ``apply_configuration``,
-#     ``get_simulated_cost``, ``get_metric_*``, ``build_constraint_limits_from_metrics``,
-#     ``run_unified_final_eval``) has type hints.
-#   - **Internal helpers** (``_*`` prefix or used only within one method) are
-#     deliberately left untyped; adding hints to all 150 methods would be
-#     a multi-day refactor with no incremental safety gain since they
-#     aren't called from outside.
-#   - When you touch an untyped method, please add hints in passing; this is
-#     a gradual migration. ``from __future__ import annotations`` is enabled
-#     so forward-references work everywhere.
-# ---------------------------------------------------------------------------
+"""Stage-1 PPO search and the shared Stage-2/final-evaluation handoff."""
+
 from __future__ import annotations
 
 from collections import deque
@@ -33,7 +9,7 @@ import itertools
 import math
 import sys
 import threading
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
@@ -41,7 +17,6 @@ import torch.optim as optim
 from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 from blb_stage2_rl.eval_metrics import (
     summarize_eval_trials,
@@ -64,10 +39,7 @@ from function_handler import (
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from glue_data_protocol import TRAIN_PROBE_SPLIT, validate_dataset
-from mrpc_reproducibility import (
-    MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
-    validate_mrpc_evaluation_setup,
-)
+from mrpc_reproducibility import validate_mrpc_evaluation_setup
 from blb_stage2_rl.runtime_control import (
     PROGRESS_BOX_PPO_INTERVAL as NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
     STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -236,19 +208,12 @@ def _build_ordinary_two_stage_result(
     }, stringify_unknown=True)
 
 
-# ==================== PPO 常量与配置定义 ====================
-# 动作映射表
-# GELU head 保持四个 logits 以兼容旧 checkpoint / buffer 形状，但 Stage-1 RL
-# 只允许 idx 0/1/2 -> degree 4/2/1。idx 3 -> degree 0 (ReLU) 保留给历史
-# 配置与手工 eval 解码，训练采样时永久 mask。softmax 不再是动作，每层固定
-# degree 6（SOFTMAX_MAP 保留供固定/兼容用）。
 GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
 GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
 STAGE1_GELU_ACTION_MASK = np.array([True, True, True, False], dtype=bool)
-SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
-# A (2026-05-30): softmax 不再是 Stage-1 动作；每层固定为该 degree（成本为常数）。
-# SOFTMAX_MAP / SOFTMAX_COST 仍保留供固定/兼容与成本核算使用。
+
+
 FIXED_SOFTMAX_DEGREE = 6
 STAGE1_ORIGINAL_FUNCTION_DEGREE = -1
 
@@ -312,128 +277,13 @@ def _install_stage1_function_configuration(
                 softmax_map[degree], handler_layer_name, degree=degree,
             )
 
-# Action space for the current second-stage RL over transformer-layer x noise.
-# Stage 1 still optimizes GELU/Softmax; Stage 2 keeps them fixed and chooses
-# layer-wise scaling factors for x/Wq/Wk/Wv/Wo/Wffn1/Wffn2 noise.
-INPUT_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-INPUT_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in INPUT_NOISE_SCALING_MAP.items()
-}
-INPUT_NOISE_ACTION_DIM = len(INPUT_NOISE_SCALING_MAP)
-INPUT_NOISE_SOS_TOKEN = INPUT_NOISE_ACTION_DIM
-INPUT_NOISE_COST_SCALE = 0.025
-INPUT_NOISE_COST_MAP = {
-    scaling_factor: scaling_factor * INPUT_NOISE_COST_SCALE
-    for scaling_factor in INPUT_NOISE_ALLOWED_SCALING_FACTORS
-}
-INPUT_NOISE_SCALING_TO_NORM = {
-    scaling_factor: idx / max(1, INPUT_NOISE_ACTION_DIM - 1)
-    for idx, scaling_factor in enumerate(sorted(INPUT_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
-}
 
-WEIGHT_NOISE_ACTION_DIM = len(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-WEIGHT_NOISE_SOS_TOKEN = WEIGHT_NOISE_ACTION_DIM
-WEIGHT_NOISE_COST_SCALE = 0.025
-WEIGHT_NOISE_COST_MAP = {
-    scaling_factor: scaling_factor * WEIGHT_NOISE_COST_SCALE
-    for scaling_factor in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS
-}
-WEIGHT_NOISE_SCALING_TO_NORM = {
-    scaling_factor: idx / max(1, WEIGHT_NOISE_ACTION_DIM - 1)
-    for idx, scaling_factor in enumerate(sorted(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
-}
-
-WFFN1_NOISE_COST_MAP = {
-    scaling_factor: scaling_factor * WEIGHT_NOISE_COST_SCALE
-    for scaling_factor in WFFN1_NOISE_ALLOWED_SCALING_FACTORS
-}
-WFFN1_NOISE_SCALING_TO_NORM = {
-    scaling_factor: idx / max(1, len(WFFN1_NOISE_ALLOWED_SCALING_FACTORS) - 1)
-    for idx, scaling_factor in enumerate(sorted(WFFN1_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
-}
-
-WQ_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WQ_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WQ_NOISE_SCALING_MAP.items()
-}
-WQ_NOISE_ACTION_DIM = len(WQ_NOISE_SCALING_MAP)
-
-WK_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WK_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WK_NOISE_SCALING_MAP.items()
-}
-WK_NOISE_ACTION_DIM = len(WK_NOISE_SCALING_MAP)
-
-WV_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WV_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WV_NOISE_SCALING_MAP.items()
-}
-WV_NOISE_ACTION_DIM = len(WV_NOISE_SCALING_MAP)
-
-WO_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WO_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WO_NOISE_SCALING_MAP.items()
-}
-WO_NOISE_ACTION_DIM = len(WO_NOISE_SCALING_MAP)
-
-WFFN1_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WFFN1_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WFFN1_NOISE_SCALING_MAP.items()
-}
-WFFN1_NOISE_ACTION_DIM = len(WFFN1_NOISE_SCALING_MAP)
-
-WFFN2_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-}
-WFFN2_NOISE_SCALING_TO_ACTION = {
-    scaling_factor: idx for idx, scaling_factor in WFFN2_NOISE_SCALING_MAP.items()
-}
-WFFN2_NOISE_ACTION_DIM = len(WFFN2_NOISE_SCALING_MAP)
-
-NOISE_STAGE_NUM_ACTIONS = 7
-NOISE_STAGE_SOS_TOKENS = (
-    INPUT_NOISE_SOS_TOKEN,
-    WEIGHT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN,
-    WEIGHT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN,
-)
-NOISE_STAGE_MAX_SOS_TOKEN = max(INPUT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN)
-NOISE_STAGE_ACTION_DIMS = (
-    INPUT_NOISE_ACTION_DIM,
-    WQ_NOISE_ACTION_DIM, WK_NOISE_ACTION_DIM, WV_NOISE_ACTION_DIM,
-    WO_NOISE_ACTION_DIM, WFFN1_NOISE_ACTION_DIM, WFFN2_NOISE_ACTION_DIM,
-)
-NOISE_STAGE_CONT_DIM = 12  # 原6维 + 6维 partial probe 特征（文档修改方案 第5步）
-NOISE_STAGE_PREV_ACTION_EMBED_DIM = 4
 NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
 NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
 NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
 DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
 
-_SEARCH_LOG_FILENAMES = {
-    "rl": ("pruning_search_log.txt", "pruning_search_log.txt"),
-    "ga": ("ga_search_log.txt", "ga_noise_search_log.txt"),
-    "greedy": ("greedy_search_log.txt", "greedy_noise_search_log.txt"),
-    "general-rl": ("general_rl_search_log.txt", "general_rl_noise_search_log.txt"),
-}
-
-_SEARCH_LOG_HEADERS = {
-    "rl": "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
-    "ga": "=== 遗传算法(GA)搜索优化日志已启动（Genetic Algorithm Search Log Started） ===",
-    "greedy": "=== Greedy Search Log Started ===",
-    "general-rl": "=== 通用RL策略训练日志已启动（General RL Policy Training Log Started） ===",
-}
+SEARCH_LOG_HEADER = "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ==="
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
@@ -482,7 +332,7 @@ def update_persistent_metadata_stage(
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             _json.dump(meta, f, indent=2, ensure_ascii=False)
-        # 原子替换（Windows 上 os.replace 也是原子性的）
+
         os.replace(tmp_path, meta_path)
     except Exception:
         if os.path.isfile(tmp_path):
@@ -492,23 +342,8 @@ def update_persistent_metadata_stage(
                 pass
 
 
-def read_persistent_metadata(run_output_dir):
-    """读取持久化目录的 metadata.json，返回 dict 或 None。"""
-    import json as _json
-    meta_path = os.path.join(run_output_dir, "metadata.json")
-    if not os.path.isfile(meta_path):
-        return None
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            return _json.load(f)
-    except Exception:
-        return None
-
-
-def resolve_run_output_layout(run_output_dir, search_algorithm=None, flattened=False):
-    s1_log, s2_log = _SEARCH_LOG_FILENAMES.get(
-        search_algorithm, (DEFAULT_STAGE1_SEARCH_LOG_FILE, DEFAULT_STAGE1_SEARCH_LOG_FILE),
-    )
+def resolve_run_output_layout(run_output_dir, flattened=False):
+    s1_log = s2_log = DEFAULT_STAGE1_SEARCH_LOG_FILE
     run_output_dir = str(run_output_dir or "").strip()
     if not run_output_dir:
         return {
@@ -527,8 +362,8 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None, flattened=F
 
     run_output_dir = os.path.normpath(run_output_dir)
     if flattened:
-        # 2026-06-01 解耦扁平布局：单 stage 工作目录，stage1 产物直接落在 run_output_dir 下，
-        # stage2 产物落在 run_output_dir/progress 下（不再嵌套 stage1/ 或 stage2_noise/）。
+
+
         stage1_dir = run_output_dir
         stage2_noise_dir = run_output_dir
     else:
@@ -561,31 +396,23 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None, flattened=F
 
     return layout
 
-# PPO 超参数
-PPO_LR = 3e-4
+
 PPO_GAMMA = 0.99
-PPO_LAMBDA = 0.95  # GAE lambda
+PPO_LAMBDA = 0.95
 PPO_EPS_CLIP = 0.2
 PPO_K_EPOCHS = 4
-PPO_ENTROPY_COEF = 0.05  # 初始熵系数（策略二：从0.05开始衰减）
 PPO_VALUE_COEF = 0.5
-# PDF 6.4：由于采样步数大幅增加，需要相应调整总episodes
+
 PPO_MAX_EPISODES = 51000
-# PPO 更新间隔 / batch 大小 / details 分块大小 都以 PPO_UPDATE_INTERVAL 为单一真相源。
-# 命令行入口会调用 set_ppo_update_interval() 在训练开始前覆盖这三个量，保持它们恒等关系：
-#   PPO_BATCH_SIZE       = 12 * PPO_UPDATE_INTERVAL
-#   STEP_INFO_CHUNK_SIZE = 3  * PPO_UPDATE_INTERVAL   (每 txt 对应 3 次 PPO 更新)
-PPO_UPDATE_INTERVAL = 120  # 默认每 120 个 episode 更新一次
+
+
+PPO_UPDATE_INTERVAL = 120
 PPO_BATCH_SIZE = 12 * PPO_UPDATE_INTERVAL
-STEP_INFO_CHUNK_SIZE = 3 * PPO_UPDATE_INTERVAL  # 默认 360 回合/txt（3 次 PPO 更新）
+STEP_INFO_CHUNK_SIZE = 3 * PPO_UPDATE_INTERVAL
 
 
 def set_ppo_update_interval(n):
-    """命令行入口调用此函数覆盖 PPO 更新间隔（及其派生常量）。
-
-    必须在创建 LayerImportanceEvaluator / multi_task_train_stage{1,2} 之前调用，
-    否则训练循环已读取旧值。
-    """
+    """Set the rollout interval before constructing the evaluator."""
     global PPO_UPDATE_INTERVAL, PPO_BATCH_SIZE, STEP_INFO_CHUNK_SIZE
     n = int(n)
     if n <= 0:
@@ -593,102 +420,56 @@ def set_ppo_update_interval(n):
     PPO_UPDATE_INTERVAL = n
     PPO_BATCH_SIZE = 12 * n
     STEP_INFO_CHUNK_SIZE = 3 * n
+
+
 REWARD_DROP_WARNING_THRESHOLD = 0.2
 
-# ==================== 策略二：超参数配置（PDF 6.4 稳定性修复） ====================
-# PDF 6.4：降低学习率，使用恒定学习率先跑通基线
-PPO_LR_INITIAL = 5e-5       # 初始学习率（PDF 6.4：降至5e-5）
-PPO_LR_FINAL = 5e-5         # 最终学习率（恒定，移除复杂衰减）
-PPO_WARMUP_RATIO = 0.0      # PDF 6.4：移除复杂Warmup机制，先用恒定学习率跑通基线
-# PDF 6.4：固定熵系数为0.01，移除激进衰减
-# "建议固定熵系数为0.01，或者仅在检测到KL散度过低时才衰减"
-PPO_ENTROPY_COEF_FIXED = 0.01  # 固定熵系数（PDF 6.4）
-PPO_ENTROPY_INITIAL = 0.01  # 初始熵系数（与固定值一致）
-PPO_ENTROPY_FINAL = 0.01    # 最终熵系数（与固定值一致，不衰减）
-PPO_ENTROPY_DECAY = 1.0     # 熵系数衰减率设为1.0表示不衰减
 
-# PDF 6.4：增大Batch Size以获得更稳定的梯度估计
-# "建议增加采样步数，例如每2048 steps更新一次，Mini-batch设为64或128"
-PPO_MINI_BATCH_SIZE = 64    # Mini-batch大小（PDF 6.4：增至64）
+PPO_LR_INITIAL = 5e-5
+PPO_ENTROPY_INITIAL = 0.01
 
-# ==================== 策略一：奖励函数重构配置（PDF 6.1 线性化修复） ====================
-REWARD_THRESHOLD = 0.005      # 约束阈值 0.5%
-REWARD_SAFETY_BUFFER = 0.002  # 安全边界 0.2%
-REWARD_TARGET = REWARD_THRESHOLD - REWARD_SAFETY_BUFFER  # 有效目标 0.3%
-REWARD_COST_WEIGHT = 20.0     # 成本奖励权重
-REWARD_SAFETY_BONUS = 1.0     # 安全区域基础奖励
-# PDF 6.1：移除指数惩罚，改用线性惩罚（防止梯度爆炸）
-REWARD_PENALTY_SLOPE = 50.0   # 线性惩罚斜率（替代指数惩罚）
-REWARD_DENSE_SCALE = 0.1      # 稠密中间奖励缩放系数
-# PDF 6.1：奖励截断范围，防止异常值传播
-REWARD_CLIP_MIN = -5.0        # 奖励下限
-REWARD_CLIP_MAX = 5.0         # 奖励上限
 
-# ==================== 策略三：回报归一化配置 ====================
-REWARD_NORMALIZATION_SCALE = 20.0  # 固定缩放因子（将-100量级缩放到-5左右）
+REWARD_THRESHOLD = 0.005
+REWARD_COST_WEIGHT = 20.0
+REWARD_DENSE_SCALE = 0.1
 
-# ==================== PPO 5.2: Value Clipping 配置 ====================
-VALUE_CLIP_RANGE = 0.2  # 价值函数裁剪范围，与PPO_EPS_CLIP保持一致
+REWARD_CLIP_MIN = -5.0
+REWARD_CLIP_MAX = 5.0
 
-# ==================== Transformer 7.2: 预算偏离度中间奖励配置 ====================
-# Kept for checkpoint/config compatibility only. Stage-1 dense reward no longer
-# pays an expected-cost-track bonus, so cost search is not anchored to 4.5/layer.
-BUDGET_DEVIATION_SCALE = 0.05
 
-# ==================== PPO 7.1: 运行时回报归一化配置 ====================
-RUNNING_REWARD_HISTORY_SIZE = 100  # 滑动窗口大小
-RUNNING_REWARD_MIN_SAMPLES = 10    # 开始标准化前的最小样本数
-RUNNING_REWARD_EPSILON = 1e-8      # 防止除零的小常数
+REWARD_NORMALIZATION_SCALE = 20.0
 
-# ==================== 显式历史编码配置（显式历史编码） ====================
-# 状态向量维度：17维原始特征 + 12维GELU历史 + 12维Softmax历史 + 3维预算余量 = 44维
-STATE_DIM_ORIGINAL = 17  # 原始状态维度
-STATE_DIM_HISTORY = 24   # 历史编码维度（12 GELU + 12 Softmax）
-STATE_DIM_BUDGET = 3     # 预算感知维度（敏感度建模 3.3: Loss/Metric1/Metric2余量）
-STATE_DIM_TOTAL = STATE_DIM_ORIGINAL + STATE_DIM_HISTORY + STATE_DIM_BUDGET  # 总维度 = 44
-# 状态掩码 步骤1：将填充值从 -1.0 改为 0.0
-# 理由：在ReLU/SiLU激活的网络中，0输入通常产生0输出，天然表示"无信息"
-# -1.0 是一个强烈的信号值，会干扰特征提取
-HISTORY_MASK_VALUE = 0.0  # 未访问层的掩码值（状态掩码：零值填充）
 
-# ==================== LSTM 策略价值网络配置（LSTM 策略网络） ====================
-LSTM_HIDDEN_DIM = 128        # LSTM隐藏层维度（设计 3.2：128足以编码12步历史）
-LSTM_NUM_LAYERS = 2          # LSTM堆叠层数（设计 3.2：双层增强表达能力）
-LSTM_DROPOUT = 0.1           # LSTM层间Dropout（设计 3.2）
-LSTM_CONT_DIM = 6            # 连续特征维度（cost_deviation + complexity_debt + progress + 3 budget）
-LSTM_POS_DIM = 16            # 层级位置嵌入维度（设计 3.1.1）
-LSTM_ACT_G_DIM = 8           # GELU动作嵌入维度（设计 3.1.2）
-LSTM_ACT_S_DIM = 8           # Softmax动作嵌入维度（设计 3.1.2）
-LSTM_PROJ_DIM = 32           # 连续特征投影维度（设计 3.1.3）
-SOS_TOKEN_GELU = 4           # GELU前一动作的SOS标记（词表大小=5: 0,1,2,3为动作, 4为SOS）
-SOS_TOKEN_SOFTMAX = 5        # Softmax前一动作的SOS标记（词表大小=6: 0-4为动作, 5为SOS）
-LSTM_MINI_BATCH_EPISODES = 8 # LSTM PPO更新时的mini-batch大小（按episode数）
+VALUE_CLIP_RANGE = 0.2
 
-# ==================== GTrXL 策略价值网络配置（GTrXL 策略网络） ====================
-GTRXL_D_MODEL = 64              # Token 维度（与 LSTM 输入维度一致：16+8+8+32=64）
-GTRXL_N_HEADS = 4               # 多头注意力头数（64/4=16 per head）
-GTRXL_N_LAYERS = 3              # GTrXL Block 堆叠层数
-GTRXL_D_FF = 128                # 前馈网络隐藏维度（2x d_model）
-GTRXL_DROPOUT = 0.1             # Dropout 率
-GTRXL_WARMUP_STEPS = 500        # 学习率线性预热步数（PPO update 计数）
-GTRXL_ENTROPY_LOWER_BOUND = 0.005  # 最小熵约束下界（防止 Mode Collapse）
-GTRXL_MINI_BATCH_EPISODES = 8   # GTrXL PPO更新时的mini-batch大小（按episode数）
 
-# ==================== 敏感度建模：数据集相关配置 ====================
-# 根据数据集选择不同的评估指标（细分版）
-# type: regression / classification
-# metrics: 该数据集使用的指标列表
-# metric_names: 显示用的指标短名 (表格用)
-# metric_full_names: 完整指标名 (日志用)
+RUNNING_REWARD_HISTORY_SIZE = 100
+RUNNING_REWARD_MIN_SAMPLES = 10
+RUNNING_REWARD_EPSILON = 1e-8
+
+
+HISTORY_MASK_VALUE = 0.0
+
+POLICY_CONTINUOUS_DIM = 6
+POLICY_POSITION_DIM = 16
+POLICY_ACTION_DIM = 8
+POLICY_PROJECTION_DIM = 32
+SOS_TOKEN_GELU = 4
+
+
+GTRXL_D_MODEL = 64
+GTRXL_N_HEADS = 4
+GTRXL_N_LAYERS = 3
+GTRXL_D_FF = 128
+GTRXL_DROPOUT = 0.1
+GTRXL_WARMUP_STEPS = 500
+GTRXL_ENTROPY_LOWER_BOUND = 0.012
+GTRXL_ENTROPY_RECOVERY_MULTIPLIER = 25.0
+GTRXL_KL_TARGET = 0.02
+GTRXL_MINI_BATCH_EPISODES = 8
+
 def resolve_ppo_learning_rate(raw_value, default_lr=PPO_LR_INITIAL):
-    """Resolve the user-facing rl_lr argument into a PPO optimizer LR.
-
-    Compatibility rules:
-    - `None` or empty: use the built-in PPO default.
-    - `0 < rl_lr < 1`: treat it as a direct optimizer learning rate.
-    - legacy integers such as 20 / 40: interpret them as 20e-6 / 40e-6 so
-      existing shell commands remain meaningful under the PPO implementation.
-    """
+    """Resolve a positive PPO learning rate."""
     if raw_value is None or raw_value == "":
         return float(default_lr), "default"
 
@@ -697,11 +478,9 @@ def resolve_ppo_learning_rate(raw_value, default_lr=PPO_LR_INITIAL):
     except (TypeError, ValueError):
         return float(default_lr), "default"
 
-    if lr <= 0:
+    if not 0.0 < lr < 1.0:
         return float(default_lr), "default"
-    if lr < 1.0:
-        return float(lr), "direct"
-    return float(lr) * 1e-6, "legacy-micro"
+    return float(lr), "direct"
 
 
 DATASET_METRICS_CONFIG = {
@@ -714,163 +493,27 @@ DATASET_METRICS_CONFIG = {
     for dataset in ('mrpc', 'rte', 'sst2')
 }
 
-# ==================== 敏感度建模：差分奖励与对数障碍配置 ====================
-# 优化方案二：信号放大与差分奖励重构
-STAGE1_ENABLE_DIFFERENTIAL_REWARD = os.environ.get(
-    "STAGE1_ENABLE_DIFFERENTIAL_REWARD", "0"
-).strip().lower() in {"1", "true", "yes", "on"}
-DIFF_REWARD_SCALE_ACC = 50.0       # 精度差分奖励缩放因子
-DIFF_REWARD_POWER = 0.5            # 根号变换指数（放大微小信号）
-LOG_BARRIER_VIOLATION_SCALE = 10.0  # 违反约束时的指数惩罚系数
-LOG_BARRIER_VIOLATION_STEEPNESS = 20.0  # 违反约束时的指数陡度
-LOG_BARRIER_SATISFACTION_SCALE = 0.5   # 满足约束时的对数奖励系数
 
-# ==================== 敏感度建模：解耦归一化配置（Disentangled PopArt） ====================
-# 优化方案二（4.3）：分别维护成本和精度的统计量
-
-# ==================== 敏感度建模：PPO-Lagrangian配置 ====================
-# 优化方案四：自适应惩罚系数
-LAGRANGIAN_LR = 0.01              # 拉格朗日乘子学习率
-LAGRANGIAN_INITIAL = 0.1          # 初始拉格朗日乘子值
-LAGRANGIAN_MAX = 10.0             # 拉格朗日乘子上限
-
-# ==================== 敏感度建模：课程学习配置 ====================
-# 优化方案四（6.2）：从宽松到严格的约束调度
-CURRICULUM_PHASE1_RATIO = 0.30    # 探索期：前30%的episodes
-CURRICULUM_PHASE2_RATIO = 0.40    # 收紧期：中间40%的episodes
-CURRICULUM_PHASE3_RATIO = 0.30    # 精调期：后30%的episodes
-CURRICULUM_INITIAL_SLACK = 1.2    # 探索期约束放宽系数（1.2倍目标值）
-CURRICULUM_SAFETY_BUFFER = 0.95   # 精调期约束收紧系数（0.95倍目标值，略严于目标）
-
-# ==================== 敏感度建模：超参数调整 ====================
-# 优化方案（第三步）：熵系数线性衰减 + Critic学习率调整
-PPO_ENTROPY_START = 0.05          # 熵系数起始值（高探索）
-PPO_ENTROPY_END = 0.001           # 熵系数结束值（强制收敛）
-PPO_LR_ACTOR = 3e-5               # Actor学习率
-PPO_LR_CRITIC = 3e-4              # Critic学习率（Actor的10倍）
-
-# ==================================================================
-# RL_OPT_FLAGS — 强化学习算法优化开关（消融实验 / 一键回滚）
-# ------------------------------------------------------------------
-# 用法：
-#   - 把任意 key 设为 False 即可完全回退到优化前的旧行为；
-#   - 全部置 False 等价于优化前的代码（保证可回滚）；
-#   - 各项独立可控，便于做消融实验。
-#
-# 优化目标：缓解 PPO 训练时陷入局部最优 / “选错峰” 的问题，
-#          同时不破坏原有训练稳定性。
-# ==================================================================
-RL_OPT_FLAGS = {
-    # 1) 用 cosine + 高 plateau 的熵调度替代线性衰减：
-    #    前 25% episode 维持初始熵不衰减（充分探索），
-    #    之后 cosine 衰减至 PPO_ENTROPY_END。
-    "use_cosine_entropy_schedule": True,
-    "entropy_plateau_ratio": 0.25,
-
-    # 2) 抬高熵下界，缓解 mode collapse 选错峰
-    "raise_entropy_lower_bound": True,
-    "entropy_lower_bound_override": 0.012,  # 原 0.005
-
-    # 3) 熵塌缩时自适应 boost 倍率（原硬编码 10.0）
-    "stronger_entropy_recovery": True,
-    "entropy_recovery_multiplier": 25.0,
-
-    # 4) PPO K-epoch 中加入近似 KL early-stop，避免破坏性更新
-    "use_kl_early_stop": True,
-    "kl_target": 0.02,
-
-    # 5) Legacy switches retained for old checkpoint metadata compatibility.
-    #    Active Stage-1 train/final-eval code ignores these and is always
-    #    plaintext-only: GELU/Softmax replacement, no Stage-2 scaling-factor noise.
-    "stage1_use_max_scaling_noise_env": False,
-    "final_eval_use_max_scaling_noise_env": False,
-
-    # 6) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
-    "stage1_write_local_optimum_report": True,
-
-    # 7) Stage-1 可迁移 policy/critic：
-    #    - save_portable_policy=True 时，训练结束在 run dir 写出 stage1_policy.pt
-    #      （仅含 net state_dict + 架构超参 + metadata，便于跨任务/跨数据集迁移）；
-    #    - pretrained_policy_path=None 表示不加载；设为某个 stage1_policy.pt 路径
-    #      则训练开始时把权重加载到新建的 GTrXL 网络作为 base policy（critic 一并加载）。
-    "stage1_save_portable_policy": True,
-    "stage1_pretrained_policy_path": None,
-}
+LOG_BARRIER_VIOLATION_SCALE = 10.0
+LOG_BARRIER_VIOLATION_STEEPNESS = 20.0
+LOG_BARRIER_SATISFACTION_SCALE = 0.5
 
 
-def _rl_opt_entropy_lower_bound():
-    if RL_OPT_FLAGS.get("raise_entropy_lower_bound", False):
-        return float(RL_OPT_FLAGS.get("entropy_lower_bound_override", GTRXL_ENTROPY_LOWER_BOUND))
-    return GTRXL_ENTROPY_LOWER_BOUND
+PPO_ENTROPY_START = 0.05
+PPO_ENTROPY_END = 0.001
 
 
-def _rl_opt_entropy_recovery_mul():
-    if RL_OPT_FLAGS.get("stronger_entropy_recovery", False):
-        return float(RL_OPT_FLAGS.get("entropy_recovery_multiplier", 10.0))
-    return 10.0
-
-
-# ==================================================================
-# 局部最优检测器（Local-Optimum Detector）
-# ------------------------------------------------------------------
-# 给定一段训练历史（episode 级别的 reward / entropy / 选中的最佳配置序列），
-# 输出若干"是否陷入局部最优"的判据指标 + 综合判定。
-#
-# 判定的依据（多信号综合，避免单一指标误报）：
-#   A. 策略熵塌缩 (entropy collapse)
-#       - 最近窗口熵均值 < entropy_collapse_threshold；
-#       - 经验上，多分类 PPO 当 mean entropy < 0.05 通常已强收敛。
-#   B. reward 长期平台期 (reward plateau)
-#       - 最近窗口的 reward 标准差 / |均值| 比值 < plateau_cv_threshold；
-#       - 即 reward 几乎不再改变。
-#   C. best 配置长期不更新 (best stuck)
-#       - 最近 best_stuck_window episode 内 best_score 没有任何提升。
-#   D. 动作多样性塌缩 (action diversity collapse, 可选)
-#       - 若提供 action_history，则计算最近窗口动作分布与早期动作分布的 KL；
-#         KL 极大但熵又极小 => 已经死锁在某一组动作上。
-#
-# 当 A、B、C 三条中至少 2 条成立 → 判定 "likely local optimum"。
-#
-# 用法（最小示例）：
-#   diag = detect_rl_local_optimum(
-#       episode_returns=evaluator.episode_rewards_history,
-#       episode_entropies=evaluator.episode_entropies_history,
-#       best_score_history=evaluator.best_reward_history,
-#       window=200,
-#   )
-#   if diag["likely_local_optimum"]:
-#       evaluator.log("[LocalOpt] " + diag["summary"])
-# ==================================================================
-# The detector stays torch-free so training and offline diagnostics share it.
 from rl_local_optimum import detect_rl_local_optimum  # noqa: E402,F401
 
-def orthogonal_init(layer, gain=1.0):
-    """正交初始化"""
-    if isinstance(layer, nn.Linear):
-        nn.init.orthogonal_(layer.weight, gain=gain)
-        if layer.bias is not None:
-            nn.init.constant_(layer.bias, 0)
 
-
-# ==================== PDF 6.3: RunningMeanStd for Return Normalization ====================
 class RunningMeanStd:
-    """
-    PDF 6.3 步骤2：跟踪回报统计量的运行均值和标准差
-    用于实现 PopArt/Return Normalization
-    
-    使用 Welford's online algorithm 进行数值稳定的增量更新
-    """
+    """Track return moments with Welford's online update."""
     def __init__(self, epsilon=1e-4):
         self.mean = 0.0
         self.var = 1.0
-        self.count = epsilon  # 防止除零
-        
+        self.count = epsilon
+
     def update(self, x):
-        """
-        使用 Welford's algorithm 增量更新均值和方差
-        Args:
-            x: numpy array 或 torch tensor 的数据
-        """
         if isinstance(x, torch.Tensor):
             x_detached = x.detach()
             if not torch.is_floating_point(x_detached):
@@ -881,435 +524,46 @@ class RunningMeanStd:
             self._update_from_moments(batch_mean, batch_var, batch_count)
             return
         x = np.asarray(x).flatten()
-        
+
         batch_mean = np.mean(x)
         batch_var = np.var(x)
         batch_count = len(x)
-        
+
         self._update_from_moments(batch_mean, batch_var, batch_count)
-    
+
     def _update_from_moments(self, batch_mean, batch_var, batch_count):
         """Welford's parallel algorithm for combining statistics"""
         delta = batch_mean - self.mean
         total_count = self.count + batch_count
-        
-        # 更新均值
+
+
         self.mean = self.mean + delta * batch_count / total_count
-        
-        # 更新方差（使用 parallel algorithm）
+
+
         m_a = self.var * self.count
         m_b = batch_var * batch_count
         M2 = m_a + m_b + delta ** 2 * self.count * batch_count / total_count
         self.var = M2 / total_count
-        
+
         self.count = total_count
-    
+
     @property
     def std(self):
         return np.sqrt(self.var + 1e-8)
-    
+
     def normalize(self, x):
         """归一化数据"""
         if isinstance(x, torch.Tensor):
             return (x - self.mean) / (self.std + 1e-8)
         return (x - self.mean) / (self.std + 1e-8)
-    
+
     def denormalize(self, x):
         """反归一化数据"""
         return x * self.std + self.mean
 
 
-# ==================== 敏感度建模：解耦归一化（Disentangled PopArt） ====================
-class DisentangledNormalizer:
-    """
-    敏感度建模 4.3：解耦的奖励归一化
-    分别维护成本和精度的统计量，防止精度信号被成本信号掩盖
-    
-    实施逻辑：
-    1. 维护两个独立的统计量流：r_cost_stats 和 r_acc_stats
-    2. 分别归一化：r_cost_norm = (r_cost - μ_cost) / σ_cost
-    3. 再加权求和：r_total = w_cost * r_cost_norm + w_acc * r_acc_norm
-    """
-    def __init__(self, cost_weight=1.0, acc_weight=1.0):
-        self.cost_stats = RunningMeanStd()
-        self.acc_stats = RunningMeanStd()
-        self.cost_weight = cost_weight
-        self.acc_weight = acc_weight
-    
-    def update(self, cost_rewards, acc_rewards):
-        """更新两个独立的统计量"""
-        if len(cost_rewards) > 0:
-            self.cost_stats.update(cost_rewards)
-        if len(acc_rewards) > 0:
-            self.acc_stats.update(acc_rewards)
-    
-    def normalize_cost(self, cost_reward):
-        """归一化成本奖励"""
-        if self.cost_stats.count < 2:
-            return cost_reward
-        return (cost_reward - self.cost_stats.mean) / (self.cost_stats.std + 1e-8)
-    
-    def normalize_acc(self, acc_reward):
-        """归一化精度奖励"""
-        if self.acc_stats.count < 2:
-            return acc_reward
-        return (acc_reward - self.acc_stats.mean) / (self.acc_stats.std + 1e-8)
-    
-    def get_combined_reward(self, cost_reward, acc_reward):
-        """获取加权归一化后的总奖励"""
-        cost_norm = self.normalize_cost(cost_reward)
-        acc_norm = self.normalize_acc(acc_reward)
-        return self.cost_weight * cost_norm + self.acc_weight * acc_norm
-
-
-# ==================== PDF网络优化方案：残差块 ====================
-class ResidualBlock(nn.Module):
-    """
-    残差块（ResMLP）- PDF 5.1节
-    采用 Pre-Norm 结构：先 LayerNorm 再 Linear
-    使用 SiLU (Swish) 激活函数替代 Tanh/ReLU，更平滑
-    """
-    def __init__(self, input_dim, hidden_dim, dropout=0.1):
-        super(ResidualBlock, self).__init__()
-        # Pre-Norm 结构
-        self.norm1 = nn.LayerNorm(input_dim)
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, input_dim)
-        self.activation = nn.SiLU()  # 使用 SiLU (Swish) 替代 Tanh/ReLU
-        self.dropout = nn.Dropout(dropout)
-        
-        # 正交初始化
-        orthogonal_init(self.fc1, gain=np.sqrt(2))
-        orthogonal_init(self.fc2, gain=np.sqrt(2))
-    
-    def forward(self, x):
-        residual = x
-        out = self.norm1(x)
-        out = self.activation(self.fc1(out))
-        out = self.dropout(out)
-        out = self.norm2(out)
-        out = self.fc2(out)
-        return residual + out  # 纯加法残差
-
-
-# ==================== PDF网络优化方案：状态编码器 ====================
-class StateEncoder(nn.Module):
-    """
-    状态编码器 - PDF 4.1节 & 5.2节 + 敏感度建模 3.3
-    将异构的原始输入（44维）转化为统一的语义向量
-    
-    输入分解为四个流：
-    1. 层级流 (Layer Stream): Index 0-11，通过Embedding映射
-    2. 指标流 (Metric Stream): Index 12-16，通过全连接层映射
-    3. 历史序列流 (History Stream): Index 17-40，通过Transformer Encoder处理
-    4. 预算感知流 (Budget Stream): Index 41-43，通过全连接层映射（敏感度建模 3.3）
-    """
-    def __init__(self, embed_dim=64, num_layers=12):
-        super(StateEncoder, self).__init__()
-        self.num_layers = num_layers
-        
-        # 1. 层级 ID 嵌入（设计 3.1.1：Entity Embedding）
-        self.layer_embed = nn.Embedding(num_layers, 32)
-        
-        # 2. 连续指标映射（Index 12-16: cost_deviation, gelu_norm, softmax_norm, complexity_debt, progress）
-        self.metric_proj = nn.Sequential(
-            nn.Linear(5, 32),
-            nn.SiLU()
-        )
-        
-        # 3. 历史序列处理 (Transformer) - 设计 3.1.2
-        # 输入维度为 2 (Gelu值, Softmax值)
-        self.hist_proj = nn.Linear(2, 32)
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_layers, 32))  # 可学习位置编码
-        
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=32,
-            nhead=4,
-            dim_feedforward=128,
-            dropout=0.1,
-            activation='gelu',
-            batch_first=True
-        )
-        self.hist_transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
-        
-        # 4. 敏感度建模 3.3：预算感知流（Index 41-43: loss_budget, m1_budget, m2_budget）
-        self.budget_proj = nn.Sequential(
-            nn.Linear(3, 32),
-            nn.SiLU()
-        )
-        
-        # 5. 融合层 - PDF 4.1.2 + 敏感度建模
-        # 拼接四个流的输出：Layer(32) + Metric(32) + Hist(32) + Budget(32) = 128
-        self.fusion = nn.Sequential(
-            nn.Linear(32 * 4, embed_dim),
-            nn.LayerNorm(embed_dim),
-            nn.SiLU()
-        )
-        
-        # 初始化位置编码
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
-    
-    def forward(self, state_vector):
-        """
-        Args:
-            state_vector: (Batch, 44) 或 (44,) 的状态向量（敏感度建模扩展）
-        Returns:
-            (Batch, embed_dim) 的编码向量
-        """
-        # 处理单样本输入
-        if state_vector.dim() == 1:
-            state_vector = state_vector.unsqueeze(0)
-        
-        batch_size = state_vector.size(0)
-        
-        # 状态布局（与 TransformerOptEnv._get_state 严格对齐，N = self.num_layers）：
-        #   [0:N]                position one-hot
-        #   [N:N+5]              5 维 metrics (cost_dev, gelu_norm, softmax_norm,
-        #                                       complexity_debt, progress)
-        #   [N+5 : 2N+5]         GELU history
-        #   [2N+5 : 3N+5]        Softmax history
-        #   [3N+5 : 3N+8]        budget (loss / m1 / m2)
-        N = self.num_layers
-        # A. 解析 Layer Index (one-hot → index)
-        layer_indices = torch.argmax(state_vector[:, 0:N], dim=1)
-        l_emb = self.layer_embed(layer_indices)  # (Batch, 32)
-
-        # B. 解析 Metrics
-        metrics = state_vector[:, N:N + 5]
-        m_emb = self.metric_proj(metrics)  # (Batch, 32)
-
-        # C. 解析 History — 拆分为 (Batch, N) 的 GELU 和 Softmax 历史
-        hist_gelu = state_vector[:, N + 5 : 2 * N + 5].unsqueeze(-1)        # (Batch, N, 1)
-        hist_softmax = state_vector[:, 2 * N + 5 : 3 * N + 5].unsqueeze(-1)  # (Batch, N, 1)
-        hist_seq = torch.cat([hist_gelu, hist_softmax], dim=-1)              # (Batch, N, 2)
-        
-        # 状态掩码：使用零值填充后，需要用当前层索引来判断有效历史
-        # 生成 Padding Mask: 根据当前层索引判断哪些历史位置是有效的
-        # 如果当前层是 layer_i，则 layer_0 到 layer_{i-1} 是有效的（已访问过的）
-        # Transformer mask: True 表示要被忽略
-        # 创建位置索引 [0, 1, 2, ..., num_layers-1]
-        position_indices = torch.arange(self.num_layers, device=state_vector.device).unsqueeze(0)  # (1, 12)
-        # 扩展到 batch 维度
-        position_indices = position_indices.expand(batch_size, -1)  # (Batch, 12)
-        # layer_indices 是当前层，历史中 index < current_layer 的位置是有效的
-        padding_mask = position_indices >= layer_indices.unsqueeze(1)  # (Batch, 12)
-        
-        # 状态掩码：零值填充不需要替换，直接使用
-        hist_seq_clean = hist_seq
-        
-        # Transformer Forward
-        h_x = self.hist_proj(hist_seq_clean) + self.pos_embed  # (Batch, 12, 32)
-        
-        # src_key_padding_mask shape: (Batch, Seq_Len)
-        h_out = self.hist_transformer(h_x, src_key_padding_mask=padding_mask)  # (Batch, 12, 32)
-        
-        # Pooling: 对未被 mask 的 token 求平均（Mean Pooling）
-        mask_float = (~padding_mask).float().unsqueeze(-1)  # (Batch, 12, 1)
-        valid_count = mask_float.sum(dim=1).clamp(min=1e-6)  # (Batch, 1) 避免除以0
-        h_pooled = (h_out * mask_float).sum(dim=1) / valid_count  # (Batch, 32)
-        
-        # D. 敏感度建模 3.3：解析 Budget (last 3 dims = [3N+5 : 3N+8])
-        expected_dim = 3 * N + 8
-        if state_vector.size(1) >= expected_dim:
-            budget = state_vector[:, 3 * N + 5 : 3 * N + 8]
-        else:
-            # 向后兼容：如果状态向量不包含预算维度，使用零填充
-            budget = torch.zeros(batch_size, 3, device=state_vector.device)
-        b_emb = self.budget_proj(budget)  # (Batch, 32)
-        
-        # E. 融合
-        combined = torch.cat([l_emb, m_emb, h_pooled, b_emb], dim=1)  # (Batch, 128)
-        return self.fusion(combined)  # (Batch, embed_dim)
-
-
-# ==================== PDF网络优化方案：策略网络 ====================
-class PolicyNetwork(nn.Module):
-    """
-    策略网络（ResMLP Actor）- PDF 4.2节
-    使用 StateEncoder 进行特征提取，后接 2 个 ResidualBlock
-    单头输出设计：GELU Head（softmax 已移除，固定 degree 6）。
-    注意：当前活动路径是 GTrXLStrategyNetwork；本类为遗留实现，未实例化。
-    """
-    def __init__(self, state_dim=STATE_DIM_TOTAL, hidden_dim=64, res_hidden_dim=128, num_layers=12):
-        super(PolicyNetwork, self).__init__()
-        
-        # 状态编码器
-        self.encoder = StateEncoder(embed_dim=hidden_dim, num_layers=num_layers)
-        
-        # 残差骨干网络：2个残差块（PDF 4.2节）
-        self.res_block1 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.res_block2 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        
-        # GELU Head: 输出4个动作的logits (对应度数 4, 2, 1, 0)
-        self.gelu_head = nn.Linear(hidden_dim, 4)
-        # softmax head removed (A): gelu-only policy.
-
-        # PDF 4.2节：策略输出层使用极小的 gain (0.01)
-        # 确保训练初始阶段各动作概率几乎均等（高熵），最大化探索能力
-        orthogonal_init(self.gelu_head, gain=0.01)
-
-    def forward(self, state, gelu_mask=None):
-        # 特征编码
-        x = self.encoder(state)
-
-        # 残差块处理
-        x = self.res_block1(x)
-        x = self.res_block2(x)
-
-        # 单头输出（gelu-only）
-        gelu_logits = self.gelu_head(x)
-
-        if gelu_mask is not None:
-            gelu_logits = gelu_logits.masked_fill(~gelu_mask, float('-inf'))
-
-        return gelu_logits
-
-    def get_action_and_logprob(self, state, return_probs=False, gelu_mask=None):
-        """
-        获取动作和log概率（gelu-only）
-        Args:
-            state: 状态张量
-            return_probs: 是否返回概率分布（用于记录中间结果）
-            gelu_mask: (Batch, 4) bool Tensor, True=该动作可选
-        Returns:
-            gelu_action, logprob
-            如果return_probs=True，还返回gelu_probs
-        """
-        gelu_logits = self.forward(state, gelu_mask=gelu_mask)
-
-        # 处理单样本情况
-        if gelu_logits.dim() == 1:
-            gelu_logits = gelu_logits.unsqueeze(0)
-
-        gelu_dist = Categorical(logits=gelu_logits)
-        gelu_action = gelu_dist.sample()
-        gelu_logprob = gelu_dist.log_prob(gelu_action)
-
-        if return_probs:
-            gelu_probs = torch.softmax(gelu_logits, dim=-1)
-            return gelu_action.squeeze(), gelu_logprob.squeeze(), gelu_probs.squeeze()
-
-        return gelu_action.squeeze(), gelu_logprob.squeeze()
-
-    def evaluate_actions(self, states, gelu_actions, gelu_mask=None):
-        gelu_logits = self.forward(states, gelu_mask=gelu_mask)
-
-        gelu_dist = Categorical(logits=gelu_logits)
-        gelu_logprob = gelu_dist.log_prob(gelu_actions)
-        gelu_entropy = gelu_dist.entropy()
-
-        return gelu_logprob, gelu_entropy
-
-
-# ==================== PDF网络优化方案：价值网络 ====================
-class ValueNetwork(nn.Module):
-    """
-    价值网络（ResMLP Critic）- PDF 4.3节
-    Critic 拥有独立的 StateEncoder 实例，不与 Actor 共享，以防止梯度干扰（设计 3.2.1）
-    使用 3 个 ResidualBlock，比 Actor 深一层，增加表达能力
-    """
-    def __init__(self, state_dim=STATE_DIM_TOTAL, hidden_dim=64, res_hidden_dim=128, num_layers=12):
-        super(ValueNetwork, self).__init__()
-        
-        # 独立的状态编码器（设计 3.2.1：解耦架构）
-        self.encoder = StateEncoder(embed_dim=hidden_dim, num_layers=num_layers)
-        
-        # 残差骨干网络：3个残差块（PDF 4.3节：比Actor深一层）
-        self.res_block1 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.res_block2 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.res_block3 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        
-        # 输出层：标量 Value
-        self.value_head = nn.Linear(hidden_dim, 1)
-        
-        # PDF 4.3节：输出层使用正交初始化，gain=1.0（不同于Actor的0.01）
-        orthogonal_init(self.value_head, gain=1.0)
-    
-    def forward(self, state):
-        # 特征编码
-        x = self.encoder(state)
-        
-        # 残差块处理（3层）
-        x = self.res_block1(x)
-        x = self.res_block2(x)
-        x = self.res_block3(x)
-        
-        # 输出标量价值
-        value = self.value_head(x)
-        return value.squeeze(-1)
-
-
-# ==================== 敏感度建模：双头非对称Critic架构 ====================
-class DualHeadValueNetwork(nn.Module):
-    """
-    敏感度建模 5.1：双头非对称Critic架构
-    
-    解决问题：单一Critic为了拟合大幅波动的Cost，会主导共享层的特征提取，
-    导致无法提取到关于Accuracy的微弱特征。
-    
-    架构设计：
-    - 共享骨干网络：StateEncoder + 2个ResidualBlock
-    - Head A (V_cost)：专门预测预期的Simulation Cost
-    - Head B (V_acc)：专门预测预期的Loss/Pearson/Spearman
-    - 优势计算（GAE）：分别计算 A_cost 和 A_acc，然后加权组合
-    """
-    def __init__(self, state_dim=STATE_DIM_TOTAL, hidden_dim=64, res_hidden_dim=128, num_layers=12):
-        super(DualHeadValueNetwork, self).__init__()
-        
-        # 共享的状态编码器
-        self.encoder = StateEncoder(embed_dim=hidden_dim, num_layers=num_layers)
-        
-        # 共享的残差骨干网络：2个残差块
-        self.shared_res_block1 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.shared_res_block2 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        
-        # Head A (V_cost)：成本预测头 - 额外1个残差块
-        self.cost_res_block = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.cost_head = nn.Linear(hidden_dim, 1)
-        
-        # Head B (V_acc)：精度预测头 - 额外1个残差块
-        self.acc_res_block = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
-        self.acc_head = nn.Linear(hidden_dim, 1)
-        
-        # 正交初始化
-        orthogonal_init(self.cost_head, gain=1.0)
-        orthogonal_init(self.acc_head, gain=1.0)
-    
-    def forward(self, state):
-        """
-        返回两个价值预测：V_cost 和 V_acc
-        """
-        # 共享特征编码
-        x = self.encoder(state)
-        x = self.shared_res_block1(x)
-        x = self.shared_res_block2(x)
-        
-        # Head A：成本价值
-        x_cost = self.cost_res_block(x)
-        v_cost = self.cost_head(x_cost).squeeze(-1)
-        
-        # Head B：精度价值
-        x_acc = self.acc_res_block(x)
-        v_acc = self.acc_head(x_acc).squeeze(-1)
-        
-        return v_cost, v_acc
-    
-    def get_combined_value(self, state, cost_weight=1.0, acc_weight=1.0):
-        """获取加权组合的价值估计"""
-        v_cost, v_acc = self.forward(state)
-        return cost_weight * v_cost + acc_weight * v_acc
-
-
-# ==================== GTrXL 策略网络：GRU门控模块 ====================
 class GRUGate(nn.Module):
-    """
-    GTrXL 核心组件：GRU 门控机制（设计 3.2节）
-    
-    用 GRU 的门控逻辑替代传统 Transformer 的加法残差连接 (x + sublayer(x))。
-    训练初期门控偏置使 z ≈ 0，子层输出被抑制，输入直通；
-    随着训练推进，门控逐渐打开，引入注意力/FFN 提取的特征。
-    """
+    """Gate a GTrXL residual branch with a trainable carry bias."""
     def __init__(self, d_model):
         super().__init__()
         self.Wr = nn.Linear(d_model, d_model, bias=False)
@@ -1321,31 +575,14 @@ class GRUGate(nn.Module):
         self.bg = nn.Parameter(torch.ones(d_model) * 2.0)
 
     def forward(self, x, y):
-        """
-        Args:
-            x: (B, S, D) 直通路径输入（上一层输出）
-            y: (B, S, D) 子层输出（注意力或FFN的输出）
-        Returns:
-            (B, S, D) 门控融合后的输出
-        """
         r = torch.sigmoid(self.Wr(y) + self.Ur(x))
         z = torch.sigmoid(self.Wz(y) + self.Uz(x) - self.bg)
         h_hat = torch.tanh(self.Wg(y) + self.Ug(r * x))
         return (1 - z) * x + z * h_hat
 
 
-# ==================== GTrXL 策略网络：GTrXL Block ====================
 class GTrXLBlock(nn.Module):
-    """
-    单个 GTrXL Block（PDF 4.2节）
-    
-    结构：Pre-LayerNorm + CausalSelfAttention + GRU Gate
-         + Pre-LayerNorm + FFN + GRU Gate
-    
-    与标准 Transformer Block 的两个关键差异：
-    1. Pre-LN（恒等映射重排序）：LayerNorm 在子层之前，保证梯度直通
-    2. GRU Gate 替代残差加法：动态路由，训练初期自动旁路不稳定的子层输出
-    """
+    """Pre-norm causal attention and feed-forward layers with GRU gates."""
     def __init__(self, d_model, n_heads, d_ff, dropout=0.1):
         super().__init__()
         self.ln1 = nn.LayerNorm(d_model)
@@ -1353,7 +590,7 @@ class GTrXLBlock(nn.Module):
             d_model, n_heads, dropout=dropout, batch_first=True
         )
         self.gate1 = GRUGate(d_model)
-        
+
         self.ln2 = nn.LayerNorm(d_model)
         self.ff = nn.Sequential(
             nn.Linear(d_model, d_ff),
@@ -1365,14 +602,6 @@ class GTrXLBlock(nn.Module):
         self.gate2 = GRUGate(d_model)
 
     def forward(self, x, attn_mask=None, key_padding_mask=None):
-        """
-        Args:
-            x: (B, S, D) 输入序列
-            attn_mask: (S, S) 因果掩码（上三角 = True 的 bool 矩阵）
-            key_padding_mask: (B, S) 填充掩码（True = 忽略）
-        Returns:
-            (B, S, D)
-        """
         norm_x = self.ln1(x)
         attn_out, _ = self.attn(
             norm_x, norm_x, norm_x,
@@ -1380,91 +609,71 @@ class GTrXLBlock(nn.Module):
             key_padding_mask=key_padding_mask
         )
         x = self.gate1(x, attn_out)
-        
+
         norm_x2 = self.ln2(x)
         ff_out = self.ff(norm_x2)
         x = self.gate2(x, ff_out)
         return x
 
 
-# ==================== GTrXL 策略网络：GTrXL策略价值网络 ====================
 class GTrXLStrategyNetwork(nn.Module):
-    """
-    基于GTrXL的策略价值网络（GTrXL 策略网络）
-    
-    替代 LSTMStrategyNetwork，解决 LSTM 的信息压缩瓶颈和长程依赖缺失问题。
-    
-    架构设计（PDF 3-4节）：
-    - 层级位置嵌入 (Embedding, 12→16)：感知当前网络深度
-    - 历史动作嵌入 (Embedding, 4→8 / 6→8)：自回归特性，记忆上一步决策
-    - 连续特征投影 (Linear, 6→32)：成本/预算/进度等实时特征
-    - N层GTrXL Block (d_model=64, n_heads=4)：因果自注意力 + GRU门控
-    - 多头Actor (GELU+Softmax logits)：独立动作输出
-    - Critic Head (标量Value)：状态价值估计
-    
-    与 LSTM 版本的关键差异：
-    - 无 hidden state：使用因果掩码自注意力替代递归隐状态
-    - 全局依赖：任意两层之间 O(1) 路径长度，精确建模非相邻层间关系
-    - Rollout 时递增构建 token 序列，训练时一次性处理完整 episode
-    """
+    """Shared causal GTrXL actor-critic used by the Stage-1 policy."""
     def __init__(self, num_layers=12, d_model=GTRXL_D_MODEL,
                  n_heads=GTRXL_N_HEADS, n_gtrxl_layers=GTRXL_N_LAYERS,
                  d_ff=GTRXL_D_FF, dropout=GTRXL_DROPOUT):
         super(GTrXLStrategyNetwork, self).__init__()
         self.num_layers = num_layers
         self.d_model = d_model
-        
-        # 1. 嵌入层（复用 LSTM 版本的维度设计）
-        self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)
-        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)
-        # softmax removed (A, 2026-05-30): no prev-softmax embedding. Stage-1 RL
-        # decides gelu only; softmax is fixed at degree 6 every layer.
 
-        # 2. 连续特征投影
+
+        self.embed_layer_idx = nn.Embedding(num_layers, POLICY_POSITION_DIM)
+        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, POLICY_ACTION_DIM)
+
+
         self.fc_continuous = nn.Sequential(
-            nn.Linear(LSTM_CONT_DIM, LSTM_PROJ_DIM),
-            nn.LayerNorm(LSTM_PROJ_DIM),
+            nn.Linear(POLICY_CONTINUOUS_DIM, POLICY_PROJECTION_DIM),
+            nn.LayerNorm(POLICY_PROJECTION_DIM),
             nn.SiLU()
         )
 
-        # 3. 输入投影：将拼接后的嵌入投影到 d_model（如果维度不匹配）
-        token_input_dim = LSTM_POS_DIM + LSTM_ACT_G_DIM + LSTM_PROJ_DIM  # gelu-only (softmax head removed)
+
+        token_input_dim = (
+            POLICY_POSITION_DIM + POLICY_ACTION_DIM + POLICY_PROJECTION_DIM
+        )
         self.input_proj = nn.Identity() if token_input_dim == d_model else nn.Linear(token_input_dim, d_model)
-        
-        # 4. GTrXL 骨干网络
+
+
         self.gtrxl_blocks = nn.ModuleList([
             GTrXLBlock(d_model, n_heads, d_ff, dropout)
             for _ in range(n_gtrxl_layers)
         ])
         self.ln_final = nn.LayerNorm(d_model)
-        
-        # 5. 多头策略网络 Actor
+
+
         self.actor_head = nn.Sequential(
             nn.Linear(d_model, 64),
             nn.Tanh()
         )
         self.head_g = nn.Linear(64, 4)
-        # softmax head removed (A): policy decides gelu only.
 
-        # 6. 价值网络 Critic
+
         self.critic_head = nn.Sequential(
             nn.Linear(d_model, 64),
             nn.Tanh(),
             nn.Linear(64, 1)
         )
-        
+
         self._initialize_weights()
         self._causal_mask_cache = {}
-    
+
     def _initialize_weights(self):
-        """正交初始化"""
         for module in [self.actor_head, self.critic_head, self.fc_continuous]:
             for layer in module:
                 if isinstance(layer, nn.Linear):
                     nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
                     if layer.bias is not None:
                         nn.init.constant_(layer.bias, 0.0)
-        
+
         nn.init.orthogonal_(self.head_g.weight, gain=0.01)
         nn.init.constant_(self.head_g.bias, 0.0)
 
@@ -1472,7 +681,7 @@ class GTrXLStrategyNetwork(nn.Module):
             nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
             if self.input_proj.bias is not None:
                 nn.init.constant_(self.input_proj.bias, 0.0)
-        
+
         for block in self.gtrxl_blocks:
             for p in block.attn.in_proj_weight.chunk(3):
                 nn.init.orthogonal_(p)
@@ -1482,25 +691,15 @@ class GTrXLStrategyNetwork(nn.Module):
                     nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
                     if layer.bias is not None:
                         nn.init.constant_(layer.bias, 0.0)
-    
+
     def _get_causal_mask(self, seq_len, device):
-        """生成因果掩码（上三角 = True，禁止看到未来 token）"""
+        """Return a cached upper-triangular causal mask."""
         if seq_len not in self._causal_mask_cache or self._causal_mask_cache[seq_len].device != device:
             mask = torch.triu(torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), diagonal=1)
             self._causal_mask_cache[seq_len] = mask
         return self._causal_mask_cache[seq_len]
-    
-    def _build_tokens(self, cont_features, layer_indices, prev_g_actions):
-        """
-        构建 token 序列（gelu-only：无 prev-softmax 嵌入）
 
-        Args:
-            cont_features: (B, S, 6) 连续特征
-            layer_indices: (B, S) long
-            prev_g_actions: (B, S) long
-        Returns:
-            tokens: (B, S, d_model)
-        """
+    def _build_tokens(self, cont_features, layer_indices, prev_g_actions):
         emb_l = self.embed_layer_idx(layer_indices)
         emb_pg = self.embed_prev_g(prev_g_actions)
         feat_c = self.fc_continuous(cont_features)
@@ -1510,20 +709,6 @@ class GTrXLStrategyNetwork(nn.Module):
 
     def forward(self, cont_features, layer_indices, prev_g_actions,
                 gelu_mask=None, key_padding_mask=None):
-        """
-        全序列前向传播（gelu-only）
-
-        Args:
-            cont_features: (B, S, 6) 连续特征
-            layer_indices: (B, S) long
-            prev_g_actions: (B, S) long
-            gelu_mask: (B, S, 4) bool, True=可选
-            key_padding_mask: (B, S) bool, True=填充位置（忽略）
-
-        Returns:
-            logits_g: (B, S, 4)
-            values: (B, S)
-        """
         tokens = self._build_tokens(cont_features, layer_indices, prev_g_actions)
         seq_len = tokens.size(1)
         causal_mask = self._get_causal_mask(seq_len, tokens.device)
@@ -1542,36 +727,19 @@ class GTrXLStrategyNetwork(nn.Module):
         values = self.critic_head(x).squeeze(-1)
 
         return logits_g, values
-    
+
     def get_action_and_logprob(self, cont_features, layer_indices, prev_g_actions,
                                 return_probs=False, gelu_mask=None, key_padding_mask=None):
-        """
-        序列前向推理，取最后一个 token 的输出做决策（用于 Rollout，gelu-only）
-
-        在 Rollout 时，每一步将新 token 追加到序列中，将递增的完整序列传入，
-        取最后一个时间步的输出做动作采样。
-
-        Args:
-            cont_features: (1, S, 6) 当前已构建的 token 序列（1 到 S 步）
-            layer_indices: (1, S) long
-            prev_g_actions: (1, S) long
-            return_probs: 是否返回概率分布
-            gelu_mask: (1, S, 4) bool
-            key_padding_mask: (1, S) bool
-
-        Returns:
-            action_g, logprob, value, [g_probs]
-        """
         logits_g, values = self.forward(
             cont_features, layer_indices, prev_g_actions,
             gelu_mask=gelu_mask, key_padding_mask=key_padding_mask
         )
 
-        lg = logits_g[:, -1, :]  # (1, 4) 取最后一个时间步
-        val = values[:, -1]      # (1,)
+        lg = logits_g[:, -1, :]
+        val = values[:, -1]
 
-        lg = lg.squeeze(0)  # (4,)
-        val = val.squeeze(0)  # scalar
+        lg = lg.squeeze(0)
+        val = val.squeeze(0)
 
         dist_g = Categorical(logits=lg)
         action_g = dist_g.sample()
@@ -1585,21 +753,6 @@ class GTrXLStrategyNetwork(nn.Module):
 
     def evaluate_actions(self, cont_features, layer_indices, prev_g_actions,
                          actions_g, gelu_mask=None):
-        """
-        评估动作（用于PPO更新，完整 episode 一次前向传播，gelu-only）
-
-        Args:
-            cont_features: (B, 12, 6)
-            layer_indices: (B, 12) long
-            prev_g_actions: (B, 12) long
-            actions_g: (B, 12) long
-            gelu_mask: (B, 12, 4) bool
-
-        Returns:
-            logprobs: (B, 12)
-            entropy: (B, 12)
-            values: (B, 12)
-        """
         logits_g, values = self.forward(
             cont_features, layer_indices, prev_g_actions,
             gelu_mask=gelu_mask
@@ -1613,214 +766,6 @@ class GTrXLStrategyNetwork(nn.Module):
         return logprobs, entropy, values
 
 
-# ==================== LSTM 策略网络：LSTM策略价值网络 ====================
-class LSTMStrategyNetwork(nn.Module):
-    """
-    基于LSTM的策略价值网络（LSTM 策略网络）
-    
-    核心改进：将架构搜索问题建模为序列决策过程（POMDP），
-    利用LSTM的时间记忆特性捕捉Transformer层间的量化误差传播。
-    
-    架构设计（PDF 3节）：
-    - 层级位置嵌入 (Embedding, 12→16)：感知当前网络深度
-    - 历史动作嵌入 (Embedding, 4→8 / 6→8)：自回归特性，记忆上一步决策
-    - 连续特征投影 (Linear, 6→32)：成本/预算/进度等实时特征
-    - 双层堆叠LSTM (hidden=128, dropout=0.1)：序列化建模核心
-    - 多头Actor (GELU+Softmax logits)：独立动作输出
-    - Critic Head (标量Value)：状态价值估计
-    """
-    def __init__(self, num_layers=12, hidden_dim=LSTM_HIDDEN_DIM):
-        super(LSTMStrategyNetwork, self).__init__()
-        self.num_layers = num_layers
-        self.hidden_dim = hidden_dim
-        
-        # 1. 嵌入层（设计 3.1）
-        self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)            # 层索引 0-11
-        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)    # 0-3动作 + 4=SOS
-        self.embed_prev_s = nn.Embedding(SOS_TOKEN_SOFTMAX + 1, LSTM_ACT_S_DIM) # 0-4动作 + 5=SOS
-        
-        # 2. 连续特征投影（设计 3.1.3 + 3.1.4）
-        # 输入6维: cost_deviation, complexity_debt, progress, loss_budget, m1_budget, m2_budget
-        self.fc_continuous = nn.Sequential(
-            nn.Linear(LSTM_CONT_DIM, LSTM_PROJ_DIM),
-            nn.LayerNorm(LSTM_PROJ_DIM),
-            nn.SiLU()
-        )
-        
-        # 3. LSTM核心控制器（设计 3.2）
-        # 输入维度 = 16(pos) + 8(prev_g) + 8(prev_s) + 32(continuous) = 64
-        lstm_input_dim = LSTM_POS_DIM + LSTM_ACT_G_DIM + LSTM_ACT_S_DIM + LSTM_PROJ_DIM
-        self.lstm = nn.LSTM(
-            input_size=lstm_input_dim,
-            hidden_size=hidden_dim,
-            num_layers=LSTM_NUM_LAYERS,
-            batch_first=True,
-            dropout=LSTM_DROPOUT
-        )
-        
-        # 4. 多头策略网络 Actor（设计 3.3.1）
-        self.actor_head = nn.Sequential(
-            nn.Linear(hidden_dim, 64),
-            nn.Tanh()
-        )
-        self.head_g = nn.Linear(64, 4)   # GELU logits (4个动作: degree 4/2/1/0)
-        self.head_s = nn.Linear(64, 5)   # Softmax logits (5个动作)
-        
-        # 5. 价值网络 Critic（设计 3.3.2）
-        self.critic_head = nn.Sequential(
-            nn.Linear(hidden_dim, 64),
-            nn.Tanh(),
-            nn.Linear(64, 1)
-        )
-        
-        # 初始化
-        self._initialize_weights()
-    
-    def _initialize_weights(self):
-        """正交初始化 + LSTM遗忘门偏置初始化（设计 3.2 + 7.1）"""
-        # 线性层正交初始化
-        for module in [self.actor_head, self.critic_head, self.fc_continuous]:
-            for layer in module:
-                if isinstance(layer, nn.Linear):
-                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
-                    if layer.bias is not None:
-                        nn.init.constant_(layer.bias, 0.0)
-        
-        # 策略输出头使用极小gain（确保初始动作均匀分布，最大化探索）
-        nn.init.orthogonal_(self.head_g.weight, gain=0.01)
-        nn.init.constant_(self.head_g.bias, 0.0)
-        nn.init.orthogonal_(self.head_s.weight, gain=0.01)
-        nn.init.constant_(self.head_s.bias, 0.0)
-        
-        # LSTM权重正交初始化 + 遗忘门偏置初始化为1.0（PDF 7.1：鼓励保留长期记忆）
-        for name, param in self.lstm.named_parameters():
-            if 'weight_ih' in name or 'weight_hh' in name:
-                nn.init.orthogonal_(param)
-            elif 'bias' in name:
-                n = param.size(0)
-                # LSTM bias: [input_gate, forget_gate, cell_gate, output_gate]
-                param.data.zero_()
-                param.data[n // 4: n // 2].fill_(1.0)  # forget gate = 1.0
-    
-    def forward(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, hidden=None, gelu_mask=None):
-        """
-        全序列前向传播（支持Full-Episode BPTT, PDF 4.2）
-        
-        Args:
-            cont_features: (Batch, Seq, 6) 连续特征
-            layer_indices: (Batch, Seq) long 层索引
-            prev_g_actions: (Batch, Seq) long 前一步GELU动作（SOS=4）
-            prev_s_actions: (Batch, Seq) long 前一步Softmax动作（SOS=5）
-            hidden: LSTM隐藏状态元组 (h_0, c_0)，None则零初始化
-            gelu_mask: (Batch, Seq, 4) bool Tensor, True=该动作可选。
-                       None 时不做 mask（所有动作可选）。
-        
-        Returns:
-            logits_g: (Batch, Seq, 4) GELU动作logits
-            logits_s: (Batch, Seq, 5) Softmax动作logits
-            values: (Batch, Seq) 价值估计
-            new_hidden: 更新后的隐藏状态
-        """
-        # 特征嵌入
-        emb_l = self.embed_layer_idx(layer_indices)      # (B, S, 16)
-        emb_pg = self.embed_prev_g(prev_g_actions)       # (B, S, 8)
-        emb_ps = self.embed_prev_s(prev_s_actions)       # (B, S, 8)
-        feat_c = self.fc_continuous(cont_features)        # (B, S, 32)
-        
-        # 拼接输入（设计 3.1.5: dim = 16+8+8+32 = 64）
-        lstm_input = torch.cat([emb_l, emb_pg, emb_ps, feat_c], dim=-1)
-        
-        # LSTM前向传播
-        self.lstm.flatten_parameters()
-        lstm_out, new_hidden = self.lstm(lstm_input, hidden)  # (B, S, 128)
-        
-        # Actor解码（设计 3.3.1）
-        actor_feat = self.actor_head(lstm_out)  # (B, S, 64)
-        logits_g = self.head_g(actor_feat)      # (B, S, 4)
-        logits_s = self.head_s(actor_feat)      # (B, S, 5)
-        
-        # Degree 0 action masking: 不合格层的 degree 0 logit 设为 -inf
-        if gelu_mask is not None:
-            logits_g = logits_g.masked_fill(~gelu_mask, float('-inf'))
-        
-        # Critic解码（设计 3.3.2）
-        values = self.critic_head(lstm_out).squeeze(-1)  # (B, S)
-        
-        return logits_g, logits_s, values, new_hidden
-    
-    def get_action_and_logprob(self, cont_feat, layer_idx, prev_g, prev_s, hidden, return_probs=False, gelu_mask=None):
-        """
-        单步前向推理（用于Rollout自回归采样, PDF 5.2）
-        
-        Args:
-            cont_feat: (1, 1, 6) 当前步连续特征
-            layer_idx: (1, 1) long 当前层索引
-            prev_g: (1, 1) long 前一步GELU动作
-            prev_s: (1, 1) long 前一步Softmax动作
-            hidden: LSTM隐藏状态
-            return_probs: 是否返回概率分布
-            gelu_mask: (1, 1, 4) bool Tensor, True=该动作可选
-        
-        Returns:
-            action_g, action_s, logprob, value, new_hidden, [g_probs, s_probs]
-        """
-        logits_g, logits_s, values, new_hidden = self.forward(
-            cont_feat, layer_idx, prev_g, prev_s, hidden, gelu_mask=gelu_mask
-        )
-        
-        # Squeeze: (1,1,D) -> (D,)
-        lg = logits_g.squeeze(0).squeeze(0)
-        ls = logits_s.squeeze(0).squeeze(0)
-        val = values.squeeze(0).squeeze(0)
-        
-        dist_g = Categorical(logits=lg)
-        dist_s = Categorical(logits=ls)
-        
-        action_g = dist_g.sample()
-        action_s = dist_s.sample()
-        
-        logprob = dist_g.log_prob(action_g) + dist_s.log_prob(action_s)
-        
-        if return_probs:
-            g_probs = torch.softmax(lg, dim=-1)
-            s_probs = torch.softmax(ls, dim=-1)
-            return action_g, action_s, logprob, val, new_hidden, g_probs, s_probs
-        
-        return action_g, action_s, logprob, val, new_hidden
-    
-    def evaluate_actions(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, 
-                         actions_g, actions_s, gelu_mask=None):
-        """
-        评估动作（用于PPO更新时的Full-Episode BPTT, PDF 4.2）
-        
-        Args:
-            cont_features: (Batch, 12, 6) 完整episode连续特征
-            layer_indices: (Batch, 12) 层索引
-            prev_g_actions: (Batch, 12) 前一步GELU动作
-            prev_s_actions: (Batch, 12) 前一步Softmax动作
-            actions_g: (Batch, 12) 实际采取的GELU动作
-            actions_s: (Batch, 12) 实际采取的Softmax动作
-            gelu_mask: (Batch, 12, 4) bool Tensor, True=该动作可选
-        
-        Returns:
-            logprobs: (Batch, 12)
-            entropy: (Batch, 12)
-            values: (Batch, 12)
-        """
-        logits_g, logits_s, values, _ = self.forward(
-            cont_features, layer_indices, prev_g_actions, prev_s_actions, gelu_mask=gelu_mask
-        )
-        
-        dist_g = Categorical(logits=logits_g)
-        dist_s = Categorical(logits=logits_s)
-        
-        logprobs = dist_g.log_prob(actions_g) + dist_s.log_prob(actions_s)
-        entropy = dist_g.entropy() + dist_s.entropy()
-        
-        return logprobs, entropy, values
-
-
-# ==================== LSTM 策略网络：循环网络专用Rollout Buffer ====================
 def _pack_recurrent_rollout_arrays(episodes):
     if not episodes:
         raise RuntimeError("RecurrentRolloutBuffer is empty")
@@ -1939,30 +884,23 @@ def _pack_recurrent_rollout_tensor_arrays(episodes, device):
 
 
 class RecurrentRolloutBuffer:
-    """
-    循环网络专用Rollout Buffer（LSTM PDF 4.1）
-    
-    以完整Episode为单位存储轨迹数据，保持时间维度完整性。
-    存储形状: (Num_Episodes, 12, Feature_Dim)
-    
-    与传统的flat buffer不同，LSTM需要保留序列结构以进行Full-Episode BPTT。
-    """
+    """Store complete causal episodes for batched GTrXL PPO updates."""
     def __init__(self):
         self.episodes = []
         self._current = None
-    
+
     def start_episode(self):
         """开始记录新的Episode"""
         self._current = {
-            'cont_features': [],   # (Step, 6) 连续特征
-            'layer_indices': [],   # (Step,) 层索引
-            'prev_g_actions': [],  # (Step,) 前一步GELU动作
-            'actions_g': [],       # (Step,) 采取的GELU动作
-            'logprobs': [],        # (Step,) 对数概率
-            'rewards': [],         # (Step,) 奖励
-            'values': [],          # (Step,) 价值估计
-            'dones': [],           # (Step,) 终止标记
-            'gelu_masks': [],      # (Step, 4) GELU动作掩码
+            'cont_features': [],
+            'layer_indices': [],
+            'prev_g_actions': [],
+            'actions_g': [],
+            'logprobs': [],
+            'rewards': [],
+            'values': [],
+            'dones': [],
+            'gelu_masks': [],
         }
 
     def add_step(self, cont_feat, layer_idx, prev_g,
@@ -1978,34 +916,22 @@ class RecurrentRolloutBuffer:
         self._current['dones'].append(done)
         if gelu_mask is not None:
             self._current['gelu_masks'].append(gelu_mask)
-    
+
     def end_episode(self):
         """结束当前Episode，加入存储"""
         self.episodes.append(self._current)
         self._current = None
-    
+
     def clear(self):
         """清空所有存储"""
         self.episodes.clear()
-    
+
     @property
     def num_episodes(self):
         return len(self.episodes)
-    
+
     def get_batch(self, device):
-        """
-        将所有Episode堆叠为batch张量（LSTM PDF 4.1.1）
-        
-        Returns:
-            cont_features: (N_eps, 12, 6) float
-            layer_indices: (N_eps, 12) long
-            prev_g_actions: (N_eps, 12) long
-            actions_g: (N_eps, 12) long
-            logprobs: (N_eps, 12) float
-            rewards: (N_eps, 12) float
-            values: (N_eps, 12) float
-            dones: (N_eps, 12) float
-        """
+        """Stack buffered episodes into device-ready tensors."""
         cont_features_np, logprobs, values = _pack_recurrent_rollout_tensor_arrays(
             self.episodes,
             device,
@@ -2020,9 +946,9 @@ class RecurrentRolloutBuffer:
             dones_np,
             gelu_masks_np,
         ) = _pack_recurrent_rollout_arrays(self.episodes)
-        
+
         layer_indices = torch.from_numpy(layer_indices_np).to(device)
-        
+
         prev_g_actions = torch.from_numpy(prev_g_actions_np).to(device)
 
         actions_g = torch.from_numpy(actions_g_np).to(device)
@@ -2030,59 +956,30 @@ class RecurrentRolloutBuffer:
         rewards = torch.from_numpy(rewards_np).to(device)
 
         dones = torch.from_numpy(dones_np).to(device)
-        
-        # GELU动作掩码: (N_eps, 12, 4) bool
+
+
         if gelu_masks_np is not None:
             gelu_masks = torch.from_numpy(gelu_masks_np).to(device)
         else:
             gelu_masks = None
-        
+
         return (cont_features, layer_indices, prev_g_actions,
                 actions_g, logprobs, rewards, values, dones, gelu_masks)
 
 
-
-
-
-
-
 class TransformerOptEnv:
-    """
-    Transformer优化环境
-    已实施状态与奖励优化策略：
-    - 策略一：奖励函数重构（稠密化中间奖励、指数障碍软约束、安全边界）
-    - 策略三：回报归一化（固定缩放）
-    - 策略四：状态空间增强（累积复杂度债务、成本偏差相对化）
-    - 显式历史编码：显式历史编码（Flattened History）- 解决序列依赖性问题
-    - 敏感度建模：预算感知状态特征、差分奖励、对数障碍函数、课程学习
-    """
+    """Stage-1 GELU search environment with fixed Softmax degree 6."""
     def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
-                 constraint_limits=None, prev_metrics=None, num_metrics=2,
-                 gelu_degree0_eligible=None):
-        """
-        初始化环境
-        
-        敏感度建模扩展参数：
-        - constraint_limits: 约束阈值字典 {'loss': float, 'metric1': float, 'metric2': float}
-                            用于课程学习的动态约束调整
-        - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
-        - num_metrics: 当前数据集的评估指标数量 (1 或 2)
-        - gelu_degree0_eligible: legacy compatibility argument; ignored because
-                                 Stage-1 RL no longer allows degree 0.
-        """
+                 constraint_limits=None, prev_metrics=None, num_metrics=2):
         self.total_layers = total_layers
-        self.baseline_cost = baseline_cost  # 72.0 for 12 layers
+        self.baseline_cost = baseline_cost
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
         self.evaluator = evaluator
         self.num_metrics = num_metrics
-        
-        # Kept for checkpoint/API compatibility. Stage-1 RL permanently masks
-        # degree 0 regardless of this legacy eligibility vector.
-        self.gelu_degree0_eligible = np.zeros(total_layers, dtype=bool)
-        
-        # 敏感度建模 3.3：约束阈值（用于预算感知和课程学习）
+
+
         if constraint_limits is None:
-            # 默认约束：0.5%偏差
+
             self.constraint_limits = {
                 'loss': self.baseline_loss * (1 + REWARD_THRESHOLD),
                 'metric1': self.baseline_p * (1 - REWARD_THRESHOLD),
@@ -2090,8 +987,8 @@ class TransformerOptEnv:
             }
         else:
             self.constraint_limits = constraint_limits
-        
-        # 敏感度建模 4.1：差分奖励所需的上一episode指标
+
+
         if prev_metrics is None:
             self.prev_episode_metrics = {
                 'loss': self.baseline_loss,
@@ -2101,59 +998,51 @@ class TransformerOptEnv:
             }
         else:
             self.prev_episode_metrics = prev_metrics
-        
-        # 策略四：计算理论中间成本（假设每层选中间阶数）
-        # GELU中间阶数=2 (cost=2.5), Softmax中间阶数=4 (cost=2.0)
-        self.mid_gelu_cost = GELU_COST[2]  # 2.5
-        self.mid_softmax_cost = SOFTMAX_COST[4]  # 2.0
-        self.expected_cost_per_layer = self.mid_gelu_cost + self.mid_softmax_cost  # 4.5
-        
-        # 策略一：计算基线每层成本（用于稠密奖励计算）
-        self.max_cost_per_layer = GELU_COST[4] + SOFTMAX_COST[6]  # 6.0
-        
-        # 显式历史编码：显式历史编码
-        # 动作归一化映射（将degree映射到[0,1]区间）
-        # GELU: degree 4->0.0, 2->0.5, 1->1.0, 0->1.25 (高精度->低精度)
+
+
+        self.mid_gelu_cost = GELU_COST[2]
+        self.mid_softmax_cost = SOFTMAX_COST[4]
+        self.expected_cost_per_layer = self.mid_gelu_cost + self.mid_softmax_cost
+
+
+        self.max_cost_per_layer = GELU_COST[4] + SOFTMAX_COST[6]
+
+
         self.gelu_degree_to_norm = {4: 0.0, 2: 0.5, 1: 1.0, 0: 1.25}
-        # Softmax: degree 6->0.0, 5->0.25, 4->0.5, 3->0.75, 2->1.0
-        self.softmax_degree_to_norm = {6: 0.0, 5: 0.25, 4: 0.5, 3: 0.75, 2: 1.0}
-        
-        # 敏感度建模：存储当前episode的最终指标（用于下一episode的差分奖励）
+
         self.current_episode_metrics = None
-        
+
         self.reset()
-    
+
     def reset(self):
         """重置环境"""
-        self.current_layer = 0  # 0-indexed
+        self.current_layer = 0
         self.accumulated_cost = 0.0
         self.gelu_config = []
         self.softmax_config = []
-        self.prev_gelu_degree = 4  # 初始默认值
-        self.prev_softmax_degree = 6  # 初始默认值
-        
-        # 策略一：累计的中间奖励
+        self.prev_gelu_degree = 4
+
+
         self.accumulated_dense_reward = 0.0
-        
-        # 显式历史编码：初始化动作历史缓冲区
-        # gelu_history[i] 存储第i层的GELU动作（归一化后），未访问层为掩码值
+
+
         self.gelu_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
-        # softmax_history removed (A): softmax fixed at degree 6; not in state.
+
 
         return self._get_state()
-    
+
     def get_gelu_action_mask(self, layer_idx=None):
         """
         返回指定层的 GELU 动作掩码 (4-dim bool)。
         True = 该动作可选, False = 被禁止。
         动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0(ReLU)。
         Stage-1 RL 当前禁用 degree 0；idx 3 保留给历史配置与手工 eval。
-        
+
         如果 layer_idx 为 None，使用 self.current_layer。
         """
         del layer_idx
         return STAGE1_GELU_ACTION_MASK.copy()
-    
+
     def _get_state(self):
         """
         构造31维状态向量（gelu-only：softmax 通道已移除）。
@@ -2171,84 +1060,71 @@ class TransformerOptEnv:
         - 12维: GELU动作历史（归一化，未访问层为0）
         - 3维: 预算感知 (loss/metric1/metric2 剩余预算)
         """
-        # ========== 原始17维特征 ==========
-        # 1. 位置编码 (12维 One-Hot)
+
+
         position = np.zeros(self.total_layers)
         if self.current_layer < self.total_layers:
             position[self.current_layer] = 1.0
-        
-        # 2. 策略四（6.2）：成本偏差相对化 (Cost Deviation)
-        # expected_cost_so_far = 假设每层选中间阶数时的理论累积成本
+
+
         expected_cost_so_far = self.current_layer * self.expected_cost_per_layer
         if expected_cost_so_far > 0:
             cost_deviation = (self.accumulated_cost - expected_cost_so_far) / expected_cost_so_far
         else:
             cost_deviation = 0.0
-        # 截断到合理范围 [-1, 1]
+
         cost_deviation = np.clip(cost_deviation, -1.0, 1.0)
-        
-        # 3. 上一步GELU动作编码 (1维, 归一化到[0,1.25])
-        # GELU: 4->0, 2->0.5, 1->1.0, 0->1.25
+
+
         gelu_norm = self.gelu_degree_to_norm.get(self.prev_gelu_degree, 0.0)
-        # softmax_norm removed (A): softmax fixed at degree 6.
-        
-        # 4. 策略四（6.1）：累积复杂度债务 (Complexity Debt)
-        # 计算相对于基线的累积降级程度
+
+
         baseline_cost_so_far = self.current_layer * self.max_cost_per_layer
         if baseline_cost_so_far > 0:
             complexity_debt = (baseline_cost_so_far - self.accumulated_cost) / baseline_cost_so_far
         else:
             complexity_debt = 0.0
-        # complexity_debt > 0 表示比基线省钱（牺牲了模型容量）
+
         complexity_debt = np.clip(complexity_debt, 0.0, 1.0)
-        
-        # 5. 进度指示 (Progress Indicator) - 帮助Critic理解当前位置
+
+
         progress = self.current_layer / self.total_layers
-        
-        # ========== 新增24维历史编码（显式历史编码 + 状态掩码零值填充） ==========
-        # 6. GELU动作历史 (12维) - 已访问层为归一化动作值，未访问层为0（状态掩码）
-        # 注意：self.gelu_history 在step()中更新（softmax_history 已移除）
-        
-        # ========== 敏感度建模 3.3：预算感知特征 (3维) ==========
-        # 使用上一episode的指标估计当前预算余量
-        # 当 budget > 0 时表示满足约束，< 0 表示违反约束
-        # 智能体需要保持 budget > 0
+
+
         prev_loss = self.prev_episode_metrics['loss']
         prev_m1 = self.prev_episode_metrics['metric1']
         prev_m2 = self.prev_episode_metrics['metric2']
-        
-        # Loss预算：约束是 loss < limit，所以 budget = 1 - loss/limit
+
+
         loss_budget = 1.0 - prev_loss / (self.constraint_limits['loss'] + 1e-8)
-        # Metric1预算（如Pearson）：约束是 metric > limit，所以 budget = metric/limit - 1
+
         m1_budget = prev_m1 / (self.constraint_limits['metric1'] + 1e-8) - 1.0
-        # Metric2预算：单指标数据集设为0.0（表示该维度为空），双指标数据集正常计算
+
         if self.num_metrics == 1:
             m2_budget = 0.0
         else:
-            # Metric2预算（如Spearman）：约束是 metric > limit，所以 budget = metric/limit - 1
+
             m2_budget = prev_m2 / (self.constraint_limits['metric2'] + 1e-8) - 1.0
-        
-        # 截断到合理范围 [-1, 1]
+
+
         loss_budget = np.clip(loss_budget, -1.0, 1.0)
         m1_budget = np.clip(m1_budget, -1.0, 1.0)
         m2_budget = np.clip(m2_budget, -1.0, 1.0)
-        
-        # gelu-only (A): expose the 6 continuous features the active GTrXL policy
-        # consumes BY NAME, so the rollout loops never re-index magic offsets into
-        # the flat state (which would silently break when softmax dims are dropped).
+
+
         self._policy_cont_features = np.array(
             [cost_deviation, complexity_debt, progress,
              loss_budget, m1_budget, m2_budget],
             dtype=np.float32,
         )
         state = np.concatenate([
-            position,                          # 12维: 位置编码
-            [cost_deviation],                  # 1维: 成本偏差
-            [gelu_norm],                       # 1维: 上一步GELU动作
-            [complexity_debt],                 # 1维: 复杂度债务
-            [progress],                        # 1维: 进度指示
-            self.gelu_history,                 # 12维: GELU完整历史（显式历史编码）
-            [loss_budget, m1_budget, m2_budget]  # 3维: 预算感知（敏感度建模 3.3）
+            position,
+            [cost_deviation],
+            [gelu_norm],
+            [complexity_debt],
+            [progress],
+            self.gelu_history,
+            [loss_budget, m1_budget, m2_budget]
         ])
         return state.astype(np.float32)
 
@@ -2258,7 +1134,7 @@ class TransformerOptEnv:
         m1_budget, m2_budget]. Refreshed on every ``_get_state()`` call, so it is
         valid for whatever state ``reset()``/``step()`` most recently returned."""
         return self._policy_cont_features.copy()
-    
+
     def _compute_dense_step_reward(self, gelu_degree):
         """
         策略一（3.1）：计算稠密化中间奖励（gelu-only）。
@@ -2268,7 +1144,7 @@ class TransformerOptEnv:
         """
         step_cost = GELU_COST[gelu_degree] + SOFTMAX_COST[FIXED_SOFTMAX_DEGREE]
 
-        # 1. 策略一（3.1）：相对于最大成本的节约比例
+
         cost_saving = (self.max_cost_per_layer - step_cost) / self.max_cost_per_layer
         cost_reward = REWARD_DENSE_SCALE * cost_saving
         return cost_reward
@@ -2279,29 +1155,28 @@ class TransformerOptEnv:
         softmax 不再是动作：每层固定 degree 6（FIXED_SOFTMAX_DEGREE），其成本为常数。
         softmax_config 仍按层填入该固定 degree，供下游（stage1_evaluate / 报告）使用。
         """
-        # 映射动作到degree
+
         gelu_degree = GELU_MAP[gelu_action_idx]
         softmax_degree = FIXED_SOFTMAX_DEGREE
 
-        # 记录配置
+
         self.gelu_config.append(gelu_degree)
         self.softmax_config.append(softmax_degree)
 
-        # 更新累积开销
+
         self.accumulated_cost += GELU_COST[gelu_degree] + SOFTMAX_COST[softmax_degree]
 
-        # 更新上一步动作
-        self.prev_gelu_degree = gelu_degree
-        self.prev_softmax_degree = softmax_degree
 
-        # 显式历史编码：更新GELU动作历史缓冲区（softmax_history 已移除）
+        self.prev_gelu_degree = gelu_degree
+
+
         self.gelu_history[self.current_layer] = self.gelu_degree_to_norm[gelu_degree]
 
-        # 策略一（3.1）：计算稠密中间奖励（gelu-only）
+
         dense_reward = self._compute_dense_step_reward(gelu_degree)
         self.accumulated_dense_reward += dense_reward
 
-        # 构建中间结果信息
+
         info = {
             'layer_index': self.current_layer,
             'curr_gelu_degree': gelu_degree,
@@ -2309,143 +1184,92 @@ class TransformerOptEnv:
             'accumulated_cost': self.accumulated_cost,
             'gelu_config': self.gelu_config.copy(),
             'softmax_config': self.softmax_config.copy(),
-            'dense_reward': dense_reward,  # 记录稠密奖励
-            'gelu_history': self.gelu_history.copy(),      # 显式历史编码：记录历史
+            'dense_reward': dense_reward,
+            'gelu_history': self.gelu_history.copy(),
         }
 
         self.current_layer += 1
-        
+
         if self.current_layer < self.total_layers:
-            # 回合未结束，返回稠密中间奖励（策略一）
+
             return self._get_state(), dense_reward, False, info
         else:
-            # 回合结束，计算最终奖励
+
             final_reward = self._compute_final_reward()
             info['final_reward'] = final_reward
             info['accumulated_dense_reward'] = self.accumulated_dense_reward
-            # 最终奖励 = 基于约束的奖励 + 最后一步的稠密奖励
+
             total_reward = final_reward + dense_reward
             return self._get_state(), total_reward, True, info
-    
+
     def _compute_final_reward(self):
-        """
-        敏感度建模：约束障碍函数 + 可选差分奖励 + 解耦奖励
-        
-        实现要点：
-        1. 差分精度奖励默认关闭；可用 STAGE1_ENABLE_DIFFERENTIAL_REWARD=1 打开
-        2. 对数障碍惩罚（约束敏感性）：Log-Barrier函数
-        3. 成本奖励：相对于基线的节省
-        4. 返回分离的成本/精度奖励（用于双头Critic）
-        """
-        # 获取当前配置的指标
+        """Combine the terminal constraint barrier and cost saving."""
+
         gelu_arr = np.array(self.gelu_config)
         softmax_arr = np.array(self.softmax_config)
-        
-        # 评估模型
+
+
         loss, m1, m2, _ = self.evaluator.evaluate_model(gelu_arr, softmax_arr)
-        
-        # 存储当前指标（用于下一episode的差分计算）
+
+
         self.current_episode_metrics = {
             'loss': loss,
             'metric1': m1,
             'metric2': m2,
             'cost': self.accumulated_cost
         }
-        
-        r_accuracy_diff = 0.0
-        if STAGE1_ENABLE_DIFFERENTIAL_REWARD:
-            # ==================== 敏感度建模 4.1：差分精度奖励 ====================
-            # 1. 计算与上一episode的差值
-            delta_loss = self.prev_episode_metrics['loss'] - loss  # 正值表示loss变小（改善）
-            delta_m1 = m1 - self.prev_episode_metrics['metric1']   # 正值表示metric变大（改善）
-            delta_m2 = m2 - self.prev_episode_metrics['metric2']   # 正值表示metric变大（改善）
 
-            # 2. 使用根号变换放大微小信号（敏感度建模 4.1）
-            # 例如: 1e-4 -> 1e-2，信号强度提升100倍
-            def amplify_signal(delta):
-                sign = 1.0 if delta >= 0 else -1.0
-                return sign * (abs(delta) ** DIFF_REWARD_POWER) * DIFF_REWARD_SCALE_ACC
-
-            r_loss_diff = amplify_signal(delta_loss)
-            r_m1_diff = amplify_signal(delta_m1)
-            r_m2_diff = amplify_signal(delta_m2)
-
-            # 综合精度差分奖励（根据指标数量调整分母）
-            if self.num_metrics == 1:
-                r_accuracy_diff = (r_loss_diff + r_m1_diff) / 2.0
-            else:
-                r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
-        
-        # ==================== 敏感度建模 4.2：对数障碍约束奖励 ====================
         def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
             """
             对数障碍函数：当接近约束边界时梯度急剧增大
-            
+
             Args:
                 curr_value: 当前指标值
                 limit_value: 约束阈值
                 is_upper_bound: True表示约束为 curr < limit，False表示 curr > limit
             """
             if is_upper_bound:
-                # 约束: curr < limit (如Loss)
+
                 margin = limit_value - curr_value
             else:
-                # 约束: curr > limit (如Pearson/Spearman)
+
                 margin = curr_value - limit_value
-            
+
             if margin < 0:
-                # 违反约束：指数级爆炸惩罚
+
                 return -LOG_BARRIER_VIOLATION_SCALE * np.exp(-margin * LOG_BARRIER_VIOLATION_STEEPNESS)
             else:
-                # 满足约束：对数奖励，鼓励远离边界但收益递减
+
                 return LOG_BARRIER_SATISFACTION_SCALE * np.log(margin + 1e-5)
-        
+
         r_loss_barrier = log_barrier_reward(loss, self.constraint_limits['loss'], is_upper_bound=True)
         r_m1_barrier = log_barrier_reward(m1, self.constraint_limits['metric1'], is_upper_bound=False)
         r_m2_barrier = log_barrier_reward(m2, self.constraint_limits['metric2'], is_upper_bound=False)
-        
-        # 综合约束奖励（根据指标数量调整分母）
+
+
         if self.num_metrics == 1:
             r_constraint = (r_loss_barrier + r_m1_barrier) / 2.0
         else:
             r_constraint = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
-        
-        # ==================== 成本奖励 ====================
+
+
         cost_saving = (self.baseline_cost - self.accumulated_cost) / self.baseline_cost
         r_cost = cost_saving * REWARD_COST_WEIGHT
-        
-        # ==================== 综合奖励（用于双头Critic） ====================
-        # 精度奖励 = 约束奖励 + 可选差分奖励（默认关闭）
-        r_accuracy = r_accuracy_diff + r_constraint
-        
-        # 总奖励
+
+
+        r_accuracy = r_constraint
+
+
         raw_reward = r_accuracy + r_cost
-        
-        # 策略三（5.1）：回报归一化 - 固定缩放
+
+
         scaled_reward = raw_reward / REWARD_NORMALIZATION_SCALE
-        
-        # 奖励截断，防止训练发散
+
+
         clipped_reward = np.clip(scaled_reward, REWARD_CLIP_MIN, REWARD_CLIP_MAX)
-        
-        # 存储分离的奖励（用于双头Critic）
-        self.last_cost_reward = r_cost / REWARD_NORMALIZATION_SCALE
-        self.last_acc_reward = r_accuracy / REWARD_NORMALIZATION_SCALE
-        
+
+
         return clipped_reward
-    
-    def get_separated_rewards(self):
-        """
-        敏感度建模：获取分离的成本/精度奖励（用于双头Critic）
-        """
-        return getattr(self, 'last_cost_reward', 0.0), getattr(self, 'last_acc_reward', 0.0)
-    
-    def update_prev_metrics(self):
-        """
-        敏感度建模：更新上一episode指标（在episode结束后调用）
-        用于下一episode的差分奖励计算
-        """
-        if self.current_episode_metrics is not None:
-            self.prev_episode_metrics = self.current_episode_metrics.copy()
 
 
 class LayerImportanceEvaluator(TrainerCallback):
@@ -2459,7 +1283,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage1_rl_lr=None,
                  stage2_rl_lr=None,
                  stage1_rl_devices="",
-                 device='cuda', data_path='mrpc', test_data_mm=None,
+                 device='cuda', data_path='mrpc',
                  run_output_dir='',
                  final_eval_config_source='search',
                  final_eval_config_path='glue_final_configs_best_ppo.json',
@@ -2493,7 +1317,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  resume_run_dir='',
                  decoupled_layout=False,
                  stage1_run_id='',
-                 search_algorithm=None,
                  stage1_accuracy_tolerance=None,
                  stage2_limit_tolerance=None,
                  stage2_stability_tolerance=None,
@@ -2537,18 +1360,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                   comparator_stage1_only=False,
                   glue_data_protocol=None,
                   mrpc_reproducibility=None):
-        """
-        基于 PPO 强化学习的策略搜索器。
-        目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
-        
-        敏感度建模扩展：
-        - data_path: 数据集名称，用于选择评估指标
-            各数据集使用不同指标（详见 DATASET_METRICS_CONFIG）
-        - test_data_mm: MNLI mismatched 验证集（仅 MNLI 使用）
-        """
-        # 增加递归深度以支持深拷贝复杂模型图
+        """Construct the shared Stage-1, Stage-2, and final-eval pipeline."""
+
         sys.setrecursionlimit(50000)
-        
+
         self.model = model
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
@@ -2596,24 +1411,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                 batch_size=self.batch_size,
             )
 
-        # 评估结果缓存（基于 (gelu_config, softmax_config, resolved_split) 的确定性缓存）
-        # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
-        # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
+
         from stage1_rl.eval_cache import Stage1EvalCache
         self._eval_cache = Stage1EvalCache()
-        # 多 GPU worker 路径的共享版缓存（带锁）：worker 的 Stage-1 明文评估同样是
-        # (gelu, softmax, split) 的确定性函数，重复配置可整体跳过 install + forward。
-        # 命中返回的是先前算出的同一组浮点数 → 对 rollout_sig / 1==N 完全透明。
-        # 仅 Stage-1 明文评估可用；任何带噪声采样的评估路径不得使用。
+
+
         self._stage1_worker_eval_cache = Stage1EvalCache()
         self._stage1_parallel_timing_lock = threading.Lock()
         self._stage1_parallel_model_forward_seconds = 0.0
         self._stage1_parallel_model_forward_calls = 0
-        # Track one-time device placement; eval mode is re-asserted before each forward.
+
         self._eval_infra_ready = False
-        # 记录上一次已应用的 (gelu_degrees, softmax_degrees); apply_configuration 是幂等的,
-        # 配置未变时可安全跳过重复调用 (例如同一配置同时评估 train 和 test 两个 split 的情况)
-        # 结果 bit-identical, 因为模型状态仅由 (gelu, softmax) 决定
+
+
         self._last_applied_config = None
         if stage1_entropy_stop_threshold in (None, ""):
             self.stage1_entropy_stop_threshold = None
@@ -2654,14 +1464,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage2_rl_episodes_specified = self._coerce_bool_flag(
             stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
         )
-        
-        # ==================== 敏感度建模：数据集检测与指标选择 ====================
+
+
         self.data_path = data_path
         self.is_regression = self._detect_task_type()
         self._log_task_type()
-        
-        # 训练集用于RL训练，验证集用于最终评估
-        # pin_memory=True: 将 CPU 数据放入 page-locked 内存, 加速 CPU→GPU 传输, 不改变任何数值结果
+
+
         _pin = torch.cuda.is_available()
         self.dataloader_train = DataLoader(
             train_data,
@@ -2678,17 +1487,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             pin_memory=_pin,
         )
 
-        # MNLI mismatched 验证集（仅 MNLI 需要）
-        if test_data_mm is not None:
-            self.dataloader_test_mm = DataLoader(
-                test_data_mm,
-                batch_size=self.batch_size,
-                shuffle=False,
-                collate_fn=data_collator,
-                pin_memory=_pin,
-            )
-        else:
-            self.dataloader_test_mm = None
 
         self._prepare_rl_datasets(
             train_data=train_data,
@@ -2699,7 +1497,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             ),
             validation_data=test_data,
         )
-        
+
         try:
             self.reversible_handler = ReversibleLayerHandler(self.model)
         except Exception as e:
@@ -2708,15 +1506,15 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self.layers_attribute = self._detect_layer_attribute()
         self.total_layers = len(eval('self.model.' + self.layers_attribute))
-        
-        # --- 密文代价模型 ---
+
+
         self.GELU_COST_MAP = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
         self.SOFTMAX_COST_MAP = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
         self.INPUT_NOISE_COST_MAP = INPUT_NOISE_COST_MAP.copy()
         self.WEIGHT_NOISE_COST_MAP = WEIGHT_NOISE_COST_MAP.copy()
         self.WFFN1_NOISE_COST_MAP = WFFN1_NOISE_COST_MAP.copy()
 
-        # 搜索状态初始化
+
         self.current_gelu_degrees = np.full(self.total_layers, 4, dtype=int)
         self.current_softmax_degrees = np.full(self.total_layers, 6, dtype=int)
         self.current_input_noise_scaling_factors = np.full(
@@ -2786,20 +1584,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.ppo_lr_initial = self.stage1_ppo_lr_initial
         self.ppo_lr_mode = self.stage1_ppo_lr_mode
-        
-        # --- 用户阈值配置（统一采用百分比形式；默认 0.5%） ---
-        # 保留既有字段名以兼容旧调用方，但这里的 error_threshold
-        # 现在表示 loss 允许上浮的比例，而非绝对增量。
-        # 可通过 stage1_accuracy_tolerance 参数外部传入。
+
+
         _s1_tol = float(stage1_accuracy_tolerance) if stage1_accuracy_tolerance is not None else 0.005
         self.error_threshold = _s1_tol
         self.correlation_drop_ratio = _s1_tol
-        # Stage-2 动态约束：以 baseline 为基准的允许波动百分比（与 Stage-1 tolerance 同构）
-        #   limit: loss 允许上浮 tol, metric 允许下降 tol
-        #   stability: std 允许上浮 tol（baseline 探针的纯噪声采样方差）
+
+
         self.stage2_limit_tolerance = float(stage2_limit_tolerance) if stage2_limit_tolerance is not None else 0.05
-        # 2026-06-15: MULTIPLIER on baseline std (stab_threshold = baseline.X_std × tol),
-        # not fractional slack. Default 1.2 mirrors the original Stage-2 1.2× gate.
+
+
         self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 1.2
         self.stage2_stability_multiplier = float(stage2_stability_multiplier)
         if self.stage2_stability_multiplier <= 0.0:
@@ -2813,19 +1607,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage2_communication_importance_ratio,
             )
         )
-        # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
-        #   stage2_k_trials: 噪声 trial 次数（K）
-        #   stage2_probe_size: 探针子集大小
+
+
         self.stage2_k_trials = max(1, int(stage2_k_trials)) if stage2_k_trials is not None else 3
         self.stage2_probe_size = max(1, int(stage2_probe_size)) if stage2_probe_size is not None else 256
-        
-        self.search_algorithm = search_algorithm or "rl"
-        # 2026-06-01 解耦：新扁平布局开关 + stage2-only 的前置 Stage-1 record 选择。
+
+        self.search_algorithm = "rl"
+
         self.decoupled_layout = bool(decoupled_layout)
         self.stage1_run_id = str(stage1_run_id or "").strip()
         output_layout = resolve_run_output_layout(
             run_output_dir,
-            search_algorithm=self.search_algorithm,
             flattened=self.decoupled_layout,
         )
         self.run_output_dir = output_layout["run_output_dir"]
@@ -2839,7 +1631,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_log_file = output_layout["noise_log_file"]
         self.active_log_file = self.log_file
         self.step_info_file = output_layout["stage1_step_info_file"]
-        self.stage1_step_info_file = self.step_info_file  # alias for clarity
+        self.stage1_step_info_file = self.step_info_file
         self.stage1_training_curve_path = output_layout["stage1_training_curve_path"]
         self.stage1_entropy_curve_path = output_layout["stage1_entropy_curve_path"]
         self.final_eval_dir = output_layout["final_eval_dir"]
@@ -2848,12 +1640,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
         self._noise_log_initialized = self.noise_log_file == self.log_file
-        _log_header = _SEARCH_LOG_HEADERS.get(
-            self.search_algorithm,
-            "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
-        )
+        _log_header = SEARCH_LOG_HEADER
         ensure_parent_dir(self.log_file)
-        # 续训时使用追加模式，避免覆盖之前的日志
+
         _is_resuming = bool(str(resume_run_dir or '').strip())
         _log_open_mode = "a" if _is_resuming and os.path.isfile(self.log_file) else "w"
         with open(self.log_file, _log_open_mode, encoding="utf-8") as f:
@@ -2887,33 +1676,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
             if self.run_output_dir:
                 f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
-        
-        # ==================== 策略二：动态超参数调度状态 ====================
+
+
         self.current_episode = 0
         self.total_episodes = self.stage1_rl_episode_limit or PPO_MAX_EPISODES
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
         self.current_lr = self.stage1_ppo_lr_initial
-        
-        # ==================== PPO 7.1: 运行时回报归一化状态 ====================
-        self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)  # 历史回报滑动窗口
+
+
+        self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)
         self.reward_history_sum = 0.0
         self.reward_history_sumsq = 0.0
-        self.reward_mean = 0.0    # 运行时均值
-        self.reward_std = 1.0     # 运行时标准差（初始为1避免除零）
-        
-        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================
-        # 使用 RunningMeanStd 跟踪 returns 的统计量
-        # Critic 在归一化空间学习，推理时反归一化
+        self.reward_mean = 0.0
+        self.reward_std = 1.0
+
+
         self.return_normalizer = RunningMeanStd()
-        
-        # ==================== 敏感度建模：解耦归一化 ====================
-        self.disentangled_normalizer = DisentangledNormalizer()
-        
-        # ==================== 敏感度建模：PPO-Lagrangian ====================
-        # 可学习的拉格朗日乘子
-        self.lagrangian_loss = LAGRANGIAN_INITIAL
-        self.lagrangian_m1 = LAGRANGIAN_INITIAL
-        self.lagrangian_m2 = LAGRANGIAN_INITIAL
+
 
         self.final_eval_config_source = (final_eval_config_source or 'search').lower()
         self.final_eval_config_path = final_eval_config_path or 'glue_final_configs_best_ppo.json'
@@ -2993,9 +1772,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "Use one of: search, json, manual, max."
             )
 
-        # ---------- 阶段组合校验（兼容续训时灵活切换阶段开关） ----------
-        # 在持久化目录续训时，允许用户改变 skip 标志。
-        # 仅在逻辑上真正冲突时报错。
+
         _has_stage1_manual = (
             self.manual_stage1_gelu is not None
             and self.manual_stage1_softmax is not None
@@ -3034,7 +1811,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         if (not self.skip_stage1_rl) and self.final_eval_config_source != 'search':
-            # 自动适配：启用 stage1 时自动将 final_eval_config_source 切换为 search
+
             print(
                 "[自动适配] 启用 Stage-1 搜索，自动将 final_eval_config_source 从 "
                 f"'{self.final_eval_config_source}' 切换为 'search'。"
@@ -3043,7 +1820,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if (
             (not self.skip_stage1_rl)
-            and self.search_algorithm != "ga"
             and not self.stage1_rl_unbounded_until_entropy
             and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL
         ):
@@ -3103,7 +1879,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if (
             (not self.skip_noise_rl)
-            and self.search_algorithm != "ga"
             and str(blb_v3_search_backend or "ppo").strip().lower() == "ppo"
             and self.stage2_rl_episodes != 0
             and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL
@@ -3112,10 +1887,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"stage2_rl_episodes={self.stage2_rl_episodes} is too small. "
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-2 PPO can update at least once."
             )
-        
-        # ==================== 敏感度建模：课程学习状态 ====================
-        self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
-        self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
+
 
         self.blb_v3_inproc_rescale_optimizer_root = (
             None
@@ -3462,11 +2234,11 @@ class LayerImportanceEvaluator(TrainerCallback):
             import datetime as _dt
             from config import run_layout as _rl
 
-            wd = os.path.normpath(str(self.run_output_dir or ""))   # <root>/stage1/<combo>
+            wd = os.path.normpath(str(self.run_output_dir or ""))
             if not wd or wd == ".":
                 return
             combo = os.path.basename(wd)
-            root = os.path.dirname(os.path.dirname(wd))             # <root>
+            root = os.path.dirname(os.path.dirname(wd))
 
             def _arr(x, fb):
                 try:
@@ -3491,7 +2263,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             gelu_cost = float(sum(GELU_COST.get(int(g), 0.0) for g in gelu))
             softmax_cost = float(sum(SOFTMAX_COST.get(int(s), 0.0) for s in softmax))
 
-            # 派生 metric 曲线（best-effort）。
+
             metric_curve_path = ""
             try:
                 import matplotlib
@@ -3572,11 +2344,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         import json as _json
         from config import run_layout as _rl
 
-        wd = os.path.normpath(str(self.run_output_dir or ""))   # <root>/stage2/<combo>
+        wd = os.path.normpath(str(self.run_output_dir or ""))
         if not wd or wd == ".":
             raise RuntimeError("解耦 stage2 需要 run_output_dir 来定位 stage1/record/。")
         combo = os.path.basename(wd)
-        root = os.path.dirname(os.path.dirname(wd))             # <root>
+        root = os.path.dirname(os.path.dirname(wd))
         rec_root = os.path.join(root, _rl.STAGE1_SUBDIR, _rl.RECORD_SUBDIR)
         run_id_name = self.stage1_run_id or None
         rec_dir = _rl.latest_record_dir_in_root(rec_root, combo, run_id_name=run_id_name)
@@ -3622,8 +2394,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         resolver = self._build_stage2_fixed_config_resolver()
-        # 解耦 stage2-only：无 Stage-1 搜索结果、且未显式给 JSON/manual 覆盖时，从
-        # stage1/record/ 读前置 Stage-1（grilled 决定：JSON 仅作为显式 --stage2-fixed-config 覆盖）。
+
+
         _use_record = (
             self.stage2_fixed_config_source == 'stage1_result'
             and getattr(self, "decoupled_layout", False)
@@ -3642,27 +2414,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"Stage-2 GELU vector length {gelu.size} does not match "
                 f"num_layers={self.total_layers}."
             )
-        # A (2026-05-30): softmax is no longer a Stage-1 decision — every layer is
-        # fixed to FIXED_SOFTMAX_DEGREE. Override whatever the resolver produced so
-        # the Stage-2 binding always sees softmax=[6]*L (block3 -> block3_exp_n6),
-        # never the exact-function baseline sentinel (-1) or a stale searched value.
+
+
         del softmax
         softmax = np.full(self.total_layers, FIXED_SOFTMAX_DEGREE, dtype=int)
         label = f"Stage-1 config ({source}; softmax fixed deg{FIXED_SOFTMAX_DEGREE})"
         return gelu, softmax, label, source
-    
+
     def _detect_task_type(self):
         self.dataset_key = validate_dataset(self.data_path)
         self.dataset_config = DATASET_METRICS_CONFIG[self.dataset_key]
         return False
-    
+
     def _log_task_type(self):
         """记录任务类型信息"""
         full_names = self.dataset_config['metric_full_names']
         task_type = 'REGRESSION' if self.is_regression else 'CLASSIFICATION'
         print(f"[信息] 数据集（Dataset）'{self.data_path}' 检测为 {task_type} 任务")
         print(f"[信息] 使用指标（Using metrics）: {', '.join(full_names)}")
-    
+
     def get_metric_names(self) -> Tuple[str, ...]:
         """
         获取当前数据集的完整指标名称（用于日志显示）
@@ -3688,7 +2458,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self._active_inference_batch_size
             if batch_size is None else max(1, int(batch_size))
         )
-        # pin_memory=True: 加速 CPU→GPU 传输, 不改变数值
+
         return DataLoader(
             dataset,
             batch_size=effective_batch_size,
@@ -3716,32 +2486,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             rebuilt[split_name] = (
                 tuple(loader) if split_name == "validation_full" else loader
             )
-        rebuilt_mm = {}
-        for split_name, dataset in self.dataset_splits_mm.items():
-            loader = self._make_dataloader(dataset, batch_size=target)
-            rebuilt_mm[split_name] = (
-                tuple(loader) if split_name == "validation_full" else loader
-            )
         self.dataloaders = rebuilt
-        self.dataloaders_mm = rebuilt_mm
         self.dataloader_train = self.dataloaders.get("train")
         self.dataloader_test = self.dataloaders.get("validation_full")
-        self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
 
-        # Stage-1 loss is batch-partition-sensitive and its cache key predates
-        # the Stage-2 batch split. Never carry those values across the boundary.
+
         from stage1_rl.eval_cache import Stage1EvalCache
 
         self._eval_cache = Stage1EvalCache()
         self._stage1_worker_eval_cache = Stage1EvalCache()
         return target
 
-    def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
+    def _register_dataset_split(self, split_name, dataset):
         if dataset is None:
             self.dataset_splits.pop(split_name, None)
             self.dataloaders.pop(split_name, None)
-            self.dataset_splits_mm.pop(split_name, None)
-            self.dataloaders_mm.pop(split_name, None)
             return
 
         cache_eval_batches = split_name == "validation_full"
@@ -3749,144 +2508,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         dataloader = self._make_dataloader(dataset)
         self.dataloaders[split_name] = tuple(dataloader) if cache_eval_batches else dataloader
 
-        if dataset_mm is None:
-            self.dataset_splits_mm.pop(split_name, None)
-            self.dataloaders_mm.pop(split_name, None)
-        else:
-            self.dataset_splits_mm[split_name] = dataset_mm
-            dataloader_mm = self._make_dataloader(dataset_mm)
-            self.dataloaders_mm[split_name] = (
-                tuple(dataloader_mm) if cache_eval_batches else dataloader_mm
-            )
-
     def has_dataset_split(self, split_name):
         return self.dataloaders.get(split_name) is not None
 
-    def _extract_labels_for_stratify(self, dataset):
-        if dataset is None or self.is_regression:
-            return None
-
-        column_names = getattr(dataset, "column_names", [])
-        if "labels" in column_names:
-            label_column = "labels"
-        elif "label" in column_names:
-            label_column = "label"
-        else:
-            return None
-
-        try:
-            labels = dataset[label_column]
-        except Exception:
-            labels = [dataset[idx][label_column] for idx in range(len(dataset))]
-
-        normalized = []
-        for value in labels:
-            if torch.is_tensor(value):
-                value = value.item() if value.numel() == 1 else tuple(value.detach().cpu().tolist())
-            elif isinstance(value, np.ndarray):
-                value = value.item() if value.size == 1 else tuple(value.tolist())
-            normalized.append(value)
-        return normalized
-
-    def _safe_train_test_split(self, indices, seed, labels=None, train_size=None, test_size=None):
-        split_kwargs = {
-            "shuffle": True,
-            "random_state": int(seed),
-        }
-        if train_size is not None:
-            split_kwargs["train_size"] = train_size
-        if test_size is not None:
-            split_kwargs["test_size"] = test_size
-
-        if labels is not None:
-            try:
-                return train_test_split(indices, stratify=labels, **split_kwargs)
-            except ValueError:
-                pass
-
-        return train_test_split(indices, **split_kwargs)
-
-    def _sample_dataset_by_size(self, dataset, subset_size, seed):
-        if dataset is None:
-            return None
-
-        total_size = len(dataset)
-        if total_size == 0:
-            return dataset
-
-        subset_size = int(subset_size)
-        if subset_size >= total_size:
-            return dataset
-        if subset_size <= 0:
-            subset_size = 1
-
-        indices = np.arange(total_size)
-        labels = self._extract_labels_for_stratify(dataset)
-        selected_indices, _ = self._safe_train_test_split(
-            indices,
-            seed=seed,
-            labels=labels,
-            train_size=subset_size,
-        )
-        selected_indices = np.sort(np.asarray(selected_indices, dtype=int))
-        return dataset.select(selected_indices.tolist())
-
-    # 稳定性探针默认子集大小（保留为向后兼容常量；实际生效值由实例属性
-    # `self.stage2_probe_size` 承载，默认 256，可由 CLI `--stage2-probe-size` 覆盖）。
-    STABILITY_PROBE_MIN_SAMPLES = 256
-
-    def _get_stability_probe(self, split_name, probe_size, probe_seed=42):
-        """返回并缓存一份固定的分层采样探针子集，供稳定性评测复用。
-
-        Why: 过去的"把验证集切 N 段、每段独立采样一次噪声"做法，std 实际上
-        被 **每段样本分布不同** 导致的有限样本抖动主导（≈ √(p(1-p)/n)），
-        与噪声无关；噪声注入的方差被完全淹没。改为"同一份固定分层子集
-        + 多次不同噪声"后，各 trial 之间的数据完全一致，std 才是纯噪声
-        采样方差。
-        """
-        cache = self.__dict__.setdefault("_stability_probe_cache", {})
-        key = (str(split_name), int(probe_size), int(probe_seed))
-        if key in cache:
-            return cache[key]
-        if self.mrpc_reproducibility is not None:
-            if str(split_name) != "validation_full":
-                raise RuntimeError(
-                    "MRPC reproducibility requires validation_full"
-                )
-            frozen_probe = self.mrpc_reproducibility.stability_probe
-            if frozen_probe is None:
-                raise RuntimeError(
-                    "MRPC reproducibility stability probe is unavailable"
-                )
-            if int(probe_size) != len(frozen_probe):
-                raise ValueError(
-                    "MRPC reproducibility probe size mismatch: "
-                    f"requested {int(probe_size)}, fixture has {len(frozen_probe)}"
-                )
-            cache[key] = (frozen_probe, None)
-            return cache[key]
-        dataset = self.dataset_splits.get(split_name)
-        if dataset is None or len(dataset) == 0:
-            cache[key] = (None, None)
-            return cache[key]
-        clipped_size = max(1, min(int(probe_size), len(dataset)))
-        subset = self._sample_dataset_by_size(dataset, clipped_size, int(probe_seed))
-
-        dataset_mm = self.dataset_splits_mm.get(split_name)
-        subset_mm = None
-        if dataset_mm is not None and len(dataset_mm) > 0:
-            mm_size = max(1, min(clipped_size, len(dataset_mm)))
-            subset_mm = self._sample_dataset_by_size(
-                dataset_mm, mm_size, int(probe_seed),
-            )
-        cache[key] = (subset, subset_mm)
-        return cache[key]
 
     def _prepare_rl_datasets(self, train_data, train_probe, validation_data):
         self.dataset_splits = {}
-        self.dataset_splits_mm = {}
         self.dataloaders = {}
-        self.dataloaders_mm = {}
 
         self._register_dataset_split("train", train_data)
         self._register_dataset_split("train_probe", train_probe)
@@ -3894,7 +2522,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self.dataloader_train = self.dataloaders.get("train")
         self.dataloader_test = self.dataloaders.get("validation_full")
-        self.dataloader_test_mm = None
 
     def get_reward_reference_split_name(self):
         return TRAIN_PROBE_SPLIT
@@ -4004,110 +2631,54 @@ class LayerImportanceEvaluator(TrainerCallback):
         f.write(f"  当前GELU阶数（curr_gelu_degree）: {step_info['curr_gelu_degree']}\n")
         f.write(f"  当前Softmax阶数（curr_softmax_degree）: {step_info['curr_softmax_degree']}\n")
         f.write(f"  GELU概率分布（gelu_prob_dist）: {step_info['gelu_prob_dist']}\n")
-        # softmax_prob_dist removed (A): gelu-only policy; softmax fixed at degree 6.
+
         f.write(f"  评论家值（critic_value）: {step_info['critic_value']}\n")
         f.write(f"  累计成本（accumulated_cost）: {step_info['accumulated_cost']}\n")
         f.write(f"  GELU配置（gelu_config）: {step_info['gelu_config']}\n")
         f.write(f"  Softmax配置（softmax_config）: {step_info['softmax_config']}\n")
-        # 策略二：输出动态超参数调度信息
+
         if 'current_lr' in step_info:
             f.write(f"  当前学习率（current_lr）: {step_info['current_lr']:.6f}\n")
         if 'current_entropy_coef' in step_info:
             f.write(f"  当前熵系数（current_entropy_coef）: {step_info['current_entropy_coef']:.6f}\n")
-    
+
     def update_hyperparameters(self, optimizer, episode):
-        """
-        超参数调度（兼容 GTrXL 和 LSTM）
-        
-        - 熵系数：线性衰减（0.05 -> 0.001），下限为 GTRXL_ENTROPY_LOWER_BOUND
-        - 学习率：GTrXL模式下不在此处设置（由 ppo_update_gtrxl 的 Warmup 机制控制）；
-                  读取 optimizer 当前 LR 用于日志记录
-        - 课程学习：动态调整约束阈值
-        """
+        """Update the production entropy schedule and report the optimizer LR."""
         self.current_episode = episode
         progress = episode / self.total_episodes
-        
-        # 熵系数调度：默认线性衰减；启用 RL_OPT_FLAGS 时改为 cosine + 高 plateau，
-        # 早期保持高熵以鼓励充分探索，避免过早陷入局部最优。
-        if RL_OPT_FLAGS.get("use_cosine_entropy_schedule", False):
-            plateau = float(RL_OPT_FLAGS.get("entropy_plateau_ratio", 0.25))
-            if progress <= plateau:
-                new_entropy = PPO_ENTROPY_START
-            else:
-                tail = (progress - plateau) / max(1.0 - plateau, 1e-8)
-                tail = min(max(tail, 0.0), 1.0)
-                cosine_factor = 0.5 * (1.0 + math.cos(math.pi * tail))  # 1->0
-                new_entropy = PPO_ENTROPY_END + (PPO_ENTROPY_START - PPO_ENTROPY_END) * cosine_factor
+
+        plateau = 0.25
+        if progress <= plateau:
+            new_entropy = PPO_ENTROPY_START
         else:
-            new_entropy = PPO_ENTROPY_START - (PPO_ENTROPY_START - PPO_ENTROPY_END) * progress
-        new_entropy = max(new_entropy, _rl_opt_entropy_lower_bound())
+            tail = (progress - plateau) / max(1.0 - plateau, 1e-8)
+            tail = min(max(tail, 0.0), 1.0)
+            cosine_factor = 0.5 * (1.0 + math.cos(math.pi * tail))
+            new_entropy = PPO_ENTROPY_END + (
+                PPO_ENTROPY_START - PPO_ENTROPY_END
+            ) * cosine_factor
+        new_entropy = max(new_entropy, GTRXL_ENTROPY_LOWER_BOUND)
         self.current_entropy_coef = new_entropy
-        
-        # 学习率：GTrXL 的 Warmup 由 ppo_update_gtrxl 在每次 PPO 更新时设置，
-        # 此处仅读取当前优化器的学习率用于日志记录
+
+
         if hasattr(optimizer, 'param_groups'):
             self.current_lr = optimizer.param_groups[0]['lr']
         elif isinstance(optimizer, dict):
             self.current_lr = optimizer.get('actor', optimizer.get('critic', {}))
             if hasattr(self.current_lr, 'param_groups'):
                 self.current_lr = self.current_lr.param_groups[0]['lr']
-        
-        # 课程学习阶段更新
-        self._update_curriculum_phase(episode)
-        
+
+
         return self.current_lr, new_entropy
 
     def _rebuild_reward_statistics_accumulators(self):
         self.reward_history_sum = float(sum(float(value) for value in self.reward_history))
         self.reward_history_sumsq = float(sum(float(value) * float(value) for value in self.reward_history))
-    
-    def _update_curriculum_phase(self, episode):
-        """
-        敏感度建模 6.2：课程学习阶段更新
-        - 阶段一（探索期，前30%）：放宽约束阈值（1.2倍目标值）
-        - 阶段二（收紧期，中间40%）：线性收紧约束阈值
-        - 阶段三（精调期，后30%）：略严于目标的约束（0.95倍）
-        """
-        progress = episode / self.total_episodes
-        
-        phase1_end = CURRICULUM_PHASE1_RATIO
-        phase2_end = CURRICULUM_PHASE1_RATIO + CURRICULUM_PHASE2_RATIO
-        
-        if progress < phase1_end:
-            # 阶段一：探索期 - 放宽约束
-            self.curriculum_phase = 1
-            self.constraint_slack = CURRICULUM_INITIAL_SLACK
-        elif progress < phase2_end:
-            # 阶段二：收紧期 - 线性收紧
-            self.curriculum_phase = 2
-            # 从 1.2 线性过渡到 1.0
-            phase2_progress = (progress - phase1_end) / CURRICULUM_PHASE2_RATIO
-            self.constraint_slack = CURRICULUM_INITIAL_SLACK - (CURRICULUM_INITIAL_SLACK - 1.0) * phase2_progress
-        else:
-            # 阶段三：精调期 - 严格约束
-            self.curriculum_phase = 3
-            self.constraint_slack = CURRICULUM_SAFETY_BUFFER
-    
-    def get_curriculum_constraints(self, base_limits):
-        """
-        敏感度建模：获取当前课程阶段的约束阈值
-        
-        Args:
-            base_limits: 基线约束字典 {'loss': float, 'metric1': float, 'metric2': float}
-        
-        Returns:
-            调整后的约束字典
-        """
-        return {
-            'loss': base_limits['loss'] * self.constraint_slack,
-            'metric1': base_limits['metric1'] / self.constraint_slack,  # metric 是越大越好，所以除以 slack
-            'metric2': base_limits['metric2'] / self.constraint_slack
-        }
-    
+
     def get_current_entropy_coef(self):
         """获取当前熵系数（供ppo_update使用）"""
         return self.current_entropy_coef
-    
+
     def update_reward_statistics(self, episode_reward):
         """
         PPO 7.1: 更新运行时回报统计量
@@ -4121,38 +2692,26 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.reward_history.append(episode_reward)
         self.reward_history_sum += episode_reward
         self.reward_history_sumsq += episode_reward * episode_reward
-        
-        # 更新均值和标准差（至少需要一定数量的样本）
+
+
         if len(self.reward_history) >= RUNNING_REWARD_MIN_SAMPLES:
             n = float(len(self.reward_history))
             self.reward_mean = self.reward_history_sum / n
             variance = max(self.reward_history_sumsq / n - self.reward_mean * self.reward_mean, 0.0)
             self.reward_std = math.sqrt(variance) + RUNNING_REWARD_EPSILON
-    
+
     def _detect_layer_attribute(self):
-        candidates = ['bert.encoder.layer', 'transformer.h', 'model.layers', 'roberta.encoder.layer']
-        for path in candidates:
-            try:
-                if len(eval('self.model.' + path)) > 0: return path
-            except: continue
+        layers = getattr(getattr(self.model, "bert", None), "encoder", None)
+        layers = getattr(layers, "layer", None)
+        if layers is None or len(layers) == 0:
+            raise TypeError("LayerImportanceEvaluator requires a BERT encoder")
         return 'bert.encoder.layer'
 
     def _get_layer_act_module(self, layer):
-        """Return the activation Module inside a single transformer block.
-
-        BERT: ``layer.intermediate.intermediate_act_fn``.
-        GPT-2: ``layer.mlp.act``.
-        Returns ``None`` if the activation is a plain function instead of nn.Module.
-        """
-        # Prefer BERT path
+        """Return a BERT layer's activation module when it is replaceable."""
         inter = getattr(layer, "intermediate", None)
         if inter is not None and hasattr(inter, "intermediate_act_fn"):
             act = inter.intermediate_act_fn
-            return act if isinstance(act, nn.Module) else None
-        # GPT-2 path
-        mlp = getattr(layer, "mlp", None)
-        if mlp is not None and hasattr(mlp, "act"):
-            act = mlp.act
             return act if isinstance(act, nn.Module) else None
         return None
 
@@ -4171,21 +2730,18 @@ class LayerImportanceEvaluator(TrainerCallback):
             return
 
         ensure_parent_dir(self.noise_log_file)
-        # Initialize the dedicated Stage-2 noise log without resetting it on resume.
+
         _is_resuming = bool(getattr(self, "resume_run_dir", ""))
         _noise_log_mode = "a" if _is_resuming and os.path.isfile(self.noise_log_file) else "w"
         _lr_mode_labels = {
             "direct": "直接指定（direct）",
-            "legacy-micro": "旧版微学习率换算（legacy-micro）",
+            "default": "默认值（default）",
         }
         _stage1_lr_mode = _lr_mode_labels.get(str(self.stage1_ppo_lr_mode), str(self.stage1_ppo_lr_mode))
         _stage2_lr_mode = _lr_mode_labels.get(str(self.stage2_ppo_lr_mode), str(self.stage2_ppo_lr_mode))
         with open(self.noise_log_file, _noise_log_mode, encoding="utf-8") as f:
-            # NB: keep these as a list+'\n'.join (not implicit string concatenation)
-            # — Python's operator precedence parses `"=" * 80 + "\n" "abc\n" "=" * 80`
-            # as `"=" * 80 + ("\n" + "abc\n" + "=") * 80 + ...`, which produces 80
-            # copies of the header (the original cause of the long-standing log
-            # spam where pruning_search_log.txt opened with 80 duplicate banners).
+
+
             if _is_resuming and _noise_log_mode == "a":
                 import datetime as _dt
                 header_lines = [
@@ -4257,8 +2813,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         the underlying transformer. Eagerly switches the model to ``eval()``
         because candidate scoring is always inference. Mutates the model
         in-place; no return value."""
-        # Search "training" updates only the controller/GA state; candidate
-        # scoring must always run the language model in inference mode.
+
+
         model = getattr(self, "model", None)
         if model is None:
             model = getattr(getattr(self, "reversible_handler", None), "model", None)
@@ -4720,10 +3276,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             if input_noise_enabled:
                 self.clear_input_noise_configuration()
 
-    # ---------------------------------------------------------------------
-    # Historical helper for legacy diagnostics. The active Stage-1 train/eval
-    # path is plaintext-only and must not install Stage-2 noise hooks.
-    # ---------------------------------------------------------------------
+
     def _stage1_max_scaling_noise_arrays(self):
         max_in = max(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
         max_w = max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
@@ -4770,11 +3323,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if split_name is None:
             raise ValueError("_stage1_evaluate_on_model requires explicit split_name")
 
-        # Shared lock-protected cache: Stage-1 plaintext scoring is a
-        # deterministic function of (gelu, softmax, split) — frozen weights,
-        # eval mode, shuffle=False, no noise — so a repeated config returns
-        # the exact floats a worker computed before (identical reward stream
-        # for any GPU count). See stage1_rl/eval_cache.py for the contract.
+
         _shared_cache = getattr(self, "_stage1_worker_eval_cache", None)
         if _shared_cache is not None:
             _cache_key = _shared_cache.make_key(gelu_degrees, softmax_degrees, split_name)
@@ -4783,7 +3332,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 return _cached
 
         handler_layer_name = "model." + self.layers_attribute
-        # 1) GELU/Softmax install (mirrors apply_configuration body, bound to passed handler).
+
         model.eval()
         cfg_sig = (
             tuple(int(d) for d in gelu_degrees),
@@ -4800,7 +3349,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             handler._last_stage1_applied_config = cfg_sig
 
-        # 2) Forward via the explicit-model/device variant of _run_evaluation.
+
         dataloader = self.dataloaders[split_name]
         _forward_t0 = time.time()
         result = self._run_evaluation(
@@ -4902,10 +3451,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             base_seed = int(getattr(self, "final_eval_random_seed", 42))
             for trial_idx in range(repeats):
-                # 当 random_noise=True 时，每个 trial 从 OS 熵源派生独立种子，
-                # 这样多次运行 final-eval 得到的噪声采样是真正独立的（而不是 base_seed 决定的固定模式）；
-                # 当 random_noise=False（默认）时，沿用基于 final_eval_random_seed 的可复现序列，
-                # 保证搜索阶段对候选配置的稳定性比较仍然是公平的。
+
+
                 if random_noise:
                     trial_seed = int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
                 else:
@@ -4949,155 +3496,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         })
         return summary
 
-    def evaluate_model_with_attention_noise_segmented(
-            self,
-            gelu_degrees,
-            softmax_degrees,
-            input_noise_scaling_factors=None,
-            wq_noise_scaling_factors=None,
-            wk_noise_scaling_factors=None,
-            wv_noise_scaling_factors=None,
-            wo_noise_scaling_factors=None,
-            wffn1_noise_scaling_factors=None,
-            wffn2_noise_scaling_factors=None,
-            segments=5,
-            use_train=True,
-            split=None,
-            probe_size_override=None,
-            probe_seed=42,
-            random_noise=False,
-            ):
-        """在一份固定分层探针上做 K 次不同噪声种子的评测，std 反映纯噪声采样方差。
-
-        Why: 历史实现是把验证集切 N 段、每段独立跑 1 次不同噪声，std 取"N 段
-        结果"的标准差。问题是——在 MRPC 这类小验证集 + 类别不均匀的场景下，
-        每段 ~80 样本上 accuracy 的有限样本抖动 ≈ √(p(1-p)/n) ≈ 0.033，已经
-        与观测的 m1_std 基本相等，而最强噪声 vs 最弱噪声的 std 差不到 0.01，
-        说明 std 基本等于"数据切分噪声"，完全没反映噪声采样方差。动态 std 上
-        下界因此退化为两个几乎相等的值，稳定性约束失效。
-
-        新语义（参数名 `segments` 保留以兼容调用方，语义改为 **K = 噪声试验数**）：
-        - 每个 split 首次访问时，用分层采样构造一份固定探针子集（大小 =
-          `self.stage2_probe_size`，默认 256，可由 CLI `--stage2-probe-size` 覆盖），
-          缓存在 evaluator 上；baseline / worst / 每个候选配置在整轮训练里都看到
-          同一份数据。
-        - 对同一份探针跑 K 次独立噪声种子（K 默认 5，可由 CLI `--stage2-k-trials`
-          覆盖）：每次的 torch/numpy RNG 被独立设置，相当于 K 次 i.i.d. 噪声实现；
-          由于数据完全一样，`loss_std / p_std / s_std` 只剩纯噪声采样方差。
-        - 单次评测总样本量 = K × probe_size（默认 5 × 256 = 1280）。
-        - `loss_min/max, p_min/max, s_min/max` 现在真实表达"同一数据上最坏/最好
-          的噪声实现"，直接可用于 tail-risk / worst-case 约束。
-        - 返回 dict 中新增 `probe_size` 与 `evaluation_mode` 字段用于诊断。
-        """
-        trials = max(1, int(segments))
-        split_name = self._resolve_eval_split(use_train=use_train, split=split)
-        dataset = self.dataset_splits.get(split_name)
-
-        if dataset is None or len(dataset) == 0:
-            return self.evaluate_model_with_attention_noise_repeated(
-                gelu_degrees, softmax_degrees,
-                input_noise_scaling_factors=input_noise_scaling_factors,
-                wq_noise_scaling_factors=wq_noise_scaling_factors,
-                wk_noise_scaling_factors=wk_noise_scaling_factors,
-                wv_noise_scaling_factors=wv_noise_scaling_factors,
-                wo_noise_scaling_factors=wo_noise_scaling_factors,
-                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
-                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
-                repeats=trials,
-                use_train=use_train,
-                split=split,
-                random_noise=random_noise,
-            )
-
-        # 探针子集大小：默认取 evaluator.stage2_probe_size（可由 CLI
-        # `--stage2-probe-size` 覆盖；实例属性缺失时回退到 256）。
-        # 显式传入 `probe_size_override` 仍然拥有最高优先级（例如探针尺寸扫荡实验）。
-        if probe_size_override is None:
-            probe_size = int(getattr(self, "stage2_probe_size", 256))
-        else:
-            probe_size = int(probe_size_override)
-        probe_size = max(1, min(probe_size, len(dataset)))
-        probe_subset, probe_subset_mm = self._get_stability_probe(
-            split_name, probe_size, probe_seed=probe_seed,
-        )
-        if probe_subset is None:
-            return self.evaluate_model_with_attention_noise_repeated(
-                gelu_degrees, softmax_degrees,
-                input_noise_scaling_factors=input_noise_scaling_factors,
-                wq_noise_scaling_factors=wq_noise_scaling_factors,
-                wk_noise_scaling_factors=wk_noise_scaling_factors,
-                wv_noise_scaling_factors=wv_noise_scaling_factors,
-                wo_noise_scaling_factors=wo_noise_scaling_factors,
-                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
-                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
-                repeats=trials,
-                use_train=use_train,
-                split=split,
-                random_noise=random_noise,
-            )
-
-        _cpu_rng_state = torch.get_rng_state()
-        _cuda_rng_state_all = (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        )
-        _np_rng_state = np.random.get_state()
-        _py_rng_state = random.getstate()
-
-        _tmp_split = "__noise_stability_probe_tmp__"
-        trial_results = []
-        try:
-            self._register_dataset_split(_tmp_split, probe_subset, probe_subset_mm)
-            base_seed = int(getattr(self, "final_eval_random_seed", 42))
-            for trial_idx in range(trials):
-                # 当 random_noise=True 时，每个 trial 从 OS 熵源派生独立种子，
-                # 这样多次运行 final-eval 得到的噪声采样是真正独立的（而不是 base_seed 决定的固定模式）；
-                # 当 random_noise=False（默认）时，沿用基于 final_eval_random_seed 的可复现序列，
-                # 保证搜索阶段稳定性比较仍然公平。
-                if random_noise:
-                    trial_seed = int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
-                else:
-                    trial_seed = base_seed + trial_idx * 1_000_003
-                torch.manual_seed(trial_seed)
-                np.random.seed(trial_seed % (2**32))
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(trial_seed)
-
-                loss, p, s, t = self.evaluate_model_with_attention_noise(
-                    gelu_degrees, softmax_degrees,
-                    input_noise_scaling_factors=input_noise_scaling_factors,
-                    wq_noise_scaling_factors=wq_noise_scaling_factors,
-                    wk_noise_scaling_factors=wk_noise_scaling_factors,
-                    wv_noise_scaling_factors=wv_noise_scaling_factors,
-                    wo_noise_scaling_factors=wo_noise_scaling_factors,
-                    wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
-                    wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
-                    split=_tmp_split,
-                )
-                trial_results.append({
-                    "loss": float(loss),
-                    "p": float(p),
-                    "s": float(s),
-                    "time_ms": float(t),
-                })
-        finally:
-            self.dataset_splits.pop(_tmp_split, None)
-            self.dataloaders.pop(_tmp_split, None)
-            self.dataset_splits_mm.pop(_tmp_split, None)
-            self.dataloaders_mm.pop(_tmp_split, None)
-            torch.set_rng_state(_cpu_rng_state)
-            if _cuda_rng_state_all is not None:
-                torch.cuda.set_rng_state_all(_cuda_rng_state_all)
-            np.random.set_state(_np_rng_state)
-            random.setstate(_py_rng_state)
-
-        summary = summarize_eval_trials(trial_results)
-        summary.update({
-            "split_name": split_name,
-            "probe_size": int(len(probe_subset)),
-            "evaluation_mode": "stability_probe_trials",
-            "trials": trial_results,
-        })
-        return summary
 
     def get_stage1_exact_baseline_configuration(self):
         return (
@@ -5677,7 +4075,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             if os.path.isfile(src):
                 shutil.copy2(src, os.path.join(bp_dir, dst_name))
                 self.log(f"  [best_policy] 已复制 {src} → {os.path.join(bp_dir, dst_name)}")
-        # 写出约束参数元信息
+
         import json as _json
         meta = {
             "stage1_accuracy_tolerance": float(self.error_threshold),
@@ -5822,15 +4220,15 @@ class LayerImportanceEvaluator(TrainerCallback):
         without touching ``self.model`` / ``self.device``. Default
         single-GPU behavior is preserved when both are ``None``.
         """
-        # Resolve which model/device to run against. When the caller doesn't
-        # pass overrides we use the primary state — backward-compatible.
+
+
         _model = self.model if model is None else model
         _device = self.device if device is None else device
-        # Re-assert eval mode on every call; configuration/noise helpers may
-        # replace modules between candidate evaluations.
+
+
         _model.eval()
-        # Only the primary path tracks ``_eval_infra_ready`` (workers move
-        # their replica once at construction time).
+
+
         if _model is self.model and not self._eval_infra_ready:
             _model.to(_device)
             self._eval_infra_ready = True
@@ -5846,7 +4244,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 loss_average="batch",
             )
             avg_loss = result.loss
-            metric1, metric2 = self._stage1_legacy_metric_pair_from_eval_result(result)
+            metric1, metric2 = self._stage1_metric_pair_from_eval_result(result)
             avg_time = result.time_ms
         except Exception as e:
             raise RuntimeError(
@@ -5881,7 +4279,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         cached = self._eval_cache.get(cache_key)
         if cached is not None:
             return cached
-        # 仅在配置变化时重新应用 GELU/Softmax; apply_configuration 幂等, 同配置重复调用是无效功耗
+
         cfg_sig = (
             tuple(int(d) for d in gelu_degrees),
             tuple(int(d) for d in softmax_degrees),
@@ -5914,48 +4312,38 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _normalize_logits_for_metrics(logits, expected_batch_size):
         return shared_normalize_logits_for_metrics(logits, expected_batch_size)
 
-    def _stage1_legacy_metric_pair_from_eval_result(self, result):
+    def _stage1_metric_pair_from_eval_result(self, result):
         pred_classes = self._logits_to_classes(result.logits)
         labels = result.labels
         metric1 = accuracy_score(labels, pred_classes)
         ds = str(getattr(self, "dataset_key", "") or "").lower()
         metric2 = (
             f1_score(labels, pred_classes, average="weighted")
-            if ds in ("mrpc", "qqp")
+            if ds == "mrpc"
             else metric1
         )
         return float(metric1), float(metric2)
 
-    def _evaluate_accuracy_on_dataloader(self, dataloader):
-        """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
-        result = run_installed_model_on_dataloader(
-            self.model,
-            dataloader,
-            device=self.device,
-            metric_profile=self.dataset_key,
-            use_train=False,
-        )
-        return float(result.metric1)
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
         """计算广义优势估计 (GAE)"""
         advantages = []
         gae = 0
-        
-        # 从后往前计算
+
+
         for t in reversed(range(len(rewards))):
             if t == len(rewards) - 1:
-                next_value = 0  # 终止状态
+                next_value = 0
             else:
                 next_value = values[t + 1]
-            
+
             delta = rewards[t] + gamma * next_value * (1 - dones[t]) - values[t]
             gae = delta + gamma * lam * (1 - dones[t]) * gae
             advantages.insert(0, gae)
-        
+
         advantages = torch.tensor(advantages, dtype=torch.float32)
         returns = advantages + values
-        
+
         return advantages, returns
 
     def compute_gae_batch(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
@@ -5979,39 +4367,18 @@ class LayerImportanceEvaluator(TrainerCallback):
     def ppo_update_gtrxl(self, gtrxl_net, optimizer, buffer, device,
                           mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
                           ppo_update_step=0):
-        """
-        GTrXL版PPO更新（Transformer PDF 4.2-4.3）
-        
-        与LSTM版的关键差异：
-        - 学习率线性预热（前 GTRXL_WARMUP_STEPS 步）
-        - 最小熵约束：当策略熵低于下界时，动态提升熵正则化系数
-        - evaluate_actions 无 hidden state，因果掩码自动处理时序依赖
-        
-        Args:
-            gtrxl_net: GTrXL策略价值网络
-            optimizer: 优化器
-            buffer: RecurrentRolloutBuffer
-            device: 设备
-            mini_batch_episodes: 每个mini-batch包含的episode数
-            entropy_coef: 动态熵系数
-            ppo_update_step: 当前PPO更新步数（用于学习率Warmup）
-        """
+        """Run one warm-started, entropy-regularized GTrXL PPO update."""
         if entropy_coef is None:
             entropy_coef = self.get_current_entropy_coef()
-        
-        # 学习率 Warmup（PDF 4.3）
+
+
         if ppo_update_step < GTRXL_WARMUP_STEPS:
             warmup_factor = (ppo_update_step + 1) / GTRXL_WARMUP_STEPS
             current_lr = self.ppo_lr_initial * warmup_factor
             for param_group in optimizer.param_groups:
                 param_group['lr'] = current_lr
 
-        # GPU-count-independent update: the per-device rollout seeding leaves the
-        # default CUDA RNG in a state that depends on HOW MANY workers seeded it,
-        # so reseed deterministically by (base_seed, update_step) — both invariant
-        # to GPU count — before any policy forward below. No-op if evaluate_actions
-        # is dropout-free; if it isn't, this keeps the update identical across GPU
-        # counts.
+
         _u_seed = (
             int(getattr(self, "final_eval_random_seed", 42))
             ^ (int(ppo_update_step) * 2654435761)
@@ -6022,13 +4389,13 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         (cont_features, layer_indices, prev_g_actions,
          actions_g, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
-        
+
         n_eps = cont_features.size(0)
         advantages, returns = self.compute_gae_batch(rewards, values, dones)
-        
+
         adv_flat = advantages.reshape(-1)
         advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
-        
+
         self.return_normalizer.update(returns)
         returns_normalized = self.return_normalizer.normalize(returns).to(
             device=device, dtype=torch.float32
@@ -6036,11 +4403,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         values_normalized = self.return_normalizer.normalize(values).to(
             device=device, dtype=torch.float32
         )
-        
+
         last_policy_loss_t = None
         last_value_loss_t = None
         last_entropy_t = None
-        
+
         kl_early_stop = False
         for epoch in range(PPO_K_EPOCHS):
             if kl_early_stop:
@@ -6067,7 +4434,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     mb_cont, mb_layer, mb_prev_g, mb_act_g,
                     gelu_mask=mb_gelu_mask
                 )
-                
+
                 new_logprobs_flat = new_logprobs.reshape(-1)
                 entropy_flat = entropy.reshape(-1)
                 new_values_flat = new_values_raw.reshape(-1)
@@ -6075,12 +4442,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 mb_adv_flat = mb_adv.reshape(-1)
                 mb_ret_flat = mb_ret.reshape(-1)
                 mb_old_val_flat = mb_old_val.reshape(-1)
-                
+
                 ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
                 surr1 = ratios * mb_adv_flat
                 surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
                 policy_loss = -torch.min(surr1, surr2).mean()
-                
+
                 new_values_norm = (new_values_flat - self.return_normalizer.mean) / self.return_normalizer.std
                 value_clipped = mb_old_val_flat + torch.clamp(
                     new_values_norm - mb_old_val_flat,
@@ -6090,15 +4457,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                 vl_unclipped = huber_loss_fn(new_values_norm, mb_ret_flat)
                 vl_clipped = huber_loss_fn(value_clipped, mb_ret_flat)
                 value_loss = torch.max(vl_unclipped, vl_clipped).mean()
-                
-                # 最小熵约束（PDF 4.3）：当策略熵低于下界时提升熵正则化
+
+
                 mean_entropy = entropy_flat.mean()
-                _entropy_lb = _rl_opt_entropy_lower_bound()
                 mean_entropy_detached = mean_entropy.detach()
                 entropy_deficit = torch.relu(
-                    mean_entropy_detached.new_tensor(_entropy_lb) - mean_entropy_detached
+                    mean_entropy_detached.new_tensor(GTRXL_ENTROPY_LOWER_BOUND)
+                    - mean_entropy_detached
                 )
-                effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit
+                effective_entropy_coef = (
+                    entropy_coef
+                    + GTRXL_ENTROPY_RECOVERY_MULTIPLIER * entropy_deficit
+                )
 
                 entropy_loss = -mean_entropy
 
@@ -6109,23 +4479,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                 nn.utils.clip_grad_norm_(gtrxl_net.parameters(), 0.5)
                 optimizer.step()
 
-                # 近似 KL early-stop（PPO 标准技巧）：避免单次更新偏离过远导致策略崩坏。
-                # 仅作为安全阀；若关闭 use_kl_early_stop 则与原行为一致。
-                if RL_OPT_FLAGS.get("use_kl_early_stop", False):
-                    with torch.no_grad():
-                        approx_kl_t = (mb_old_lp_flat - new_logprobs_flat).mean()
-                    epoch_kl_acc_t += approx_kl_t.detach()
-                    epoch_kl_count += 1
+
+                with torch.no_grad():
+                    approx_kl_t = (mb_old_lp_flat - new_logprobs_flat).mean()
+                epoch_kl_acc_t += approx_kl_t.detach()
+                epoch_kl_count += 1
 
                 last_policy_loss_t = policy_loss.detach()
                 last_value_loss_t = value_loss.detach()
                 last_entropy_t = mean_entropy.detach()
 
-            if (RL_OPT_FLAGS.get("use_kl_early_stop", False)
-                    and epoch_kl_count > 0):
+            if epoch_kl_count > 0:
                 avg_kl_t = epoch_kl_acc_t / float(epoch_kl_count)
                 avg_kl = float(avg_kl_t.item())
-                if avg_kl > 1.5 * float(RL_OPT_FLAGS.get("kl_target", 0.02)):
+                if avg_kl > 1.5 * GTRXL_KL_TARGET:
                     kl_early_stop = True
 
         last_policy_loss = (
@@ -6137,12 +4504,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         last_entropy = float(last_entropy_t.item()) if last_entropy_t is not None else 0.0
         return last_policy_loss, last_value_loss, last_entropy
 
-    # ------------------------------------------------------------------
-    # Stage-1 multi-GPU rollout (parallel data collection)
-    # ------------------------------------------------------------------
-    # See ``stage1_rl/parallel_runner.py`` for the runner / worker design.
-    # These helpers live on the evaluator because the per-episode body needs
-    # access to ``self._write_step_info`` / ``self.total_layers`` / etc.
 
     def _stage1_collect_episode_in_worker(self, *, worker, episode_seed):
         """Run one Stage-1 episode entirely on ``worker``'s own GPU.
@@ -6164,20 +4525,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         device = worker.device
         policy = worker.gtrxl_replica
         if device.type == "cuda":
-            # Make this thread's current CUDA device the worker's GPU so the
-            # per-step ``torch.cuda.manual_seed`` seeds THIS device's generator,
-            # isolated from other workers' devices (no global-RNG race, no lock).
+
+
             torch.cuda.set_device(device)
 
         env = worker.env
         state = env.reset()
 
-        # Per-episode action-history buffers live on the worker's device
-        # (where its policy replica lives).
+
         prev_g_idx = SOS_TOKEN_GELU
 
         seq_cont_feats = torch.empty(
-            (1, self.total_layers, LSTM_CONT_DIM), dtype=torch.float32, device=device,
+            (1, self.total_layers, POLICY_CONTINUOUS_DIM),
+            dtype=torch.float32,
+            device=device,
         )
         seq_layer_indices = torch.empty(
             (1, self.total_layers), dtype=torch.long, device=device,
@@ -6210,8 +4571,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         for step in range(self.total_layers):
             N = self.total_layers
             layer_idx = int(np.argmax(state[0:N]))
-            # gelu-only: pull the 6 policy continuous features by name (no magic
-            # offsets into the flat state, whose layout changed when softmax left).
+
+
             cont_feat_np = env.get_policy_cont_features()
             cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)
 
@@ -6228,25 +4589,19 @@ class LayerImportanceEvaluator(TrainerCallback):
             full_prev_g = seq_prev_g[:, : step + 1]
             full_gelu_mask = seq_gelu_masks[:, : step + 1, :]
 
-            # Per-worker replica on the worker's own device — NO lock. Seed the
-            # worker's device RNG so Categorical.sample() is reproducible and,
-            # because CUDA Philox is device-independent, draws the identical
-            # action any other GPU would for this (global episode, step).
+
             if device.type == "cuda":
                 torch.cuda.manual_seed(int(episode_seed) + step)
             else:
                 torch.manual_seed(int(episode_seed) + step)
             with torch.no_grad():
-                gelu_action, logprob, value, gelu_probs = \
+                gelu_action, logprob, value, gelu_probs =\
                     policy.get_action_and_logprob(
                         full_cont, full_layer, full_prev_g,
                         return_probs=True, gelu_mask=full_gelu_mask,
                     )
 
-            # env.step at the terminal step routes into the worker's eval
-            # wrapper, which calls self._stage1_evaluate_on_model(...) on
-            # the worker's BERT replica + device. That is the expensive
-            # per-episode work that this entire runner exists to parallelize.
+
             gelu_action_idx = int(gelu_action.item())
             next_state, reward, done, info = env.step(gelu_action_idx)
             logprob_tensors.append(logprob.detach().reshape(()))
@@ -6261,7 +4616,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             rollout.dones.append(float(done))
             rollout.gelu_masks.append(gelu_mask_np)
             rollout.step_infos.append({
-                "episode_id": -1,  # patched by the central loop with the absolute index
+                "episode_id": -1,
                 "layer_index": info["layer_index"],
                 "state_vector": state.tolist(),
                 "gelu_action_index": gelu_action_idx,
@@ -6276,7 +4631,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "accumulated_cost": info["accumulated_cost"],
                 "gelu_config": info["gelu_config"],
                 "softmax_config": info["softmax_config"],
-                "current_lr": None,            # central loop fills in its current schedule values
+                "current_lr": None,
                 "current_entropy_coef": None,
             })
 
@@ -6399,9 +4754,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 limit_p = base_p * (1.0 - self.correlation_drop_ratio)
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
-            # ---------------------------------------------------------
-            # Phase 1: Baseline on the fixed training probe.
-            # ---------------------------------------------------------
+
+
             self.log(
                 "\n--- 阶段1（Phase 1）: 建立基线 "
                 "(Establishing Baseline on train_probe) ---"
@@ -6412,10 +4766,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"{reward_reference_split!r}."
                 )
 
-            # Stage-1 评估是 matmul 主导的 fp32 BERT forward（bert-large 尤甚）。
-            # 启用与 Stage-2 reward probe 完全相同的 TF32 设置（process-global、
-            # 幂等；张量仍是 FP32，仅 matmul kernel 走 Tensor Core）。在 baseline
-            # 评估之前启用，保证 baseline 与所有候选在同一 kernel 精度下可比。
+
             try:
                 from blb_stage2_rl.probe_runner import (
                     enable_cuda_reward_probe_fast_math,
@@ -6448,7 +4799,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             base_p = base_p_val
             base_s = base_s_val
 
-            # Constraints
+
             limit_loss = base_loss * (1.0 + self.error_threshold)
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
@@ -6456,7 +4807,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("约束条件（Constraints）（基于 train_probe）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
-        # 供绘图使用：仅 RL 时会填充
+
         episode_rewards = []
         episode_losses = []
         episode_metric1s = []
@@ -6736,22 +5087,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                     },
                 )
 
-        # ---------------------------------------------------------
-        # Phase 2: PPO Training
-        # ---------------------------------------------------------
+
         if (
                 not self.skip_stage1_rl
                 and self.blb_v3_search_backend == "ppo"
         ):
             self.log("\n--- 阶段2（Phase 2）: PPO强化学习训练（PPO Reinforcement Learning Training） ---")
-        
+
             step_info_details_dir = os.path.join(os.path.dirname(self.step_info_file), "details")
             os.makedirs(step_info_details_dir, exist_ok=True)
             step_info_chunk_file = [None]
             step_info_chunk_idx = [0]
-            step_info_is_resuming = [False]  # 续训标记，在 checkpoint 加载后设置
-            # chunk 锚点：续训时设为 completed_episodes，确保新 chunk 从「已完成回合 + 1」起编号，
-            # 使跨 interval 的 details/ 文件名区间连续而不是对齐到全局 0 基边界。
+            step_info_is_resuming = [False]
+
+
             step_info_chunk_anchor = [0]
             stage1_warning_file = os.path.join(os.path.dirname(self.step_info_file), "warning.txt")
             stage1_prev_avg_reward = [None]
@@ -6777,7 +5126,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     step_info_chunk_file[0].close()
                 chunk_start = anchor + new_idx * STEP_INFO_CHUNK_SIZE + 1
                 chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
-                # 续训时首个 chunk 文件可能已有内容，用 "a" 追加；后续新 chunk 用 "w"
+
                 if step_info_is_resuming[0] and os.path.isfile(target):
                     f = open(target, "a", encoding="utf-8")
                     f.write(f"\n=== [续训 Resume] PPO StepInfo · 回合 {chunk_start}-{chunk_end} ===\n\n")
@@ -6790,11 +5139,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 step_info_chunk_idx[0] = new_idx
                 return f
 
-            # 初始化GTrXL策略价值网络（GTrXL 策略网络）
-            # GTrXL骨干 + 独立Actor/Critic头
-            # - 3层GTrXL Block (d_model=64, n_heads=4, GRU门控)
-            # - 多头Actor: GELU Head (4, with action masking) + Softmax Head (5)
-            # - Critic: 标量Value + PopArt归一化
+
             gtrxl_net = GTrXLStrategyNetwork(
                 num_layers=self.total_layers,
                 d_model=GTRXL_D_MODEL,
@@ -6803,47 +5148,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                 d_ff=GTRXL_D_FF,
                 dropout=GTRXL_DROPOUT
             ).to(self.device)
-            
-            # （可迁移）若指定了 stage1_pretrained_policy_path，则把权重加载到新建的 GTrXL 网络
-            #  作为 base policy；不影响 episode 计数 / best 配置 / optimizer 状态。
-            _pretrained_path = RL_OPT_FLAGS.get("stage1_pretrained_policy_path", None)
-            if _pretrained_path:
-                try:
-                    _ckpt = torch.load(_pretrained_path, map_location=self.device, weights_only=False)
-                    _state = _ckpt.get("net_state_dict", _ckpt) if isinstance(_ckpt, dict) else _ckpt
-                    _missing, _unexpected = gtrxl_net.load_state_dict(_state, strict=False)
-                    self.log(
-                        f"  [迁移] 已加载预训练 policy/critic ← {_pretrained_path} "
-                        f"(missing={len(_missing)}, unexpected={len(_unexpected)})"
-                    )
-                    if _missing or _unexpected:
-                        self.log(
-                            "  [迁移][提示] 部分权重 shape 不匹配（多见于 total_layers/动作空间不同的迁移），"
-                            "已使用 strict=False 跳过；这些层将以新初始化继续训练。"
-                        )
-                except Exception as _e:
-                    self.log(f"  [迁移][警告] 预训练 policy 加载失败：{_e}（将使用随机初始化）")
 
-            # 使用初始学习率
+
             optimizer = optim.Adam(gtrxl_net.parameters(), lr=self.stage1_ppo_lr_initial)
-            gtrxl_ppo_update_count = 0  # GTrXL PPO更新计数（用于学习率Warmup）
-            
-            # 初始化环境
+            gtrxl_ppo_update_count = 0
+
+
             baseline_metrics = (base_loss, base_p, base_s)
-            
-            # 创建用于RL的评估器包装
+
+
             class RLEvaluatorWrapper:
                 def __init__(wrapper_self, evaluator, split_name):
                     wrapper_self.evaluator = evaluator
                     wrapper_self.split_name = split_name
-                
+
                 def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
                     return wrapper_self.evaluator.stage1_evaluate(
                         gelu_arr,
                         softmax_arr,
                         split=wrapper_self.split_name,
                     )
-            
+
             online_reward_split = self.get_online_reward_split_name()
             proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
                 base_gelu,
@@ -6962,17 +5287,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"  [data-points] Stage-1 structured RL data → {stage1_data_writer.run_dir}"
             )
 
-            # ----------------------------------------------------------------
-            # Stage-1 multi-GPU rollout runner (opt-in via --stage1-rl-devices)
-            # ----------------------------------------------------------------
-            # When self.stage1_rl_devices is empty this returns None and the
-            # legacy single-GPU per-episode loop runs. With an explicit device
-            # list (>=1 id) the runner spawns one worker thread per GPU; each
-            # window's episodes are seeded by GLOBAL index and returned in global
-            # order, so results are identical for any GPU count (pass
-            # --stage1-rl-devices 0 on a 1-GPU box to match a 4/5-GPU run). The
-            # central loop pops rollouts from a per-window stash instead of
-            # running the per-step body inline.
+
             _stage1_parallel_runner = self._build_stage1_parallel_runner(
                 baseline_metrics=baseline_metrics,
                 base_tot_c=base_tot_c,
@@ -6996,7 +5311,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"devices={[str(w.device) for w in _stage1_parallel_runner.workers]} "
                     f"episodes_per_worker={PPO_UPDATE_INTERVAL // _stage1_parallel_runner.num_workers}"
                 )
-            _stage1_parallel_stash = deque()  # Filled per PPO update window
+            _stage1_parallel_stash = deque()
             _stage1_parallel_window_t0 = None
             _stage1_parallel_window_idx = None
             _stage1_parallel_collect_seconds = 0.0
@@ -7005,21 +5320,19 @@ class LayerImportanceEvaluator(TrainerCallback):
             _stage1_parallel_replay_seconds = 0.0
             _stage1_parallel_detail_seconds = 0.0
 
-            buffer = RecurrentRolloutBuffer()  # GTrXL/LSTM 通用的 Episode Buffer
-            
-            # 记录最优解
+            buffer = RecurrentRolloutBuffer()
+
+
             best_reward = float('-inf')
             best_cost = float('inf')
             window_best_reward = float('-inf')
             window_best_cost = float('inf')
             window_best_config = None
-            
+
             self.total_episodes = self.stage1_rl_episode_limit or PPO_MAX_EPISODES
             self._reset_runtime_ppo_state()
 
-            # ============================
-            # 断点续训：加载 Stage-1 checkpoint
-            # ============================
+
             from stage1_rl.checkpoint import (
                 save_stage1_rl_checkpoint,
                 load_stage1_rl_checkpoint,
@@ -7031,7 +5344,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 os.path.dirname(self.stage1_step_info_file),
                 STAGE1_CHECKPOINT_FILENAME,
             )
-            # 优雅停止：在 Stage-1 目录下监听停止标志文件 / 安装 Ctrl+C 处理器
+
             stage1_stop_flag_path = os.path.join(
                 os.path.dirname(self.stage1_step_info_file),
                 NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -7053,30 +5366,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"加载: {_stage1_resume_ckpt_path}",
                     ],
                 )
-                # Resume guard (A, 2026-05-30): the gelu-only Stage-1 policy
-                # dropped the softmax head + prev-softmax embedding, so a legacy
-                # softmax-bearing checkpoint is shape-incompatible. Detect the
-                # old head_s / embed_prev_s tensors and abort clearly instead of
-                # silently dropping/zero-filling them.
-                _peek_ckpt = _stage1_resume_metadata
-                _peek_state = (
-                    _peek_ckpt.get("net_state_dict", _peek_ckpt)
-                    if isinstance(_peek_ckpt, dict) else _peek_ckpt
-                )
-                _legacy_softmax_keys = [
-                    k for k in (_peek_state or {})
-                    if ("head_s" in k) or ("embed_prev_s" in k)
-                ]
-                del _peek_state
-                if _legacy_softmax_keys:
-                    raise RuntimeError(
-                        "Stage-1 resume checkpoint "
-                        f"'{_stage1_resume_ckpt_path}' is a legacy softmax-bearing "
-                        f"policy (found {_legacy_softmax_keys[:3]} ...). The "
-                        "gelu-only Stage-1 RL (A, 2026-05-30) removed the softmax "
-                        "head/embedding, so this checkpoint is incompatible. "
-                        "Re-run with --fresh to retrain from scratch."
-                    )
+
+
                 ckpt = load_stage1_rl_checkpoint(
                     _stage1_resume_ckpt_path,
                     gtrxl_net,
@@ -7103,7 +5394,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     step_info_details_dir,
                     ckpt.get("detail_file_sizes"),
                 )
-                del _stage1_resume_metadata, _peek_ckpt
+                del _stage1_resume_metadata
                 stage1_resume_start_episode = int(ckpt["completed_episodes"])
                 gtrxl_ppo_update_count = int(ckpt["gtrxl_ppo_update_count"])
                 episode_rewards = list(ckpt["episode_rewards"])
@@ -7130,14 +5421,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.reward_std = float(_ev_rt.get("reward_std", 1.0))
                 self._rebuild_reward_statistics_accumulators()
                 self.current_episode = int(_ev_rt.get("current_episode", stage1_resume_start_episode))
-                # 恢复 return_normalizer（RunningMeanStd）状态，保证 value critic 归一化连续
+
                 if "return_normalizer_mean" in _ev_rt:
                     self.return_normalizer.mean = float(_ev_rt["return_normalizer_mean"])
                     self.return_normalizer.var = float(_ev_rt["return_normalizer_var"])
                     self.return_normalizer.count = float(_ev_rt["return_normalizer_count"])
                 step_info_is_resuming[0] = True
-                # 续训锚点：新 chunk 从「已完成回合 + 1」起编号，确保跨 PPO_UPDATE_INTERVAL
-                # 变化时 details/ 文件名区间连续，不与旧 run 的 chunk 边界产生"错位"。
+
+
                 step_info_chunk_anchor[0] = stage1_resume_start_episode
                 if self.stage1_rl_unbounded_until_entropy:
                     self.log(
@@ -7168,17 +5459,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 else range(stage1_resume_start_episode, self.stage1_rl_episode_limit)
             )
             for episode in _stage1_episode_iter:
-                # 动态超参数调度（学习率和熵系数）
+
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
-                
-                # ----------------------------------------------------------------
-                # Stage-1 multi-GPU rollout pre-fetch (opt-in via --stage1-rl-devices)
-                # ----------------------------------------------------------------
-                # When the runner exists, each PPO update window's episodes are
-                # collected in parallel across the configured GPU devices and
-                # stashed; we just pop one rollout per loop iteration and apply
-                # it to the central buffer + env state so the post-body
-                # bookkeeping and PPO update sections below run unchanged.
+
+
                 _handled_via_parallel = False
                 if _stage1_parallel_runner is not None:
                     if not _stage1_parallel_stash:
@@ -7193,9 +5477,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _stage1_parallel_replay_seconds = 0.0
                         _stage1_parallel_detail_seconds = 0.0
                         _stage1_parallel_collect_t0 = time.time()
-                        # Seed by GLOBAL episode index + return rollouts in global
-                        # order, so this window's episodes are identical for any
-                        # GPU count (no per-worker seed / worker-major ordering).
+
+
                         _rollouts = _stage1_parallel_runner.run_window(
                             gtrxl_net=gtrxl_net,
                             total_episodes=_window_size,
@@ -7235,7 +5518,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             )
                     rollout = _stage1_parallel_stash.popleft()
                     _stage1_parallel_replay_t0 = time.time()
-                    # Replay rollout into the central RecurrentRolloutBuffer.
+
                     buffer.start_episode()
                     for _k in range(len(rollout.actions_g)):
                         buffer.add_step(
@@ -7257,9 +5540,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _si["episode_id"] = episode
                         _si["current_lr"] = current_lr
                         _si["current_entropy_coef"] = current_entropy
-                    # Mirror rollout-final env state onto the primary env so the
-                    # post-body bookkeeping (best tracking, status board, etc.)
-                    # reads consistent values.
+
+
                     env.gelu_config = list(rollout.gelu_config)
                     env.softmax_config = list(rollout.softmax_config)
                     env.accumulated_cost = float(rollout.episode_cost)
@@ -7274,13 +5556,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                     _handled_via_parallel = True
 
                 if not _handled_via_parallel:
-                    # GTrXL Rollout：环境重置 + SOS标记 + 空token序列（gelu-only）
+
                     state = env.reset()
                     prev_g_idx = SOS_TOKEN_GELU
 
-                    # GTrXL：预分配 token 序列缓存（每步切 prefix，避免反复 torch.cat）
+
                     seq_cont_feats = torch.empty(
-                        (1, self.total_layers, LSTM_CONT_DIM),
+                        (1, self.total_layers, POLICY_CONTINUOUS_DIM),
                         dtype=torch.float32,
                         device=self.device,
                     )
@@ -7307,8 +5589,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     buffer.start_episode()
 
                     for step in range(self.total_layers):
-                        # gelu-only：策略只消费 6 个连续特征，由 env 按名暴露
-                        # （get_policy_cont_features），不再按魔法下标切扁平 state。
+
+
                         N = self.total_layers
                         layer_idx = int(np.argmax(state[0:N]))
                         cont_feat_np = env.get_policy_cont_features()
@@ -7318,33 +5600,33 @@ class LayerImportanceEvaluator(TrainerCallback):
                             cont_feat_record, dtype=torch.float32, device=self.device
                         )
 
-                        # GTrXL：写入当前 token，前缀 slice 作为因果输入
+
                         seq_cont_feats[0, step].copy_(cont_feat_t)
                         seq_layer_indices[0, step] = int(layer_idx)
                         seq_prev_g[0, step] = int(prev_g_idx)
 
-                        # 切出当前完整前缀序列 (1, step+1, ...)
+
                         full_cont = seq_cont_feats[:, : step + 1, :]
                         full_layer = seq_layer_indices[:, : step + 1]
                         full_prev_g = seq_prev_g[:, : step + 1]
                         full_gelu_mask = seq_gelu_masks[:, : step + 1, :]
 
-                        # GTrXL：因果自注意力推理（无hidden state）
+
                         with torch.no_grad():
-                            gelu_action, logprob, value, gelu_probs = \
+                            gelu_action, logprob, value, gelu_probs =\
                                 gtrxl_net.get_action_and_logprob(
                                     full_cont, full_layer, full_prev_g,
                                     return_probs=True, gelu_mask=full_gelu_mask
                                 )
 
-                        # 执行动作
+
                         gelu_action_idx = int(gelu_action.item())
                         next_state, reward, done, info = env.step(gelu_action_idx)
                         logprob_tensors.append(logprob.detach())
                         value_tensors.append(value.detach())
                         gelu_prob_tensors.append(gelu_probs.detach())
 
-                        # 记录中间结果
+
                         step_info = {
                             'step_global': episode * self.total_layers + step,
                             'episode_id': episode,
@@ -7379,12 +5661,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                             )
                         )
 
-                        # 更新前一步动作（自回归输入下一步）
+
                         prev_g_idx = gelu_action_idx
 
                         episode_reward += reward
                         state = next_state
-                
+
                     logprob_values = _stage1_scalar_tensors_to_float_list(logprob_tensors)
                     critic_values = _stage1_scalar_tensors_to_float_list(value_tensors)
                     gelu_prob_dists = _stage1_prob_tensors_to_nested_lists(gelu_prob_tensors)
@@ -7393,7 +5675,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         step_info["critic_value"] = critic_values[idx]
                         step_info["gelu_prob_dist"] = gelu_prob_dists[idx]
 
-                    # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
+
                     for idx, (
                         cont_feat_record,
                         layer_idx,
@@ -7417,8 +5699,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     buffer.end_episode()
                 episode_rewards.append(episode_reward)
                 stage1_completed_episodes = episode + 1
-                
-                # 收集当前episode的指标
+
+
                 if hasattr(env, 'current_episode_metrics') and env.current_episode_metrics is not None:
                     episode_losses.append(env.current_episode_metrics['loss'])
                     episode_metric1s.append(env.current_episode_metrics['metric1'])
@@ -7427,10 +5709,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     episode_losses.append(base_loss)
                     episode_metric1s.append(base_p)
                     episode_metric2s.append(base_s)
-                
-                # 更新运行时回报统计量
+
+
                 self.update_reward_statistics(episode_reward)
-                
+
                 _stage1_detail_t0 = time.time()
                 chunk_f = _open_stage1_chunk(episode + 1)
                 chunk_f.write(f"--- 回合（Episode） {episode + 1} (奖励Reward={episode_reward:.4f}) ---\n")
@@ -7443,8 +5725,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     _stage1_parallel_detail_seconds += (
                         time.time() - _stage1_detail_t0
                     )
-                
-                # 检查是否为最优解
+
+
                 final_config = {
                     'gelu': np.array(env.gelu_config),
                     'softmax': np.array(env.softmax_config),
@@ -7463,7 +5745,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         'reward': episode_reward,
                         'dataset_protocol_hash': self.dataset_protocol_hash,
                     }
-                
+
                 _stage1_is_new_best = bool(episode_reward > best_reward)
                 if _stage1_is_new_best:
                     best_reward = episode_reward
@@ -7511,8 +5793,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         if best_config is not None else None
                     ),
                 })
-                
-                # GTrXL PPO 更新（因果自注意力 + GRU门控）
+
+
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
                     _stage1_ppo_update_t0 = time.time()
                     try:
@@ -7609,7 +5891,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _stage1_parallel_model_forward_calls = 0
                         _stage1_parallel_replay_seconds = 0.0
                         _stage1_parallel_detail_seconds = 0.0
-                    
+
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                     stage1_data_writer.write_ppo_update({
                         "update": int(gtrxl_ppo_update_count),
@@ -7638,7 +5920,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         ],
                     )
 
-                    # 进度条（每 N 次 PPO 更新或最后一次更新时输出）
+
                     _stage1_reached_episode_cap = (
                         self.stage1_rl_episode_limit is not None
                         and episode + 1 >= self.stage1_rl_episode_limit
@@ -7740,7 +6022,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         }
                         env.current_episode_metrics = None
 
-                    # 保存 Stage-1 checkpoint（断点续训用）
+
                     if step_info_chunk_file[0] is not None:
                         step_info_chunk_file[0].flush()
                     _stage1_structured_jsonl_sizes = (
@@ -7816,7 +6098,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         )
                         break
 
-                # 优雅停止检查：在当前回合结束后强制保存 checkpoint 并退出
+
                 if is_graceful_stop_requested(stage1_stop_flag_path):
                     self.log(
                         f"\n  [优雅停止] 已检测到停止请求，正在保存 Stage-1 checkpoint "
@@ -7905,7 +6187,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 _write_warning_report(stage1_warning_file, stage1_warnings, stage_label="阶段1（Stage-1 RL）")
                 self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
 
-            # 训练结束保存最终 Stage-1 checkpoint
+
             _s1_final_ep = max(stage1_completed_episodes - 1, stage1_resume_start_episode - 1)
             if stage1_completed_episodes > stage1_resume_start_episode:
                 _stage1_structured_jsonl_sizes = (
@@ -7986,77 +6268,71 @@ class LayerImportanceEvaluator(TrainerCallback):
             })
             stage1_data_writer.close()
 
-            # ---- (可迁移) 保存独立的 portable policy 文件，仅含权重 + 元数据 ----
-            if RL_OPT_FLAGS.get("stage1_save_portable_policy", False):
-                try:
-                    _portable_path = os.path.join(
-                        os.path.dirname(self.stage1_step_info_file),
-                        "stage1_policy.pt",
-                    )
-                    torch.save(
-                        {
-                            "version": 1,
-                            "kind": "stage1_gtrxl_policy",
-                            "net_state_dict": gtrxl_net.state_dict(),
-                            "arch": {
-                                "num_layers": int(self.total_layers),
-                                "d_model": int(GTRXL_D_MODEL),
-                                "n_heads": int(GTRXL_N_HEADS),
-                                "n_gtrxl_layers": int(GTRXL_N_LAYERS),
-                                "d_ff": int(GTRXL_D_FF),
-                                "dropout": float(GTRXL_DROPOUT),
-                            },
-                            "metadata": {
-                                "trained_episodes": int(stage1_completed_episodes),
-                                "best_reward": float(best_reward),
-                                "best_cost": float(best_cost),
-                                "error_threshold": float(self.error_threshold),
-                                "correlation_drop_ratio": float(self.correlation_drop_ratio),
-                            },
-                        },
-                        _portable_path,
-                    )
-                    self.log(
-                        f"  [迁移] 可迁移 policy/critic 已保存 → {_portable_path}\n"
-                        f"  [迁移] 用法：在新任务/新约束下，将 RL_OPT_FLAGS['stage1_pretrained_policy_path'] "
-                        f"设为该路径即可作为 base policy 继续训练。"
-                    )
-                except Exception as _e:
-                    self.log(f"  [迁移][警告] portable policy 保存失败：{_e}")
 
-            # ---- 局部最优检测：写入 pruning_search_log.txt ----
-            if RL_OPT_FLAGS.get("stage1_write_local_optimum_report", False):
-                try:
-                    _diag = detect_rl_local_optimum(
-                        episode_returns=episode_rewards,
-                        episode_entropies=episode_entropies,
-                        best_score_history=None,
-                        action_history=None,
-                        window=max(50, int(max(1, stage1_completed_episodes) * 0.1)),
+            try:
+                _portable_path = os.path.join(
+                    os.path.dirname(self.stage1_step_info_file),
+                    "stage1_policy.pt",
+                )
+                torch.save(
+                    {
+                        "version": 1,
+                        "kind": "stage1_gtrxl_policy",
+                        "net_state_dict": gtrxl_net.state_dict(),
+                        "arch": {
+                            "num_layers": int(self.total_layers),
+                            "d_model": int(GTRXL_D_MODEL),
+                            "n_heads": int(GTRXL_N_HEADS),
+                            "n_gtrxl_layers": int(GTRXL_N_LAYERS),
+                            "d_ff": int(GTRXL_D_FF),
+                            "dropout": float(GTRXL_DROPOUT),
+                        },
+                        "metadata": {
+                            "trained_episodes": int(stage1_completed_episodes),
+                            "best_reward": float(best_reward),
+                            "best_cost": float(best_cost),
+                            "error_threshold": float(self.error_threshold),
+                            "correlation_drop_ratio": float(self.correlation_drop_ratio),
+                        },
+                    },
+                    _portable_path,
+                )
+                self.log(f"  Stage-1 policy saved to {_portable_path}")
+            except Exception as _e:
+                self.log(f"  [迁移][警告] portable policy 保存失败：{_e}")
+
+
+            try:
+                _diag = detect_rl_local_optimum(
+                    episode_returns=episode_rewards,
+                    episode_entropies=episode_entropies,
+                    best_score_history=None,
+                    action_history=None,
+                    window=max(50, int(max(1, stage1_completed_episodes) * 0.1)),
+                )
+                _report_path = os.path.join(
+                    os.path.dirname(self.stage1_step_info_file),
+                    "pruning_search_log.txt",
+                )
+                with open(_report_path, "w", encoding="utf-8") as _f:
+                    _f.write("=== Stage-1 RL 局部最优检测报告 ===\n")
+                    _f.write(f"完成回合数: {len(episode_rewards)}\n")
+                    _f.write(f"判定: {_diag['summary']}\n\n")
+                    _f.write("--- 各项判据信号 ---\n")
+                    for k, v in _diag["signals"].items():
+                        _f.write(f"  {k}: {v}\n")
+                    _f.write("\n--- 数值指标 ---\n")
+                    for k, v in _diag["metrics"].items():
+                        _f.write(f"  {k}: {v}\n")
+                    _f.write("\n--- 说明 ---\n")
+                    _f.write(
+                        "判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中\n"
+                        "≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。\n"
                     )
-                    _report_path = os.path.join(
-                        os.path.dirname(self.stage1_step_info_file),
-                        "pruning_search_log.txt",
-                    )
-                    with open(_report_path, "w", encoding="utf-8") as _f:
-                        _f.write("=== Stage-1 RL 局部最优检测报告 ===\n")
-                        _f.write(f"完成回合数: {len(episode_rewards)}\n")
-                        _f.write(f"判定: {_diag['summary']}\n\n")
-                        _f.write("--- 各项判据信号 ---\n")
-                        for k, v in _diag["signals"].items():
-                            _f.write(f"  {k}: {v}\n")
-                        _f.write("\n--- 数值指标 ---\n")
-                        for k, v in _diag["metrics"].items():
-                            _f.write(f"  {k}: {v}\n")
-                        _f.write("\n--- 说明 ---\n")
-                        _f.write(
-                            "判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中\n"
-                            "≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。\n"
-                        )
-                    self.log(f"  [检测] 局部最优检测报告 → {_report_path}")
-                    self.log(f"  [检测] {_diag['summary']}")
-                except Exception as _e:
-                    self.log(f"  [检测][警告] 局部最优检测失败：{_e}")
+                self.log(f"  [检测] 局部最优检测报告 → {_report_path}")
+                self.log(f"  [检测] {_diag['summary']}")
+            except Exception as _e:
+                self.log(f"  [检测][警告] 局部最优检测失败：{_e}")
 
             best_config, used_baseline = self._select_stage1_reward_best_config(
                 best_config,
@@ -8073,16 +6349,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "\n[Stage-1] 最终配置使用原始 PPO reward-best；"
                     "GELU/Softmax 为确定性替换，不再按 window 二次评估重排。"
                 )
-            
+
             self.log(f"\n--- PPO训练完成（PPO Training Completed） ---")
             self.log(f"已找到最优配置（通过RL）（Best Configuration Found by RL）：")
             self.log(f"  GELU配置: {best_config['gelu'].tolist()}")
             self.log(f"  Softmax配置: {best_config['softmax'].tolist()}")
             self.log(f"  成本（Cost）: {best_config['cost']:.2f}, 奖励（Reward）: {best_config['reward']:.4f}")
 
-        # ---------------------------------------------------------
-        # Plot: PPO Training Curves（仅当执行过 RL 时绘制）
-        # ---------------------------------------------------------
+
         if len(episode_rewards) > 0:
             try:
                 import matplotlib
@@ -8095,26 +6369,26 @@ class LayerImportanceEvaluator(TrainerCallback):
                 metric1s = np.array(episode_metric1s, dtype=np.float32)
                 metric2s = np.array(episode_metric2s, dtype=np.float32)
 
-                # 获取指标名称
+
                 metric_names_tuple = self.get_metric_names()
                 _num_m = self.get_num_metrics()
                 _m1_name = metric_names_tuple[0]
                 _m2_name = metric_names_tuple[1] if _num_m > 1 else None
 
-                # Simple moving average for smoother convergence view
+
                 window = min(max(5, PPO_UPDATE_INTERVAL // 5), 50)
-                
+
                 def compute_ma(data):
                     if len(data) >= window:
                         kernel = np.ones(window, dtype=np.float32) / window
                         return np.convolve(data, kernel, mode="valid")
                     return data
-                
+
                 rewards_ma = compute_ma(rewards)
                 losses_ma = compute_ma(losses)
                 metric1s_ma = compute_ma(metric1s)
                 metric2s_ma = compute_ma(metric2s) if _num_m > 1 else None
-                
+
                 if len(rewards) >= window:
                     episodes_ma = episodes[window - 1:]
                 else:
@@ -8122,17 +6396,17 @@ class LayerImportanceEvaluator(TrainerCallback):
 
                 dataset_info = f" ({self.data_path})"
                 val_guided_info = " [Train Probe]"
-                
+
                 if _num_m == 1:
                     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
                     fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
-                    
+
                     ax1 = axes[0]
                     ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
                     ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
                     ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward")
                     ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
-                    
+
                     ax2 = axes[1]
                     ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
                     ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
@@ -8140,7 +6414,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     ax2.set_title("Loss (lower is better)"); ax2.grid(True, alpha=0.3)
                     ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
                     ax2.legend()
-                    
+
                     ax3 = axes[2]
                     ax3.plot(episodes, metric1s, label=_m1_name, alpha=0.6, color='green')
                     ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
@@ -8151,13 +6425,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 else:
                     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
                     fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
-                    
+
                     ax1 = axes[0, 0]
                     ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
                     ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
                     ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward")
                     ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
-                    
+
                     ax2 = axes[0, 1]
                     ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
                     ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
@@ -8165,7 +6439,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     ax2.set_title("Loss (lower is better)"); ax2.grid(True, alpha=0.3)
                     ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
                     ax2.legend()
-                    
+
                     ax3 = axes[1, 0]
                     ax3.plot(episodes, metric1s, label=_m1_name, alpha=0.6, color='green')
                     ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
@@ -8173,7 +6447,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     ax3.set_title(f"{_m1_name} (higher is better)"); ax3.grid(True, alpha=0.3)
                     ax3.axhline(y=base_p, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
                     ax3.legend()
-                    
+
                     ax4 = axes[1, 1]
                     ax4.plot(episodes, metric2s, label=_m2_name, alpha=0.6, color='purple')
                     ax4.plot(episodes_ma, metric2s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkviolet')
@@ -8214,7 +6488,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             except Exception as e:
                 self.log(f"[警告] PPO训练曲线绘制失败（Failed to plot PPO training curves）: {e}")
 
-        # 2026-06-01 解耦：stage1-only 完成 -> 归档进 stage1/record/ 并打 COMPLETED（best-effort）。
+
         if (
                 getattr(self, "decoupled_layout", False)
                 and self.skip_noise_rl
@@ -8233,16 +6507,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 completed_episodes=stage1_completed_episodes,
             )
 
-        # ---------------------------------------------------------
-        # Phase 3: Final Report (使用验证集进行最终评估)
-        # ---------------------------------------------------------
+
         self.log("\n" + "="*60)
         self.log("最终评估报告（FINAL EVALUATION REPORT）（验证集）")
         self.log("="*60)
-        
-        # ---------------------------------------------------------
-        # Phase 5: Second-stage noise RL training (独立可控)
-        # ---------------------------------------------------------
+
+
         noise_stage_result = None
         final_eval_result = None
         final_eval_error = None
@@ -8314,18 +6584,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                     )
 
-            # ---------------------------------------------------------
-            # Phase 6: 统一 Final Evaluation (stage1 + stage2 合并评估)
-            # ---------------------------------------------------------
+
             if self.skip_final_eval:
                 self.log("\n[信息] 统一最终评估已跳过（--skip-final-eval）。")
                 if self.run_output_dir:
                     update_persistent_metadata_stage(
                         self.run_output_dir, "final_eval", "skipped")
             else:
-                # final_eval_only=True 时，从之前 RL 搜索的 checkpoint 中读取最优配置，
-                # 用作 final-eval 的输入。仅在 stage1/stage2 搜索结果缺失时回退到这些先验值，
-                # 因此不会影响正常训练流程下的行为。
+
+
                 prior_stage1_search_best = None
                 prior_stage2_search_best = None
                 if self.final_eval_only:
@@ -8386,13 +6653,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         limit_s=noise_limit_s,
                     )
                 elif getattr(self, "decoupled_layout", False):
-                    # 解耦（2026-06-01）：训练完成只写基础快照（Stage-1:
-                    # _maybe_snapshot_decoupled_stage1_record；Stage-2:
-                    # Stage-2 record 归档）。重型同-cost 51 组 final-eval
-                    # 改由独立工具触发（Paean/run_final_eval.sh --stage stage1|stage2
-                    # --record-dir ...），不在训练末自动跑，以免把 Rescale_optimizer /
-                    # GLUE 链耦合进训练收尾。见
-                    # docs/superpowers/specs/2026-05-30-decoupled-standalone-final-eval-design.md。
+
+
                     self.log(
                         "[解耦] 跳过训练末自动 final-eval；如需重型同-cost 对比，"
                         "请用独立 final-eval 工具（--stage stage1|stage2 --record-dir ...）。"
@@ -8504,7 +6766,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             opt_softmax = stage2_fixed_softmax
 
         self.log("\n配置评估完成（Configuration evaluation finished）。")
-        # 汇总最佳 policy 到 best_policy/ 目录
+
         try:
             self.save_best_policies_snapshot()
         except Exception as _bp_err:

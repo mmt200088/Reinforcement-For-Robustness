@@ -48,8 +48,7 @@ from device_utils import parse_device_ids
 from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
 from .seed_utils import assign_global_episodes, derive_episode_seed
 
-# Defer the heavy import so this module is importable in torch-free CI without
-# pulling transformers / function_handler at module load.
+
 try:
     from function_handler import ReversibleLayerHandler  # noqa: F401  (worker uses it via factory)
     _HANDLER_IMPORT_ERROR: Optional[BaseException] = None
@@ -57,15 +56,6 @@ except Exception as _exc:  # pragma: no cover — only matters on import-broken 
     ReversibleLayerHandler = None  # type: ignore[assignment]
     _HANDLER_IMPORT_ERROR = _exc
 
-
-# Seed derivation + global-episode assignment live in the torch-free
-# ``seed_utils`` module (imported above) so the GPU-count-independence contract
-# is unit-testable without torch. See ``stage1_rl/seed_utils.py``.
-
-
-# ---------------------------------------------------------------------------
-# Per-episode rollout container (mirrors RecurrentRolloutBuffer's per-episode dict)
-# ---------------------------------------------------------------------------
 
 @dataclass
 class EpisodeRollout:
@@ -86,7 +76,7 @@ class EpisodeRollout:
     values: List[float]
     dones: List[float]
     gelu_masks: List[np.ndarray]
-    # Per-episode summary used by the central loop's bookkeeping
+
     episode_reward: float
     episode_loss: float
     episode_metric1: float
@@ -95,7 +85,7 @@ class EpisodeRollout:
     gelu_config: List[int]
     softmax_config: List[int]
     final_config_metrics: Optional[Dict[str, float]] = None
-    # Optional per-step info dicts (for the details/ writer, if enabled)
+
     step_infos: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_buffer_dict(self) -> Dict[str, Any]:
@@ -113,10 +103,6 @@ class EpisodeRollout:
         }
 
 
-# ---------------------------------------------------------------------------
-# Stage1RolloutWorker — one per device
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Stage1RolloutWorker:
     """Per-GPU rollout state.
@@ -131,17 +117,13 @@ class Stage1RolloutWorker:
     worker_idx: int
     device: torch.device
     model: nn.Module
-    handler: Any                      # ReversibleLayerHandler
-    evaluator: Any                    # primary LayerImportanceEvaluator (read-only helpers)
-    env: Any                          # TransformerOptEnv with the per-worker eval wrapper
-    eval_split_name: str              # which dataloader split (e.g. "train" / proxy)
-    role: str = "primary"             # "primary" (worker 0) | "replica"
-    gtrxl_replica: Optional[nn.Module] = None  # per-worker eval policy on .device
+    handler: Any
+    evaluator: Any
+    env: Any
+    eval_split_name: str
+    role: str = "primary"
+    gtrxl_replica: Optional[nn.Module] = None
 
-
-# ---------------------------------------------------------------------------
-# Stage1ParallelRunnerDiagnostics
-# ---------------------------------------------------------------------------
 
 @dataclass
 class Stage1ParallelRunnerDiagnostics:
@@ -165,10 +147,6 @@ class Stage1ParallelRunnerDiagnostics:
         return float(sum(self.per_worker_seconds)) / float(self.wall_seconds)
 
 
-# ---------------------------------------------------------------------------
-# Stage1ParallelRunner — orchestrates the worker threads
-# ---------------------------------------------------------------------------
-
 class Stage1ParallelRunner:
     """Fan ``episodes_per_worker`` rollouts across N worker threads per PPO window."""
 
@@ -183,10 +161,8 @@ class Stage1ParallelRunner:
             raise ValueError("Stage1ParallelRunner requires at least one worker")
         self.workers = workers
         self.primary_device = torch.device(primary_device)
-        # The episode-collection routine is supplied by the caller (lives in
-        # layer_importance_evaluator.py so it can read all of the existing
-        # private state — RL_OPT_FLAGS, _write_step_info, etc. — without
-        # circular import.) Signature: collect_episode_fn(worker, episode_seed).
+
+
         self._collect_episode = collect_episode_fn
         self._log = log_fn or (lambda _msg: None)
         self.last_diagnostics: Optional[Stage1ParallelRunnerDiagnostics] = None
@@ -321,8 +297,7 @@ class Stage1ParallelRunner:
         if total_episodes <= 0:
             return []
 
-        # Build/refresh each worker's own eval-mode policy replica (frozen for
-        # this window) so the rollout runs lock-free — one policy per GPU.
+
         self._sync_policy_replicas(gtrxl_net)
 
         initial_workers = tuple(self.workers)
@@ -451,9 +426,7 @@ class Stage1ParallelRunner:
             quarantined_devices=list(quarantined_devices),
         )
 
-        # Determinism signature over the window's rollouts in GLOBAL order: a hash
-        # of every episode's (actions, rewards). The 1-GPU-vs-N-GPU harness diffs
-        # these — identical sequences prove the rollout is GPU-count-independent.
+
         sig = hashlib.sha1(
             repr([(r.actions_g, r.rewards) for r in flat]).encode("utf-8")
         ).hexdigest()[:16]
@@ -462,16 +435,12 @@ class Stage1ParallelRunner:
         return flat
 
 
-# ---------------------------------------------------------------------------
-# Factory: build_stage1_parallel_runner
-# ---------------------------------------------------------------------------
-
 def build_stage1_parallel_runner(
         *,
         primary_model: nn.Module,
         primary_handler: Any,
-        evaluator: Any,                     # primary LayerImportanceEvaluator
-        env_factory: Callable[..., Any],    # build_env_for_worker(model, handler, device, eval_wrapper)
+        evaluator: Any,
+        env_factory: Callable[..., Any],
         collect_episode_fn: Callable[..., EpisodeRollout],
         device_ids: Sequence[int],
         eval_split_name: str,
@@ -521,9 +490,7 @@ def build_stage1_parallel_runner(
 
     workers: List[Stage1RolloutWorker] = []
 
-    # Build worker 0 — reuses the primary model/handler/evaluator. No extra
-    # GPU memory; the env wrapper still routes through the replica path so
-    # single-GPU and multi-GPU codepaths agree bit-for-bit.
+
     primary_device = torch.device(f"cuda:{int(ids[0])}")
     primary_eval_wrapper = _build_per_worker_eval_wrapper(
         evaluator=evaluator,
@@ -545,7 +512,7 @@ def build_stage1_parallel_runner(
     ))
     log(f"[stage1-rollout] worker 0: {primary_device} (primary, reusing evaluator.model)")
 
-    # Workers 1..N-1 — deepcopy the model onto each extra device.
+
     for slot, dev_id in enumerate(ids[1:], start=1):
         device = torch.device(f"cuda:{int(dev_id)}")
         try:
@@ -612,10 +579,6 @@ def _build_per_worker_eval_wrapper(
 
     return _WorkerEvalWrapper()
 
-
-# ---------------------------------------------------------------------------
-# Diagnostics formatter
-# ---------------------------------------------------------------------------
 
 def format_diagnostics_line(diag: Stage1ParallelRunnerDiagnostics) -> str:
     """One-line summary suitable for ``pruning_search_log.txt``."""

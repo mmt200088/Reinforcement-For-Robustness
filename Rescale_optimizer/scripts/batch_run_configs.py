@@ -115,11 +115,6 @@ DEFAULT_CONFIGS_DIR = REPO_ROOT / "configs"
 DEFAULT_OUT = REPO_ROOT / "configs" / "static_skeletons.json"
 
 
-# ---------------------------------------------------------------------------
-# Compact entry extraction
-# ---------------------------------------------------------------------------
-
-
 def _extract_compact_entry(
     config_name: str,
     result: OptimizationResult,
@@ -136,23 +131,7 @@ def _extract_compact_entry(
     chain = result.chain_result.chain
     skeleton = list(result.skeleton)
 
-    # ------------------------------------------------------------------
-    # Per cut point sf (chain-consistent view).
-    #
-    # Walk the skeleton forward, tracking the post-rescale working scale
-    # at each rescale point sf_at_rescale[r]:
-    #   sf_at_rescale[0] = source_sf  (= cr.t[0] after compress_headroom)
-    #   sf_at_rescale[r] = propagate_scale(sf_at_rescale[r-1], path) - q_bits[r-1]
-    #
-    # For each cut point i ∈ 0..M:
-    #   - i == 0 (source) : sf = sf_at_rescale[0]
-    #   - i in skeleton (rescale point, r >= 1):
-    #         sf_pre  = propagate(sf_at_rescale[r-1], nodes_between(s_{r-1}, i))
-    #         sf_post = sf_at_rescale[r]   (= sf_pre - q_bits[r-1])
-    #         drop    = q_bits[r-1]
-    #   - else (intermediate, sits in stage r_prev):
-    #         sf = propagate(sf_at_rescale[r_prev], nodes_between(s_{r_prev}, i))
-    # ------------------------------------------------------------------
+
     source_sf = int(result.chain_result.t[0]) if result.chain_result.t else 0
     R = chain.R
 
@@ -194,7 +173,7 @@ def _extract_compact_entry(
             })
             continue
 
-        # intermediate (non-skeleton) cut point: find latest rescale ≤ i
+
         r_prev = max(r for r in range(R + 1) if skeleton[r] <= i)
         s_prev = skeleton[r_prev]
         path = graph.nodes_between(s_prev, i)
@@ -293,11 +272,6 @@ def _extract_effective_rotations(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Compact JSON formatter
-# ---------------------------------------------------------------------------
-
-
 def _dumps_oneline(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(", ", ": "))
 
@@ -383,11 +357,6 @@ def _write_doc(f, entries: List[Dict[str, Any]],
         f.write("\n")
 
 
-# ---------------------------------------------------------------------------
-# Discovery
-# ---------------------------------------------------------------------------
-
-
 def _discover_configs(configs_dir: Path,
                       explicit: Optional[List[str]]) -> List[Path]:
     if explicit:
@@ -410,11 +379,6 @@ def _discover_configs(configs_dir: Path,
         and not entry.name.startswith("static_skeletons")
     )
     return [configs_dir / name for name in names]
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main(argv: Optional[List[str]] = None) -> int:

@@ -24,13 +24,13 @@ class Block3RuntimeSourceTest(unittest.TestCase):
 
     def test_horizon_formula_drops_block3(self):
         text = source_text("blb_stage2_rl/action_space.py")
-        # 3 (layer 0: B2,B4,B5) + (L-1)*4 (B1,B2,B4,B5) -> 47 for L=12.
+
         self.assertIn("return 3 + (L - 1) * 4", text)
         self.assertNotIn("return 4 + (L - 1) * 5", text)
 
     def test_block3_field_table_still_defined(self):
-        # The legacy full action vector KEEPS block 3's slots (frozen at baseline);
-        # only the decided schedule drops them. _BLOCK3_FIELDS must stay wired.
+
+
         text = source_text("blb_stage2_rl/action_space.py")
         self.assertIn("_BLOCK3_FIELDS", text)
         self.assertIn("3: _BLOCK3_FIELDS", text)
@@ -59,7 +59,7 @@ class Block3RuntimeBehaviorTest(unittest.TestCase):
     def setUp(self):
         try:
             from blb_stage2_rl import action_space as A
-        except Exception as exc:  # torch/transformers absent on a dev box
+        except Exception as exc:
             self.skipTest(f"blb_stage2_rl.action_space unimportable: {exc}")
         self.A = A
 
@@ -69,12 +69,12 @@ class Block3RuntimeBehaviorTest(unittest.TestCase):
         self.assertEqual(self.A.horizon_for_num_layers(12), 47)
         block_idxs = {s.block_idx for s in sched}
         self.assertNotIn(3, block_idxs)
-        # Layer 0 has no block 1; every other decided block is present.
+
         self.assertEqual(block_idxs, {1, 2, 4, 5})
 
     def test_full_action_vector_keeps_block3_dims(self):
-        # The legacy full vec is UNCHANGED -- block 3's slots still exist (frozen),
-        # so make_all_max must still produce a full-width vector including them.
+
+
         self.assertGreater(len(self.A.block_dims(3)), 0)
         dims = self.A.action_dims_for_config(12)
         vec = self.A.make_all_max_action_vector(12)

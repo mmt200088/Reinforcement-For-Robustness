@@ -58,46 +58,33 @@ BERT 前向中所有"乘法操作"的噪声注入候选注册表（仅梳理；�
 from typing import Iterable, Optional
 
 
-# ---------------------------------------------------------------------------
-# 取值枚举
-# ---------------------------------------------------------------------------
-
 OP_TYPES = (
-    "linear_mm",        # Y = X @ W (+b)，nn.Linear / Conv1D
-    "activation_mm",    # Y = A1 @ A2，两个操作数都是激活（Q@K^T / probs@V）
-    "scalar_mul",       # Y = X * c，c 是编译期标量
-    "elementwise_mul",  # Y = A ⊙ B，逐元素乘
-    "self_power",       # Y = X**k，由若干次 X*X 累乘构成
-    "stat_div",         # Y = X / s(X)，分母来自 X 自身统计量
-    "embedding_lookup", # 等价于 OneHot · W
+    "linear_mm",
+    "activation_mm",
+    "scalar_mul",
+    "elementwise_mul",
+    "self_power",
+    "stat_div",
+    "embedding_lookup",
 )
 
 OPERAND_ROLES = (
-    "activation",       # 运行时张量
-    "weight",           # nn.Linear.weight / Conv1D.weight
+    "activation",
+    "weight",
     "bias",
     "embedding_table",
-    "param_scale",      # LayerNorm.gamma 之类
-    "param_bias",       # LayerNorm.beta（仅加法）
-    "scalar_const",     # 1/√Dh、1/2^d、polynomial coeff、Exp_bound
-    "statistic",        # mean、var、sum_exp、x.max
-    "mask",             # head_mask / attention_mask / BLB 协议里的 mask 明文
-    "input_index",      # input_ids 之类
+    "param_scale",
+    "param_bias",
+    "scalar_const",
+    "statistic",
+    "mask",
+    "input_index",
 )
 
 
-# ---------------------------------------------------------------------------
-# 注册表：按 BLB Figure 10 时间序排列
-#   embeddings → (Block 1 → Block 2 → Block 3 → Block 4 → Block 5) × L
-#   → pooler → head
-# 注：BLB block 内含跨层融合，PyTorch 时序上每条都属于其 module_path 所在 layer。
-# ---------------------------------------------------------------------------
-
 NOISE_TARGETS = [
 
-    # =====================================================================
-    # Stage 0: BertEmbeddings (一次性，不在 BLB 5-block 循环内)
-    # =====================================================================
+
     {
         "id": "emb.word_lookup",
         "stage": "embeddings",
@@ -153,7 +140,7 @@ NOISE_TARGETS = [
         "notes": "仅 absolute position embedding 时启用（默认）",
     },
 
-    # ----- Embedding LayerNorm (head + tail，与 attn/ffn LN 结构相同) -----
+
     {
         "id": "emb.layernorm.head.mean_smul",
         "stage": "embeddings",
@@ -263,10 +250,7 @@ NOISE_TARGETS = [
         "notes": "LN tail 第 2 步：× γ；之后 + β（不算乘法）",
     },
 
-    # =====================================================================
-    # BLB Block 1: Wffn2 + post-FFN LN head（PyTorch 时序上属于本层 ffn output）
-    # 用 N=8192 表
-    # =====================================================================
+
     {
         "id": "ffn.output_proj",
         "stage": "encoder.ffn",
@@ -359,10 +343,7 @@ NOISE_TARGETS = [
         "notes": "Block 1 末步：variance；输出 (x−μ)²·1/D 给 rsqrt（Block 1 / Block 2 边界非线性）",
     },
 
-    # =====================================================================
-    # BLB Block 2: post-FFN LN tail + Q/K/V 投影 + Q·K^T
-    # 用 N=16384 表
-    # =====================================================================
+
     {
         "id": "ffn.layernorm.tail.normalize_ctct",
         "stage": "encoder.ffn",
@@ -441,7 +422,7 @@ NOISE_TARGETS = [
         "id": "attn.v_proj",
         "stage": "encoder.attn",
         "per_layer": True,
-        "blb_block": 2,    # 🚧 TBD：用户稍后补充 V 在 BLB Figure 10 里的精确位置
+        "blb_block": 2,
         "blb_N": 16384,
         "degrees": None,
         "shared_with": [],
@@ -454,7 +435,7 @@ NOISE_TARGETS = [
             {"name": "b_v", "role": "bias",       "shape": "[A*Dh]"},
         ],
         "current_noise": "wv",
-        "notes": "🚧 V 投影的 BLB block 归属待用户补完图后确认；当前默认 Block 2",
+        "notes": "V projection is assigned to BLB Block 2.",
     },
     {
         "id": "attn.q.bsgs_mask.step1",
@@ -583,16 +564,13 @@ NOISE_TARGETS = [
         "notes": "标量除法等价 × (1/√Dh)；在我们项目里在 softmax 之前显式做",
     },
 
-    # =====================================================================
-    # BLB Block 3: Softmax exp 近似 (degree-aware)
-    # softmax2 → N=8192；softmax 3/4/5/6 → N=16384
-    # =====================================================================
+
     {
         "id": "attn.softmax.scalar_div",
         "stage": "encoder.attn",
         "per_layer": True,
         "blb_block": 3,
-        "blb_N": None,        # softmax2 用 8192；其它用 16384，看 degree
+        "blb_N": None,
         "degrees": (2, 3, 4, 5, 6),
         "shared_with": [],
         "module_path": "attention.self.approximation_exponential",
@@ -605,7 +583,7 @@ NOISE_TARGETS = [
         "current_noise": None,
         "notes": "exp 近似的初始 ct*pt：(1 + x/2^degree)；plaintext 1/(2^n) 在 scale 15",
     },
-    # exp 近似的 6 个自乘步骤（每个步骤的 degree 激活条件不同）
+
     {
         "id": "attn.softmax.power.s1",
         "stage": "encoder.attn",
@@ -733,10 +711,7 @@ NOISE_TARGETS = [
         "notes": "softmax 收尾：rec 求倒数（非线性，走 MPC）后乘以 exp_out",
     },
 
-    # =====================================================================
-    # BLB Block 4: probs · V + Wo + post-attn LN head
-    # 用 N=16384 表
-    # =====================================================================
+
     {
         "id": "attn.head_mask_mul",
         "stage": "encoder.attn",
@@ -870,16 +845,13 @@ NOISE_TARGETS = [
         "notes": "Block 4 末步：variance；之后 rsqrt（Block 4 / Block 5 边界）",
     },
 
-    # =====================================================================
-    # BLB Block 5: post-attn LN tail + Wffn1 + GELU 多项式
-    # gelu1 → N=8192；gelu2 / gelu4 → N=16384
-    # =====================================================================
+
     {
         "id": "attn.layernorm.tail.normalize_ctct",
         "stage": "encoder.attn",
         "per_layer": True,
         "blb_block": 5,
-        "blb_N": None,        # gelu1=8192；gelu2/4=16384
+        "blb_N": None,
         "degrees": None,
         "shared_with": [],
         "module_path": "attention.output.LayerNorm",
@@ -936,7 +908,7 @@ NOISE_TARGETS = [
         "blb_block": 5,
         "blb_N": 16384,
         "degrees": (2, 4),
-        "shared_with": ["ffn.gelu.power.x3x4"],   # gelu4 时与 x3x4 共享
+        "shared_with": ["ffn.gelu.power.x3x4"],
         "module_path": "intermediate.intermediate_act_fn (PolynomialGELU)",
         "op_type": "elementwise_mul",
         "blb_op": "ewmulcc (x · x = x²)",
@@ -954,7 +926,7 @@ NOISE_TARGETS = [
         "blb_block": 5,
         "blb_N": 16384,
         "degrees": (4,),
-        "shared_with": ["ffn.gelu.power.x2"],     # gelu4 内两步共享
+        "shared_with": ["ffn.gelu.power.x2"],
         "module_path": "intermediate.intermediate_act_fn (PolynomialGELU)",
         "op_type": "elementwise_mul",
         "blb_op": "ewmulcc (x²·x = x³ 与 x²·x² = x⁴；并行)",
@@ -973,7 +945,7 @@ NOISE_TARGETS = [
         "stage": "encoder.ffn",
         "per_layer": True,
         "blb_block": 5,
-        "blb_N": None,        # gelu1=8192；gelu2/4=16384
+        "blb_N": None,
         "degrees": (1, 2, 4),
         "shared_with": [],
         "module_path": "intermediate.intermediate_act_fn (PolynomialGELU)",
@@ -991,9 +963,7 @@ NOISE_TARGETS = [
         ),
     },
 
-    # =====================================================================
-    # Stage 3 / 4: Pooler + Classifier (一次性)
-    # =====================================================================
+
     {
         "id": "pooler.dense",
         "stage": "pooler",
@@ -1035,10 +1005,6 @@ NOISE_TARGETS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# 选择 / 索引工具
-# ---------------------------------------------------------------------------
-
 def select(
     *,
     ids: Optional[Iterable[str]] = None,
@@ -1047,9 +1013,9 @@ def select(
     per_layer: Optional[bool] = None,
     has_noise: Optional[bool] = None,
     operand_role: Optional[str] = None,
-    blb_block=None,                           # 1..5 / "embeddings" / "pooler" / "head"
-    blb_N: Optional[int] = None,              # 8192 / 16384
-    degree: Optional[int] = None,             # 当前 degree (gelu/softmax)
+    blb_block=None,
+    blb_N: Optional[int] = None,
+    degree: Optional[int] = None,
 ):
     """按条件筛选注册表条目。所有参数互相 AND。
 

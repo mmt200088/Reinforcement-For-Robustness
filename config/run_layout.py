@@ -1,35 +1,4 @@
-"""解耦后 RL 输出布局的唯一事实来源（Single Source of Truth）。
-
-2026-06-01 引入。配合 ``config/paths.py`` 里新增的
-``STAGE1_SUBDIR`` / ``STAGE2_SUBDIR`` / ``RECORD_SUBDIR`` /
-``COMPLETED_MARKER_FILENAME``。
-
-布局（与旧的 ``persistent/`` 并存，旧布局留给 GA/greedy/general/compare/legacy
-v2）::
-
-    <root>/                                 ← root 一般是 "Parting Chapter"
-    ├── stage1/
-    │   ├── bert base mrpc/                 ← 每个 combo 一个**扁平**工作目录（产物直接落这）
-    │   │   ├── stage1_rl_checkpoint.pt
-    │   │   ├── metadata.json
-    │   │   ├── ppo_training_curve.png ...
-    │   │   └── COMPLETED                    ← 完成标记（存在=已完成、已归档）
-    │   └── record/
-    │       ├── bert base mrpc 1 20260530/   ← 完成时的只读快照 run #1
-    │       └── bert base rte 1 20260530/
-    └── stage2/                              ← 同形，stage2 工作目录内部用 progress/
-        ├── bert base mrpc/ ...
-        └── record/ ...
-
-设计约束（刻意保持）：
-
-- **只做路径/字符串 + 极少量 fs 助手**，不依赖 torch / numpy / matplotlib，
-  这样能在没有重型依赖的环境里跑单测。
-- combo 名字带空格，按用户指定：``{model_type 把 '-' 换成 ' '} {dataset}``。
-- run-id = ``{combo} {N} {YYYYMMDD}``，``N`` 是该 combo 在 record/ 下已有条目数 + 1。
-- root 默认 ``Parting Chapter``。调用方一般传 ``dirname(PERSISTENT_ROOT)`` 进来
-  （``Parting Chapter/persistent`` -> ``Parting Chapter``）。
-"""
+"""Deterministic working and record paths for independent search stages."""
 
 from __future__ import annotations
 
@@ -48,20 +17,16 @@ from config.paths import (
     STAGE2_SUBDIR,
 )
 
-# 默认根目录（``Parting Chapter``）。
+
 DEFAULT_ROOT: str = RL_RESULTS_ROOT
 
-# 参与 resume 一致性校验的约束键（写进 metadata.json）。
+
 CONSTRAINT_KEYS: Tuple[str, ...] = (
     "stage1_accuracy_tolerance",
     "stage2_limit_tolerance",
     "stage2_stability_tolerance",
 )
 
-
-# ---------------------------------------------------------------------------
-# stage / combo / 路径
-# ---------------------------------------------------------------------------
 
 def normalize_stage(stage) -> int:
     """把 ``1`` / ``"1"`` / ``"stage1"`` / ``"stage1-only"`` 归一成 ``1`` 或 ``2``。"""
@@ -78,12 +43,12 @@ def stage_subdir(stage) -> str:
 
 
 def combo_name(model_type: str, dataset: str) -> str:
-    """``("bert-base", "mrpc") -> "bert base mrpc"``（空格按用户指定）。"""
+    """Return the stable human-readable model/task directory name."""
     model_family = str(model_type).strip().lower()
     ds = str(dataset).strip().lower()
     validate_supported_profile(model_family, ds)
     mt = model_family.replace("-", " ")
-    # 折叠多余空白，避免 "bert  base"。
+
     return " ".join(f"{mt} {ds}".split())
 
 
@@ -101,10 +66,6 @@ def stage_record_root(stage, root: str = DEFAULT_ROOT) -> str:
     """``<root>/stage{1,2}/record``。"""
     return os.path.join(stage_root(stage, root), RECORD_SUBDIR)
 
-
-# ---------------------------------------------------------------------------
-# run-id / run-number
-# ---------------------------------------------------------------------------
 
 def _today_yyyymmdd() -> str:
     return datetime.datetime.now().strftime("%Y%m%d")
@@ -215,10 +176,6 @@ def find_record_dir(
             return os.path.join(rroot, name)
     return None
 
-
-# ---------------------------------------------------------------------------
-# 完成标记 + record 归档
-# ---------------------------------------------------------------------------
 
 def completed_marker_path(working_dir: str) -> str:
     return os.path.join(working_dir, COMPLETED_MARKER_FILENAME)
@@ -337,10 +294,6 @@ def snapshot_decoupled_record(
     )
     return rdir, rid, n
 
-
-# ---------------------------------------------------------------------------
-# 约束一致性守卫（约束移出路径、进 metadata.json）
-# ---------------------------------------------------------------------------
 
 def _num_eq(a, b) -> bool:
     """容忍 ``0.005`` vs ``"0.005"`` 这类数值/字符串格式差异。"""

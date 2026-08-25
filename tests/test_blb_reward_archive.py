@@ -1,23 +1,10 @@
-import importlib.util
-import sys
-from pathlib import Path
 import unittest
 
-
-def load_reward_module():
-    path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "reward.py"
-    spec = importlib.util.spec_from_file_location("reward_under_test", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+from blb_stage2_rl import reward
 
 
 class ParetoCostArchiveTests(unittest.TestCase):
     def _p3(self, *, fusion_gain=0.0, k_gain=0.0, bits_gain=0.0):
-        reward = load_reward_module()
-
         return reward.RewardBreakdown(
             reward=40.0,
             priority=3,
@@ -30,8 +17,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
 
     def test_excludes_p1_and_p2_candidates(self):
-        reward = load_reward_module()
-
         archive = reward.ParetoCostArchive()
 
         p1 = archive.add(
@@ -64,8 +49,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(archive.frontier, ())
 
     def test_replaces_dominated_frontier_members(self):
-        reward = load_reward_module()
-
         archive = reward.ParetoCostArchive()
         first = archive.add("a", self._p3(fusion_gain=1.0, k_gain=1.0, bits_gain=1.0))
         second = archive.add("b", self._p3(fusion_gain=2.0, k_gain=1.0, bits_gain=1.0))
@@ -77,8 +60,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["b"])
 
     def test_keeps_mutually_non_dominated_candidates(self):
-        reward = load_reward_module()
-
         archive = reward.ParetoCostArchive()
         archive.add("fusion", self._p3(fusion_gain=3.0, k_gain=1.0, bits_gain=1.0))
         event = archive.add("k", self._p3(fusion_gain=1.0, k_gain=3.0, bits_gain=1.0))
@@ -89,8 +70,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual({entry.action_hash for entry in archive.frontier}, {"fusion", "k"})
 
     def test_dominated_and_duplicate_events_are_bounded(self):
-        reward = load_reward_module()
-
         archive = reward.ParetoCostArchive(max_abs_shaping=0.35)
         archive.add("strong", self._p3(fusion_gain=2.0, k_gain=2.0, bits_gain=2.0))
         dominated = archive.add("weak", self._p3(fusion_gain=1.0, k_gain=1.0, bits_gain=1.0))
@@ -103,7 +82,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(len(archive.frontier), 1)
 
     def test_default_pareto_event_shaping_is_stronger_but_tier_safe(self):
-        reward = load_reward_module()
 
         archive = reward.ParetoCostArchive()
         first = archive.add("a", self._p3(fusion_gain=1.0, k_gain=1.0, bits_gain=1.0))
@@ -123,7 +101,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
             self.assertLessEqual(abs(event.shaping), 0.35)
 
     def test_ignores_typical_normalizers_for_ranking(self):
-        reward = load_reward_module()
 
         archive = reward.ParetoCostArchive(
             baseline=reward.BaselineCostStats(
@@ -139,7 +116,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["raw-dominates"])
 
     def test_compute_reward_uses_adaptive_scalar_for_p3_cost_while_recording_pareto(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = False
@@ -194,7 +170,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["p3-a"])
 
     def test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = False
@@ -216,8 +191,8 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
         weights = reward.calibrate_weights_from_baseline(baseline)
         weights.reward_design = "tiered"
-        # ADR-013: this asserts the legacy linear P3 metric-margin term, which
-        # the log-barrier supersedes by default — test it with the barrier off.
+
+
         weights.acc_barrier_enabled = False
         breakdown = reward.compute_reward(
             reward.EpisodeMetrics(
@@ -248,7 +223,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertGreater(breakdown.p3_metric_margin_reward, 0.0)
 
     def test_p3_cost_rank_remains_unbounded_after_ppo_cost_score_clips(self):
-        reward = load_reward_module()
 
         baseline = reward.BaselineCostStats(
             total_bits_sum=2000,
@@ -300,7 +274,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertGreater(capped_high.cost_rank_truncation, capped_low.cost_rank_truncation)
 
     def test_p1_p2_do_not_receive_p3_cost_rank(self):
-        reward = load_reward_module()
 
         baseline = reward.BaselineCostStats(
             total_bits_sum=2000,
@@ -363,7 +336,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertLess(p2.reward, 35.0)
 
     def test_adaptive_scalar_cost_step_boundaries_and_bits_tiebreaker(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = False
@@ -431,7 +403,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
 
     def test_p3_high_accuracy_margin_does_not_hide_cost_ordering(self):
-        reward = load_reward_module()
 
         baseline = reward.BaselineCostStats(
             total_bits_sum=100,
@@ -445,10 +416,10 @@ class ParetoCostArchiveTests(unittest.TestCase):
             typical_bits_drop=100.0,
         )
         weights = reward.calibrate_weights_from_baseline(baseline)
-        # ADR-013: legacy linear P3 metric-margin path (barrier off); the
-        # cost-ordering invariant this test checks is unchanged by the barrier.
+
+
         weights.acc_barrier_enabled = False
-        weights.reward_design = "tiered"  # ADR-015: this asserts the tiered path
+        weights.reward_design = "tiered"
         metrics = reward.EpisodeMetrics(
             loss_mean=0.30,
             loss_std=0.0,
@@ -493,7 +464,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
 
     def test_compute_reward_excludes_p2_from_cost_and_archive(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = False
@@ -538,7 +508,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(archive.frontier, ())
 
     def test_compute_reward_excludes_p1_from_adaptive_scalar_cost(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = False
@@ -584,7 +553,6 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(archive.frontier, ())
 
     def test_compute_reward_excludes_optimizer_invalid_from_adaptive_scalar_cost(self):
-        reward = load_reward_module()
 
         class Signals:
             any_invalid = True

@@ -46,7 +46,7 @@ try:
         parse_device_ids,
     )
     _IMPORT_ERROR = None
-except Exception as _exc:  # torch / transformers / function_handler missing
+except Exception as _exc:
     torch = None  # type: ignore
     NoisePoint = None  # type: ignore
     _sample_gaussian_for_point = None  # type: ignore
@@ -72,23 +72,16 @@ _SKIP_REASON = (
 _TORCH_AVAILABLE = _IMPORT_ERROR is None
 
 
-# ---------------------------------------------------------------------------
-# apply_optimizer_output_to_cfg — Block 1 write classes
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
     """Verify the four write classes against the real block1_mrpc skeleton."""
 
-    # block1_mrpc baseline_skeleton from
-    # Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json.
-    # Positions: [0=gelu_out_fresh, 1=mean_result_rescale,
-    #             2=var_result_rescale, 3=fused-stub]
+
     BASELINE_SKELETON = [0, 2, 4, 5]
 
     def setUp(self):
-        # Build a cfg with RL SFs intentionally different from baseline so any
-        # write-back is visible. Both rescale fields enabled so we can also
-        # verify the "fused away → None" path.
+
+
         self.cfg = make_block1_default_config(
             N=8192,
             gelu_out_sf=28,
@@ -122,7 +115,7 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
         ), f"expected fresh override entry; got {overrides}")
 
     def test_rescale_post_writes_to_rescale_field(self):
-        # baseline_skeleton[1] = node 2 (ctpt_inv_d_1) → mean_result_rescale
+
         raw = {
             "new_compact_config": {
                 "cut_point_sf": [
@@ -147,16 +140,15 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
         ), f"expected rescale_post override entry; got {overrides}")
 
     def test_fused_away_sets_rescale_to_none(self):
-        # baseline_skeleton[2] = node 4 (ctpt_inv_d_2 / var_result_rescale).
-        # cut_point_sf has no entry for node 4 → var_result_rescale gets fused
-        # away, cfg field must become None.
+
+
         raw = {
             "new_compact_config": {
                 "cut_point_sf": [
                     {"i": 0, "name": "gelu_out", "type": "SOURCE", "sf": 30},
                     {"i": 2, "name": "ctpt_inv_d_1", "type": "CTPT_MUL",
                      "sf_pre": 70, "sf_post": 34, "drop": 36},
-                    # node 4 deliberately absent
+
                 ],
                 "propagation_deltas": [],
                 "effective_rotations": [],
@@ -178,7 +170,7 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
         ), f"expected fused_away override entry; got {overrides}")
 
     def test_propagation_delta_writes_to_encode_field(self):
-        # GRAPH_NODE_TO_CFG_ATTR[1]["ctpt_ffn2"] = "wffn2_encode"
+
         raw = {
             "new_compact_config": {
                 "cut_point_sf": [],
@@ -203,8 +195,8 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
         ), f"expected propagation_delta override entry; got {overrides}")
 
     def test_non_integer_delta_skipped(self):
-        # "x2" / "x4" propagation deltas have no cfg correspondence; must be
-        # silently skipped rather than crash.
+
+
         raw = {
             "new_compact_config": {
                 "cut_point_sf": [],
@@ -221,7 +213,7 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
             self.cfg, output_raw=raw, block_idx=1, graph_key="block1_mrpc",
             baseline_skeleton=self.BASELINE_SKELETON,
         )
-        # No prop_delta override applied (non-integer delta)
+
         self.assertFalse(any(o.source == "propagation_delta" for o in overrides))
         self.assertEqual(self.cfg.wffn2_encode.scaling_factor, original_wffn2_sf)
 
@@ -245,13 +237,13 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
             self.cfg, output_raw=raw, block_idx=1, graph_key="block1_mrpc",
             baseline_skeleton=self.BASELINE_SKELETON,
         )
-        # cfg untouched, overrides empty
+
         self.assertEqual(self.cfg.gelu_out_fresh.scaling_factor, original_fresh_sf)
         self.assertEqual(self.cfg.wffn2_encode.scaling_factor, original_wffn2_sf)
         self.assertEqual(overrides, [])
 
     def test_missing_compact_config_no_op(self):
-        # E.g. an invoker error path returns raw without ``new_compact_config``.
+
         raw = {"result": {"valid": True}}
         original_fresh_sf = self.cfg.gelu_out_fresh.scaling_factor
         overrides = apply_optimizer_output_to_cfg(
@@ -262,9 +254,6 @@ class ApplyOptimizerOutputBlock1Test(unittest.TestCase):
         self.assertEqual(overrides, [])
 
 
-# ---------------------------------------------------------------------------
-# apply_optimizer_output_to_cfg — Block 2 rotation flag handling
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class ApplyOptimizerOutputBlock2RotationTest(unittest.TestCase):
     """Rotation flags are set from effective_rotations + rotation_name_map."""
@@ -288,7 +277,7 @@ class ApplyOptimizerOutputBlock2RotationTest(unittest.TestCase):
             gamma_rescale_sf=22,
             kt_mask2_rescale_sf=22,
             qkt_merge_mask_rescale_sf=22,
-            # rotation flags off by default
+
             rotation_after_gamma_rescale=False,
             rotation_after_kt_mask2_rescale=False,
         )
@@ -321,13 +310,13 @@ class ApplyOptimizerOutputBlock2RotationTest(unittest.TestCase):
         ), f"expected rotation flag override; got {overrides}")
 
     def test_rotation_flag_resets_when_absent(self):
-        # Precondition: flag already on
+
         self.cfg.rotation_after_gamma_rescale = True
         raw = {
             "new_compact_config": {
                 "cut_point_sf": [],
                 "propagation_deltas": [],
-                "effective_rotations": [],  # optimizer says no rotations
+                "effective_rotations": [],
             },
             "result": {"valid": True},
         }
@@ -416,9 +405,6 @@ class DefaultOptimizerRotationBindingTest(unittest.TestCase):
             )
 
 
-# ---------------------------------------------------------------------------
-# sync_block2_qk_binding — Q-side mirrors K-side after override
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class SyncBlock2QKBindingTest(unittest.TestCase):
     """Block 2 Q/K binding invariant must survive every cfg mutation site."""
@@ -440,7 +426,7 @@ class SyncBlock2QKBindingTest(unittest.TestCase):
         )
 
     def test_wk_mutation_mirrors_onto_wq(self):
-        # Simulate the optimizer override touching only the K side.
+
         self.cfg.wk_encode.scaling_factor = 28
         self.assertEqual(self.cfg.wq_encode.scaling_factor, 22,
                          "precondition: Q stays at pre-override SF")
@@ -464,15 +450,12 @@ class SyncBlock2QKBindingTest(unittest.TestCase):
         self.assertEqual(self.cfg.q_mask2_encode.scaling_factor, 30)
 
     def test_no_op_when_already_synced(self):
-        # Q already == K (setUp).
+
         overrides = sync_block2_qk_binding(self.cfg)
         self.assertEqual(overrides, [],
                          "sync must be a no-op when Q already matches K")
 
 
-# ---------------------------------------------------------------------------
-# Canonical Stage-2 optimizer write-back helper
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
     """RL, fixed-action eval, and final eval must share one cfg write-back path."""
@@ -646,9 +629,6 @@ class Block3TruncationExecutionTest(unittest.TestCase):
         self.assertFalse(torch.equal(out8, out13))
 
 
-# ---------------------------------------------------------------------------
-# _sample_gaussian_for_point reads scaling_factor LIVE
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class SampleGaussianLiveReadTest(unittest.TestCase):
     """The optimizer override only changes ``cfg.<field>.scaling_factor``.
@@ -660,7 +640,7 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
     """
 
     def test_mutating_scaling_factor_changes_noise_variance(self):
-        # Same NoisePoint reference; mutate sf between two samples.
+
         point = NoisePoint(distribution="encoding", scaling_factor=22, N=8192)
         reference = torch.zeros(50000)
 
@@ -668,7 +648,7 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
         sample_low_sf = _sample_gaussian_for_point(reference, point)
         var_low = float(sample_low_sf.var())
 
-        # Higher SF ⇒ smaller variance (more bits ⇒ tighter precision).
+
         point.scaling_factor = 30
         torch.manual_seed(0)
         sample_high_sf = _sample_gaussian_for_point(reference, point)
@@ -676,8 +656,8 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
 
         self.assertGreater(var_low, var_high,
                            "higher SF must produce smaller noise variance")
-        # The two SF levels differ by 8 bits in the table; the ratio should be
-        # well over 100x for a sanity check.
+
+
         ratio = var_low / max(var_high, 1e-30)
         self.assertGreater(ratio, 100.0,
                            f"variance ratio {ratio:.2e} too small — sf may be "
@@ -690,9 +670,8 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
                          "None NoisePoint must produce zero noise (fused-away path)")
 
     def test_distribution_string_case_insensitive(self):
-        # rescale_optimizer_bridge.apply_optimizer_output_to_cfg never alters
-        # the distribution string; this guards against a future regression
-        # where someone uppercases the field and breaks the variance lookup.
+
+
         upper = NoisePoint(distribution="ENCODING", scaling_factor=22, N=8192)
         lower = NoisePoint(distribution="encoding", scaling_factor=22, N=8192)
         reference = torch.zeros(10000)
@@ -700,14 +679,11 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
         s_upper = _sample_gaussian_for_point(reference, upper)
         torch.manual_seed(0)
         s_lower = _sample_gaussian_for_point(reference, lower)
-        # Variance should be identical because lookup is .lower()-normalised.
+
         self.assertAlmostEqual(float(s_upper.var()), float(s_lower.var()),
                                places=6)
 
 
-# ---------------------------------------------------------------------------
-# Sequential policy init: warmstart bias must survive encoder perturbation
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class SequentialPolicyInitTest(unittest.TestCase):
     """Pin the GTrXL per-slot actor init and warmstart-prior contract."""
@@ -759,22 +735,22 @@ class SequentialPolicyInitTest(unittest.TestCase):
         retain a comfortable margin over alternatives (>2.0 logit units)."""
         policy = self._make_policy()
         max_step_dim = policy.cfg.max_step_dim
-        preferred_idx = [4] * max_step_dim  # LEVELS_F-1 = 4
+        preferred_idx = [4] * max_step_dim
         policy.apply_preferred_per_step_bias(preferred_idx, gain=3.5)
 
         torch.manual_seed(0)
-        # Random state, batch of 32 to average out specific-state effects
+
         state = torch.randn(32, policy.cfg.state_dim)
         with torch.no_grad():
             logits, _value = policy.forward(state, baseline_prior_scale=3.5)
-        # logits: [32, max_step_dim, max_num_levels]
-        preferred_logit = logits[:, :, 4]  # [32, max_step_dim]
+
+        preferred_logit = logits[:, :, 4]
         mean_other_logit = (
-            logits[:, :, [0, 1, 2, 3, 5]].mean(dim=-1)  # [32, max_step_dim]
+            logits[:, :, [0, 1, 2, 3, 5]].mean(dim=-1)
         )
         margin = (preferred_logit - mean_other_logit).mean().item()
-        # Without the gain=0.01 fix, this margin would be ~0 (random W @ h dominates).
-        # With the fix, margin should be close to +3.5 (the warmstart bias).
+
+
         self.assertGreater(
             margin, 2.5,
             f"warmstart-bias margin {margin:.3f} too low; encoder noise is "
@@ -782,9 +758,6 @@ class SequentialPolicyInitTest(unittest.TestCase):
         )
 
 
-# ---------------------------------------------------------------------------
-# Two-GPU probe runner — pure-Python invariants (no real CUDA needed)
-# ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class ProbeRunnerHelpersTest(unittest.TestCase):
     """Pin the trial-split and seed-derivation rules behind the 2026-05-19
@@ -813,19 +786,19 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         self.assertEqual(out, [[0, 1, 2, 3, 4]])
 
     def test_trial_seed_deterministic(self):
-        # Same input → same output (no time-dependent component).
+
         s1 = _trial_seed(12345, 3)
         s2 = _trial_seed(12345, 3)
         self.assertEqual(s1, s2)
 
     def test_trial_seed_independent_per_trial(self):
-        # Different trial_idx values produce widely-spread seeds.
+
         base = 12345
         seeds = [_trial_seed(base, i) for i in range(5)]
-        # All distinct.
+
         self.assertEqual(len(set(seeds)), 5,
                          f"trial seeds collided: {seeds}")
-        # Spread > 1B (Knuth's hash gives good distribution).
+
         self.assertGreater(max(seeds) - min(seeds), 10**9,
                            f"trial seeds too clustered: {seeds}")
 
@@ -834,21 +807,20 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         self.assertEqual(parse_device_ids("0"), [0])
         self.assertEqual(parse_device_ids(""), [])
         self.assertEqual(parse_device_ids(None), [])
-        # Whitespace tolerated.
+
         self.assertEqual(parse_device_ids(" 0 , 1 "), [0, 1])
 
     def test_parse_device_ids_accepts_fire_tuple(self):
-        # Python Fire parses a CLI value like --blb_v3_reward_devices 0,1 as
-        # a tuple, not a string. The launcher sends exactly that form, so this
-        # must reach BLBStage2TrainConfig.reward_devices as [0, 1].
+
+
         self.assertEqual(parse_device_ids((0, 1)), [0, 1])
         self.assertEqual(parse_device_ids([0, 1]), [0, 1])
         self.assertEqual(parse_device_ids((0, 1, 2, 3)), [0, 1, 2, 3])
         self.assertEqual(parse_device_ids(0), [0])
 
     def test_parse_device_ids_accepts_parenthesized_fire_string(self):
-        # LayerImportanceEvaluator stores CLI args as strings. If Fire already
-        # converted "0,1" to a tuple, str((0, 1)) becomes "(0, 1)".
+
+
         self.assertEqual(parse_device_ids("(0, 1)"), [0, 1])
         self.assertEqual(parse_device_ids("[0, 1]"), [0, 1])
 
@@ -872,9 +844,8 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
     """
 
     def _make_stub_setup(self, num_layers: int = 2):
-        # A minimal model + handler + bridge stub that satisfies the
-        # ProbeWorker contract without pulling BLB cfg installation logic.
-        # We only verify the trial-split / fan-out / aggregation invariants.
+
+
         from blb_stage2_rl.probe_runner import ProbeRunner, ProbeWorker
 
         class _StubBatch:
@@ -890,9 +861,9 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
                 self.proj = torch.nn.Linear(4, 2)
 
             def forward(self, *, input_ids, attention_mask, labels=None, token_type_ids=None):
-                # Return logits in a shape compatible with cross_entropy
-                x = input_ids.float()                # [B, 4]
-                logits = self.proj(x)                # [B, 2]
+
+                x = input_ids.float()
+                logits = self.proj(x)
                 class _Out:
                     pass
                 out = _Out()
@@ -904,8 +875,8 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
             device = torch.device(f"cuda:{d}")
             with torch.cuda.device(device):
                 model = _StubModel().to(device).eval()
-            # Bridge + handler stubs (install/clear are no-ops for the
-            # split+ordering test).
+
+
             class _NoopBridge:
                 def apply(self, **_kw): pass
                 def clear(self): pass
@@ -925,7 +896,7 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
         results = runner.run_trials(k=5, base_seed=12345)
         self.assertEqual(len(results), 5,
                          f"expected 5 (loss, m1, m2) tuples; got {len(results)}")
-        # Diagnostics record both worker timings + device list.
+
         diag = runner.last_diagnostics
         self.assertEqual(diag.k, 5)
         self.assertEqual(len(diag.per_worker_seconds), 2)

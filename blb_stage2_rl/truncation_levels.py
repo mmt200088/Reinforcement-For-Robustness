@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import operator
-import os
 from typing import Mapping, Sequence, Tuple
 
 
-_ENV_NAME = "BLB_TRUNCATION_K_LEVELS"
-
-DEFAULT_K_LEVELS_LEGACY_COMPAT: Tuple[int, ...] = (
+DEFAULT_K_LEVELS: Tuple[int, ...] = (
     8,
     9,
     11,
@@ -24,34 +21,6 @@ K_MAX_BITS = 13
 SUPPORTED_K_VALUES = frozenset(range(K_MIN_BITS, K_MAX_BITS + 1))
 CHECKPOINT_K_DOMAIN_KEY = "truncation_k_domain"
 CHECKPOINT_K_DOMAIN_SCHEMA_VERSION = "stage2_truncation_k_domain_v1"
-
-
-def _parse_int_list_text(raw: str) -> Tuple[int, ...]:
-    """Parse a strict comma/semicolon-separated integer list locally."""
-    tokens = str(raw).replace(";", ",").split(",")
-    if any(not token.strip() for token in tokens):
-        raise ValueError(
-            f"{_ENV_NAME} must be a non-empty ordered list of integers"
-        )
-    try:
-        return tuple(int(token.strip()) for token in tokens)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{_ENV_NAME} must contain only integers") from exc
-
-
-def load_k_levels(environ: Mapping[str, str] | None = None) -> Tuple[int, ...]:
-    """Load the ordered K table, preserving the default when unset."""
-    source = os.environ if environ is None else environ
-    if _ENV_NAME not in source:
-        return DEFAULT_K_LEVELS_LEGACY_COMPAT
-
-    raw = str(source.get(_ENV_NAME, "") or "").strip()
-    if not raw:
-        return DEFAULT_K_LEVELS_LEGACY_COMPAT
-    values = _parse_int_list_text(raw)
-    if len(set(values)) != len(values):
-        raise ValueError(f"{_ENV_NAME} contains duplicate values: {values}")
-    return values
 
 
 def _exact_integer_tuple(
@@ -104,7 +73,7 @@ def baseline_k_index(
     return values.index(target)
 
 
-K_LEVELS: Tuple[int, ...] = load_k_levels()
+K_LEVELS: Tuple[int, ...] = DEFAULT_K_LEVELS
 LEVELS_K = len(K_LEVELS)
 
 

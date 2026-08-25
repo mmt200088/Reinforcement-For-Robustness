@@ -424,4 +424,4 @@ $$
 **失败判定**：
 - Alg 1 后 stage_edges 与 tail_edges 均为空 → infeasible；
 - Alg 2 后 $\text{FwdSteps}[M+1] = \emptyset$ → infeasible；
-- Alg 4 返回 `Invalid` → 需要用户调整 $h_{\text{sf}}$、$A_j^{\text{budget}}$ 或 $\mathcal{Q}_{\text{legal}}$。
+- Alg 4 returns `Invalid` when $h_{\text{sf}}$, $A_j^{\text{budget}}$, or $\mathcal{Q}_{\text{legal}}$ violates the chain constraints.

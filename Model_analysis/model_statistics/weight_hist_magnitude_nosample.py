@@ -10,9 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from transformers import AutoModelForSequenceClassification
 
-# =========================
-# 1) Supported BERT/GLUE profiles
-# =========================
+
 MODEL_IDS = {
     "BERT-Base-MRPC": "textattack/bert-base-uncased-MRPC",
     "BERT-Base-RTE": "textattack/bert-base-uncased-RTE",
@@ -29,16 +27,13 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 
-# 按数量级分桶：最小从 1e-8 开始（你可改成 1e-10 等）
+
 MIN_EDGE = 1e-8
 
-# 每次分块处理多少元素（避免一次性占用过大显存/内存）
+
 CHUNK_ELEMS = 5_000_000
 
-# =========================
-# 2) BERT category and layer parsing
-# =========================
-# BERT (base & large): bert.encoder.layer.<i>.*
+
 BERT_CATEGORY_PATTERNS = [
     (r"\.attention\.self\.query\.", "Attn/Q"),
     (r"\.attention\.self\.key\.",   "Attn/K"),
@@ -67,10 +62,7 @@ def categorize(name: str, category_patterns: List[Tuple[str, str]]) -> str:
             return f"{cat}/{suffix}"
     return f"Other/{suffix}"
 
-# =========================
-# 3) 统计结构
-# =========================
-# Outlier thresholds: count and report |w| > these
+
 OUTLIER_THRESHOLDS = (1.0, 10.0)
 
 @dataclass
@@ -83,16 +75,16 @@ class AggStats:
     min_val: float = float("inf")
     max_val: float = float("-inf")
     max_abs: float = 0.0
-    # counts_per_bin 不含 0（0 单独统计在 n_zero）
-    counts_per_bin: np.ndarray = None  # shape=(B,)
+
+    counts_per_bin: np.ndarray = None
 
     def ensure_bins(self, B: int):
         if self.counts_per_bin is None:
             self.counts_per_bin = np.zeros(B, dtype=np.int64)
 
     def update_minmax(self, t: torch.Tensor):
-        # 精确 min/max/maxabs（对整个张量）
-        # 这里在 DEVICE 上做，避免来回拷贝
+
+
         x = t.detach().to(device=DEVICE, dtype=DTYPE)
         self.n_total += x.numel()
         self.min_val = min(self.min_val, float(x.min().item()))
@@ -105,18 +97,16 @@ class AggStats:
         self.n_abs_gt_1 += int(n_abs_gt_1)
         self.n_abs_gt_10 += int(n_abs_gt_10)
 
-# =========================
-# 4) 构造“数量级 bins”（10 的幂）
-# =========================
+
 def make_magnitude_bins(max_abs: float, min_edge: float = MIN_EDGE) -> np.ndarray:
     """
     返回 edges: [1e-8, 1e-7, 1e-6, ..., 1eK]，保证最后一个 edge > max_abs
     """
     max_abs = max(float(max_abs), min_edge * 10.0)
     emin = int(math.floor(math.log10(min_edge)))
-    emax = int(math.ceil(math.log10(max_abs))) + 1  # +1 确保覆盖最大值
+    emax = int(math.ceil(math.log10(max_abs))) + 1
     edges = np.array([10.0 ** e for e in range(emin, emax + 1)], dtype=np.float64)
-    # edges 长度 = B+1
+
     return edges
 
 def bin_labels(edges: np.ndarray) -> List[str]:
@@ -130,9 +120,7 @@ def bin_labels(edges: np.ndarray) -> List[str]:
         labs.append(f"({a:.0e},{b:.0e}]")
     return labs
 
-# =========================
-# 5) 对一个张量做全量直方图（不采样）
-# =========================
+
 def hist_abs_tensor(t: torch.Tensor, edges: np.ndarray, chunk_elems: int = CHUNK_ELEMS) -> Tuple[int, np.ndarray, int, int]:
     """
     统计 |t| 的：
@@ -153,9 +141,9 @@ def hist_abs_tensor(t: torch.Tensor, edges: np.ndarray, chunk_elems: int = CHUNK
     for start in range(0, n, chunk_elems):
         seg = x[start:start+chunk_elems].abs()
 
-        # 0 单独统计
+
         zero_cnt += int((seg == 0).sum().item())
-        # outliers
+
         n_abs_gt_1 += int((seg > 1.0).sum().item())
         n_abs_gt_10 += int((seg > 10.0).sum().item())
 
@@ -163,10 +151,10 @@ def hist_abs_tensor(t: torch.Tensor, edges: np.ndarray, chunk_elems: int = CHUNK
         if seg.numel() == 0:
             continue
 
-        # clip到 edges 范围内（避免数值落在最后边界外）
+
         seg = torch.clamp(seg, min=float(edges[0]), max=float(edges[-1]) * (1 - 1e-7))
 
-        # bucketize：返回 1..len(edges)-1，减1得到 0..B-1
+
         idx = torch.bucketize(seg, edges_t, right=False) - 1
         idx = torch.clamp(idx, 0, B - 1)
 
@@ -175,9 +163,7 @@ def hist_abs_tensor(t: torch.Tensor, edges: np.ndarray, chunk_elems: int = CHUNK
 
     return zero_cnt, bin_counts, n_abs_gt_1, n_abs_gt_10
 
-# =========================
-# 6) 输出 CSV + 画图（百分比柱状图）
-# =========================
+
 def save_csv(model_name: str, stats: Dict[str, AggStats], edges: np.ndarray):
     os.makedirs(OUT_DIR, exist_ok=True)
     csv_path = os.path.join(OUT_DIR, f"{model_name}_magnitude_hist.csv")
@@ -185,7 +171,7 @@ def save_csv(model_name: str, stats: Dict[str, AggStats], edges: np.ndarray):
 
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
-        header = ["model", "scope", "category", "n_total", "pct_zero", "n_abs_gt_1", "pct_abs_gt_1", "n_abs_gt_10", "pct_abs_gt_10", "min", "max", "maxabs"] + \
+        header = ["model", "scope", "category", "n_total", "pct_zero", "n_abs_gt_1", "pct_abs_gt_1", "n_abs_gt_10", "pct_abs_gt_10", "min", "max", "maxabs"] +\
                  [f"pct_{lab}" for lab in labels]
         w.writerow(header)
 
@@ -283,7 +269,7 @@ def main():
         layer_re, category_patterns = BERT_LAYER_RE, BERT_CATEGORY_PATTERNS
         print(f"[{model_name}] arch config: layer_re={layer_re.pattern[:40]}...")
 
-        # -------- pass 1: 扫一遍拿 global maxabs，顺便精确 min/max/maxabs（按 ALL|cat 和 Lk|cat）--------
+
         pass1: Dict[str, AggStats] = {}
         global_maxabs = 0.0
 
@@ -294,7 +280,7 @@ def main():
 
         with torch.no_grad():
             for pname, p in model.named_parameters():
-                # 更新global maxabs
+
                 global_maxabs = max(global_maxabs, float(p.detach().to(DEVICE, dtype=DTYPE).abs().max().item()))
 
                 for key in keys_for_param(pname):
@@ -306,7 +292,7 @@ def main():
         B = len(edges) - 1
         print(f"[{model_name}] max|w|={global_maxabs:.6g}, bins={B}, edges[{edges[0]:.0e}..{edges[-1]:.0e}]")
 
-        # -------- pass 2: 全量直方图（每个参数算一次 hist，再累加到 ALL 与 layer）+ outlier 计数 --------
+
         stats: Dict[str, AggStats] = {}
         for k, s1 in pass1.items():
             s = AggStats(key=k, n_total=s1.n_total, n_zero=0, min_val=s1.min_val, max_val=s1.max_val, max_abs=s1.max_abs)
@@ -322,7 +308,7 @@ def main():
         save_csv(model_name, stats, edges)
         plot_all_category_bars(model_name, stats, edges)
 
-        # -------- 汇总该模型全局 outlier，用于最后画总图 --------
+
         all_keys = [k for k in stats.keys() if k.startswith("ALL|")]
         total_params = sum(stats[k].n_total for k in all_keys)
         total_gt_1 = sum(stats[k].n_abs_gt_1 for k in all_keys)
@@ -336,7 +322,7 @@ def main():
             "pct_abs_gt_10": 100.0 * total_gt_10 / total_params if total_params else 0,
         })
 
-    # -------- 写入 outlier 汇总 CSV 并画图 --------
+
     save_outlier_summary(outlier_summary)
     plot_outlier_summary(outlier_summary)
     print("\nAll done.")

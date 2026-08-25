@@ -15,35 +15,18 @@ from typing import Any, Iterator, Mapping, Sequence, Tuple
 
 import numpy as np
 
-try:
-    from .precision_presets import (
-        PRECISION_PRESETS,
-        network_axis_weights,
-        precision_preset,
-        validate_communication_importance_ratio,
-    )
-except ImportError:  # pragma: no cover - legacy top-level import compatibility
-    from precision_presets import (
-        PRECISION_PRESETS,
-        network_axis_weights,
-        precision_preset,
-        validate_communication_importance_ratio,
-    )
-
-try:
-    from .truncation_levels import (
-        K_LEVELS,
-        K_MAX_BITS,
-        K_MIN_BITS,
-        validate_exact_k_domain,
-    )
-except ImportError:  # pragma: no cover - legacy top-level import compatibility
-    from truncation_levels import (
-        K_LEVELS,
-        K_MAX_BITS,
-        K_MIN_BITS,
-        validate_exact_k_domain,
-    )
+from .precision_presets import (
+    PRECISION_PRESETS,
+    network_axis_weights,
+    precision_preset,
+    validate_communication_importance_ratio,
+)
+from .truncation_levels import (
+    K_LEVELS,
+    K_MAX_BITS,
+    K_MIN_BITS,
+    validate_exact_k_domain,
+)
 
 
 LAYERWISE_SLOT_NAMES = (
@@ -106,8 +89,7 @@ def decode_layerwise_action_genes(
 def _validate_k_levels() -> Tuple[int, ...]:
     return validate_exact_k_domain(K_LEVELS)
 
-# These are the stable legacy action_space._BLOCK_SPECS field counts, in block
-# order.  All blocks put output_truncation_k in their last slot.
+
 _BLOCK_SLOT_COUNTS = {1: 9, 2: 23, 3: 8, 4: 17, 5: 16}
 _BLOCK_STARTS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
 _LAYER_WIDTH = sum(_BLOCK_SLOT_COUNTS.values())
@@ -188,8 +170,6 @@ def max_communication_saving_units(num_layers: int) -> float:
     return float(_validated_num_layers(num_layers))
 
 
-# Backward-compatible BERT-base constants. New callers with a model instance
-# must use the layer-count helpers above.
 MAX_COMPUTE_SAVING_UNITS = max_compute_saving_units(12)
 MAX_COMMUNICATION_SAVING_UNITS = max_communication_saving_units(12)
 LAYERWISE_DECODE_VERSION = "layerwise_hml_action_v3"
@@ -434,9 +414,8 @@ def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> 
 
 def _validate_graphs(spec: LayerwiseStepSpec, fusion_map: Any) -> None:
     for block_idx, graph_key in spec.graph_keys_by_block:
-        # Block 1 has no RL-selectable fusion dimension. Its SF chain stays on
-        # the calibrated RO baseline and only its K slot is changed, exactly
-        # like Block 3. Large-profile map bundles therefore need no Block 1 map.
+
+
         if block_idx == 1:
             continue
         if graph_key not in fusion_map.graphs:
@@ -552,9 +531,8 @@ def _splice_mapped_block(
         layer_idx: int,
         block_idx: int,
         ) -> None:
-    # FusionCountMap.expand currently indexes graph.options by option_id.  Keep
-    # this codec correct for valid non-contiguous IDs by expanding the resolved
-    # option object instead of treating its reporting ID as a list index.
+
+
     expanded = np.asarray(option.action_indices, dtype=int).reshape(-1).copy()
     offsets = _block_offsets(layer_idx, block_idx)
     if expanded.size != len(offsets):
@@ -579,7 +557,7 @@ def apply_layer_action(
         gelu_degree: int = 4,
         ) -> LayerActionApplication:
     """Copy a legacy vector and apply exactly one layer's policy action."""
-    del profile, gelu_degree  # Graph identity is fixed by the schedule metadata.
+    del profile, gelu_degree
     _validate_k_levels()
     action = _validate_layer_action(layer_action, step_spec)
     expected_size = int(step_spec.num_layers) * _LAYER_WIDTH + 1

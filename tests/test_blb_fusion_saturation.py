@@ -49,23 +49,23 @@ class SaturateShapeTest(unittest.TestCase):
         self.assertTrue(all(ys[i] <= ys[i + 1] + 1e-12 for i in range(len(ys) - 1)))
 
     def test_concave_diminishing_marginal(self):
-        # Each additional step adds LESS than the previous (the anti-runaway core).
+
         xs = [i / 40.0 for i in range(41)]
         ys = [FC.saturate_fusion(x, 0.15) for x in xs]
         slopes = [ys[i + 1] - ys[i] for i in range(len(ys) - 1)]
         self.assertTrue(all(slopes[i] >= slopes[i + 1] - 1e-12 for i in range(len(slopes) - 1)))
-        # marginal far past the knee is a tiny fraction of the marginal at the start
+
         self.assertLess(slopes[-1], 0.1 * slopes[0])
 
     def test_knee_lifts_low_values(self):
-        # ~80% of the reward harvested by fusion_norm ~0.23 (fusion ~8 of ~35).
+
         self.assertGreater(FC.saturate_fusion(0.23, 0.15), 0.7)
-        self.assertGreater(FC.saturate_fusion(0.1, 0.15), 0.1)  # lifts low (no cold collapse)
+        self.assertGreater(FC.saturate_fusion(0.1, 0.15), 0.1)
 
 
 class ComputeFusionCostSaturationTest(unittest.TestCase):
     def _choices(self, n_fused):
-        # n_fused block2 layers fused (max_fusion 1 each), rest baseline; plus K.
+
         ch = []
         for i in range(12):
             ch.append(FC.BlockChoice(block_idx=2, graph_key=f"block2_L{i}",
@@ -78,15 +78,15 @@ class ComputeFusionCostSaturationTest(unittest.TestCase):
                                              trunc_w=50.0, fusion_saturation_tau=0.0)
         res = FC.compute_fusion_cost_saving(self._choices(6), fusion_w={2: 150.0},
                                             trunc_w=50.0, fusion_saturation_tau=0.15)
-        # raw fusion_norm identical regardless of tau (kept for diagnostics)
+
         self.assertAlmostEqual(res0.fusion_norm, res.fusion_norm, places=9)
-        # tau=0 => saturated == raw
+
         self.assertAlmostEqual(res0.fusion_norm_saturated, res0.fusion_norm, places=9)
-        # tau>0 => saturated >= raw (concave lifts intermediate values)
+
         self.assertGreaterEqual(res.fusion_norm_saturated, res.fusion_norm - 1e-9)
 
     def test_marginal_saturated_reward_decays(self):
-        # Going 1->2 fused gains MORE saturated reward than 9->10 fused.
+
         def sat(n):
             return FC.compute_fusion_cost_saving(
                 self._choices(n), fusion_w={2: 150.0}, trunc_w=50.0,
@@ -101,12 +101,12 @@ class InteriorPeakTest(unittest.TestCase):
     margin — max fusion is never optimal (the property the runaway violated)."""
 
     def _reward_curve(self, tau):
-        w = RW.RewardWeights()  # margin_ref=0.5 (ADR-014), tau lives in weights
+        w = RW.RewardWeights()
         max_f = 35
         budget = float(w.p3_cost_budget)
         fusion_budget = budget * float(RW.FUSION_COST_BUDGET_FRACTION)
 
-        def margin(f):  # crosses 0 at fusion 13 (the empirical boundary)
+        def margin(f):
             return (13.0 - f) * 0.1
 
         rewards = []
@@ -116,9 +116,9 @@ class InteriorPeakTest(unittest.TestCase):
             mu = margin(f)
             bar = RW.accuracy_margin_barrier(mu, w)
             if mu >= 0.0:
-                rewards.append(40.0 + cost + bar)   # P3 tier + cost + (<=0) barrier
+                rewards.append(40.0 + cost + bar)
             else:
-                rewards.append(max(float(w.acc_barrier_floor), bar))  # P1: no tier, no cost
+                rewards.append(max(float(w.acc_barrier_floor), bar))
         return rewards, margin
 
     def test_peak_at_positive_margin_not_max(self):
@@ -129,9 +129,8 @@ class InteriorPeakTest(unittest.TestCase):
         self.assertLess(rewards[-1], rewards[peak], "max fusion must not be optimal")
 
     def test_no_runaway_incentive_past_knee(self):
-        # Past the saturation knee, the marginal cost reward is negligible, so the
-        # (negative) barrier slope dominates => reward strictly falls toward the
-        # boundary. Check reward at fusion 11 < reward at the peak.
+
+
         rewards, _ = self._reward_curve(RW.FUSION_SATURATION_TAU)
         peak = max(range(len(rewards)), key=lambda i: rewards[i])
         self.assertLessEqual(rewards[11], rewards[peak])

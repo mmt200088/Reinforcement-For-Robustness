@@ -5,13 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "reinforcement-for-robustness"
 version = "0.1.0"
-description = "BLB Stage-2 RL: PPO-driven search for optimal CKKS+MPC noise / approximation schedules in privacy-preserving BERT inference"
+description = "Search efficient approximation and MPC configurations for privacy-preserving BERT inference"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
-license = { text = "Proprietary — research use only" }
-authors = [
-    { name = "Pengjunkai" },
-]
+license = { text = "Proprietary - research use only" }
 keywords = [
     "privacy-preserving-inference", "CKKS", "MPC", "BERT",
     "reinforcement-learning", "PPO", "noise-search",
@@ -37,22 +34,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Linux+CUDA only; pip silently skips on macOS / Windows.
-cuda = ["bitsandbytes>=0.41"]
-# For running the experiments dashboards / paper figures locally.
-viz = ["matplotlib>=3.7", "seaborn>=0.12"]
-# For developer workflow (formatting / tests). Keep light.
 dev = [
     "pytest>=7.0",
     "pytest-xdist>=3.0",
 ]
 
-[project.urls]
-"Source" = "https://github.com/mmt200088/Reinforcement-For-Robustness"
-
-# Tell setuptools NOT to auto-discover packages — this is a research repo,
-# not a library. The top-level modules are imported via PYTHONPATH from
-# the launcher; we don't ship a wheel.
 [tool.setuptools]
 py-modules = []
 
@@ -61,72 +47,47 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-ra"
 
-# ---------------------------------------------------------------------------
-# Ruff — lint + format for the project. Configured conservatively so old
-# code passes the baseline; tighten rules over time by graduating items
-# from `ignore` to enforced (or moving from `per-file-ignores` to a
-# narrower set).
-# ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 120
 target-version = "py310"
 extend-exclude = [
-    "Parting Chapter/persistent",   # generated runtime artifacts
-    "rl_results",
-    "reports/blb_opt",
-    "reports/transformer_noise_mrpc",
+    "Parting Chapter",
+    "Prelude Chapter",
+    "Previous Chapter",
+    "Previous Chapter Server Reserve",
+    "rl_training_data_points",
+    "server_backups",
+    "Paean/outputs",
+    "experiment/outputs",
+    "experiments",
+    "gelu_analysis",
+    "glue_submission",
+    "reports",
+    "Model_analysis/model_statistics/weight_hist_out",
+    "Rescale_optimizer/diagnose_certacc_output",
     "Rescale_optimizer/configs",
-    "EzPC",                          # vendored submodule
-    "LLM-Adapters",
-    "importance-aware-sparse-tuning-IST-paper",
-    "experiments/multi_seed",        # generated per-run artifacts
 ]
 
 [tool.ruff.lint]
-# Conservative baseline:
-#   E,F          pycodestyle errors + pyflakes (real bugs / undefined names)
-#   I            isort (consistent import order)
-#   B            flake8-bugbear (real bugs: mutable defaults, broken-by-design)
-#   UP           pyupgrade (forward-compat syntax)
-#   SIM          flake8-simplify (compress dead branches)
-#   RUF          ruff-specific (catches things flake8 misses)
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 ignore = [
-    # Long-line tolerance: lots of legacy code has long log strings.
     "E501",
-    # Lambda assignments OK for tiny callbacks
     "E731",
-    # Don't force type annotations on every function (we have a separate
-    # gradual type-hint effort; see CLAUDE.md "Conventions").
     "ANN",
-    # ruff's "use of `typing.X`" sometimes wants Python 3.9 forms; we
-    # support 3.10+ so leave it alone.
     "UP006", "UP007", "UP035",
-    # Bug-bear's "function-uses-loop-variable" produces false positives
-    # in our env.step closure pattern.
     "B023",
-    # `assert` in tests is fine.
     "B011",
-    # SIM117 "use single with" obscures the BLB nested context usage.
     "SIM117",
-    # RUF012 (mutable class attrs) — RL agents intentionally share mutable state
     "RUF012",
 ]
-# Always allow magic methods even if they shadow stdlib (Pytorch convention).
 allowed-confusables = ["’", "‘"]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests can use assert / undocumented globals freely
 "tests/*" = ["F401", "F841", "E402"]
-# The evaluator retains a broad integration surface while runtime paths are consolidated.
 "layer_importance_evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
-# rl_tune.py is a giant CLI surface area; tolerate unused vars
 "rl_tune.py" = ["F841", "E402"]
-# Bash-wrapped Python in CI uses heredoc; ignore stray usages.
 ".github/*" = ["ALL"]
-# Sidecar scripts are one-off and have their own style.
 "scripts/*" = ["F401", "F841"]
-# Bundled vendor / experimental dirs — don't lint at all.
 "Rescale_optimizer/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
@@ -135,7 +96,6 @@ combine-as-imports = true
 force-sort-within-sections = true
 
 [tool.ruff.format]
-# Match Black-compatible defaults; explicit so a future ruff version doesn't drift.
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"

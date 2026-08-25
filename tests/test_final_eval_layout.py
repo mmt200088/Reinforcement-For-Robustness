@@ -40,13 +40,13 @@ class Stage1CostMatchTest(unittest.TestCase):
 
     def test_peers_match_total_cost_exactly_and_exclude_selected(self):
         gelu, softmax = [2, 1, 4], [6, 6, 6]
-        target = _total_cost(gelu, softmax)  # 2.5+1.0+3.0 + 9.0 = 15.5
+        target = _total_cost(gelu, softmax)
         peers, shortfall = build_cost_matched_stage1_configs(
             gelu, softmax, num_layers=3, count=50, seed=1
         )
         for pg, ps in peers:
             self.assertAlmostEqual(_total_cost(pg, ps), target, places=6)
-            self.assertNotEqual(list(pg), list(gelu))  # selected excluded
+            self.assertNotEqual(list(pg), list(gelu))
 
     def test_only_rl_domain_gelu_degrees_including_relu(self):
         peers, _ = build_cost_matched_stage1_configs([1] * 4, [6] * 4, num_layers=4, count=50, seed=2)
@@ -65,14 +65,14 @@ class Stage1CostMatchTest(unittest.TestCase):
         self.assertEqual(len(seen), len(peers))
 
     def test_shortfall_at_cost_extreme(self):
-        # all-degree-4 is the unique max-gelu-cost vector -> zero peers, full shortfall.
+
         peers, shortfall = build_cost_matched_stage1_configs([4] * 4, [6] * 4, num_layers=4, count=50, seed=5)
         self.assertEqual(len(peers), 0)
         self.assertEqual(shortfall, 50)
 
     def test_tiny_domain_finds_all_permutation_peers(self):
-        # {4,2,1} (costs 3.0,2.5,1.0) is the only multiset summing to 6.5 over 3 layers
-        # -> 3! = 6 ordered vectors, minus the selected = 5 peers.
+
+
         peers, shortfall = build_cost_matched_stage1_configs([2, 1, 4], [6, 6, 6], num_layers=3, count=50, seed=6)
         self.assertEqual(len(peers), 5)
         self.assertEqual(shortfall, 45)
@@ -95,7 +95,7 @@ class NextFinalEvalNumberTest(unittest.TestCase):
             os.makedirs(os.path.join(s1, "bert base rte 1 20260601"))
             self.assertEqual(next_final_eval_number(1, "bert-base", "mrpc", d), 2)
             self.assertEqual(next_final_eval_number(1, "bert-base", "rte", d), 2)
-            # stage2 is a separate tree
+
             self.assertEqual(next_final_eval_number(2, "bert-base", "mrpc", d), 1)
 
     def test_sst2_digit_in_combo_parses(self):
@@ -119,19 +119,19 @@ class SortedBarHighlightTest(unittest.TestCase):
         out = sorted_bar_highlight([0.5, 0.3, 0.9, 0.4], ["a", "b", "c", "d"], selected_idx=1, ascending=True)
         self.assertEqual(out.sorted_values, [0.3, 0.4, 0.5, 0.9])
         self.assertEqual(out.sorted_labels, ["b", "d", "a", "c"])
-        self.assertEqual(out.selected_position, 0)  # 'b'=0.3 lands first
+        self.assertEqual(out.selected_position, 0)
         self.assertEqual(out.rank, 1)
         self.assertEqual(out.total, 4)
 
     def test_descending_higher_is_rank_one(self):
         out = sorted_bar_highlight([0.5, 0.3, 0.9, 0.4], ["a", "b", "c", "d"], selected_idx=2, ascending=False)
         self.assertEqual(out.sorted_values, [0.9, 0.5, 0.4, 0.3])
-        self.assertEqual(out.selected_position, 0)  # 'c'=0.9 highest
+        self.assertEqual(out.selected_position, 0)
         self.assertEqual(out.rank, 1)
 
     def test_selected_worst_rank(self):
         out = sorted_bar_highlight([0.5, 0.3, 0.9, 0.4], ["a", "b", "c", "d"], selected_idx=2, ascending=True)
-        self.assertEqual(out.rank, 4)  # 0.9 is worst when lower-is-better
+        self.assertEqual(out.rank, 4)
 
 
 if __name__ == "__main__":

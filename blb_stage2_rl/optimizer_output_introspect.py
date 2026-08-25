@@ -33,8 +33,8 @@ def fused_skeleton_positions(
     for entry in (compact.get("cut_point_sf") or []):
         if isinstance(entry, Mapping) and "i" in entry:
             cut_points[int(entry["i"])] = entry
-    # No cut_point_sf data (empty/missing compact) -> no fusion info; do not claim
-    # any position fused (mirrors apply_optimizer_output_to_cfg's early return).
+
+
     if not cut_points:
         return []
     out: List[Tuple[str, Optional[int]]] = []

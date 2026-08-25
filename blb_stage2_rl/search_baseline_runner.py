@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import heapq
 import json
 import os
@@ -47,225 +46,6 @@ STAGE2_FORMAL_GA_EVALUATIONS = (
     * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
 )
 SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT
-_STAGE2_LEGACY_GA_GENERATIONS = 800
-_STAGE2_LEGACY_GA_EVALUATIONS = (
-    STAGE2_FORMAL_GA_POPULATION_SIZE
-    + _STAGE2_LEGACY_GA_GENERATIONS
-    * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
-)
-
-
-def _stage2_ga_full_run_invocation_extension_matches(
-        legacy_invocation: Mapping[str, Any],
-        requested_invocation: Mapping[str, Any],
-        ) -> bool:
-    """Accept only the formal Stage-2 GA budget-contract migration."""
-    if not isinstance(legacy_invocation, Mapping) or not isinstance(
-            requested_invocation, Mapping
-    ):
-        return False
-    legacy = copy.deepcopy(to_jsonable(
-        dict(legacy_invocation), stringify_unknown=True,
-    ))
-    requested = copy.deepcopy(to_jsonable(
-        dict(requested_invocation), stringify_unknown=True,
-    ))
-    if (
-            legacy.get("search_backend") != "coinn_ga"
-            or requested.get("search_backend") != "coinn_ga"
-    ):
-        return False
-    legacy_parameters = legacy.get("scientific_parameters")
-    requested_parameters = requested.get("scientific_parameters")
-    if not isinstance(legacy_parameters, Mapping) or not isinstance(
-            requested_parameters, Mapping
-    ):
-        return False
-    legacy_parameters = dict(legacy_parameters)
-    requested_parameters = dict(requested_parameters)
-    if (
-            type(legacy_parameters.get("search_evaluation_budget")) is not int
-            or legacy_parameters["search_evaluation_budget"]
-            != _STAGE2_LEGACY_GA_EVALUATIONS
-            or type(requested_parameters.get("search_evaluation_budget"))
-            is not int
-            or requested_parameters["search_evaluation_budget"]
-            != STAGE2_FORMAL_GA_EVALUATIONS
-    ):
-        return False
-    legacy_parameters["search_evaluation_budget"] = None
-    requested_parameters["search_evaluation_budget"] = None
-    legacy["scientific_parameters"] = legacy_parameters
-    requested["scientific_parameters"] = requested_parameters
-    return legacy == requested
-
-
-def _stage2_ga_full_run_algorithm_extension_matches(
-        legacy_algorithm: Mapping[str, Any],
-        requested_algorithm: Mapping[str, Any],
-        ) -> bool:
-    if not isinstance(legacy_algorithm, Mapping) or not isinstance(
-            requested_algorithm, Mapping
-    ):
-        return False
-    legacy = copy.deepcopy(to_jsonable(
-        dict(legacy_algorithm), stringify_unknown=True,
-    ))
-    requested = copy.deepcopy(to_jsonable(
-        dict(requested_algorithm), stringify_unknown=True,
-    ))
-    if (
-            legacy.get("search_backend") != "coinn_ga"
-            or requested.get("search_backend") != "coinn_ga"
-    ):
-        return False
-    legacy_config = legacy.get("search_config")
-    requested_config = requested.get("search_config")
-    if not isinstance(legacy_config, Mapping) or not isinstance(
-            requested_config, Mapping
-    ):
-        return False
-    legacy_config = dict(legacy_config)
-    requested_config = dict(requested_config)
-    if (
-            type(legacy_config.get("evaluation_budget")) is not int
-            or legacy_config["evaluation_budget"]
-            != _STAGE2_LEGACY_GA_EVALUATIONS
-            or type(requested_config.get("evaluation_budget")) is not int
-            or requested_config["evaluation_budget"]
-            != STAGE2_FORMAL_GA_EVALUATIONS
-    ):
-        return False
-    legacy_ga_defaults = {
-        "ga_generations": _STAGE2_LEGACY_GA_GENERATIONS,
-        "ga_stop_on_no_improvement": True,
-        "ga_require_full_generations": False,
-    }
-    requested_ga_contract = {
-        "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
-        "ga_stop_on_no_improvement": False,
-        "ga_require_full_generations": True,
-    }
-    for name, expected in legacy_ga_defaults.items():
-        if name in legacy_config and legacy_config[name] != expected:
-            return False
-    for name, expected in requested_ga_contract.items():
-        if requested_config.get(name) != expected:
-            return False
-    for name in {
-            "evaluation_budget",
-            *legacy_ga_defaults,
-    }:
-        legacy_config.pop(name, None)
-        requested_config.pop(name, None)
-    legacy["search_config"] = legacy_config
-    requested["search_config"] = requested_config
-    return legacy == requested
-
-
-def _stage2_ga_full_run_extension_contract_matches(
-        legacy_contract: Mapping[str, Any],
-        requested_contract: Mapping[str, Any],
-        ) -> bool:
-    """Fail closed unless a completed legacy GA can be replay-extended."""
-    if not isinstance(legacy_contract, Mapping) or not isinstance(
-            requested_contract, Mapping
-    ):
-        return False
-    legacy = copy.deepcopy(to_jsonable(
-        dict(legacy_contract), stringify_unknown=True,
-    ))
-    requested = copy.deepcopy(to_jsonable(
-        dict(requested_contract), stringify_unknown=True,
-    ))
-    if (
-            legacy.get("search_backend") != "coinn_ga"
-            or requested.get("search_backend") != "coinn_ga"
-            or type(legacy.get("evaluation_budget")) is not int
-            or legacy["evaluation_budget"] != _STAGE2_LEGACY_GA_EVALUATIONS
-            or type(requested.get("evaluation_budget")) is not int
-            or requested["evaluation_budget"] != STAGE2_FORMAL_GA_EVALUATIONS
-    ):
-        return False
-
-    legacy_search_config = legacy.get("search_config")
-    requested_search_config = requested.get("search_config")
-    if not isinstance(legacy_search_config, Mapping) or not isinstance(
-            requested_search_config, Mapping
-    ):
-        return False
-    legacy_search_config = dict(legacy_search_config)
-    requested_search_config = dict(requested_search_config)
-    legacy_ga_contract = {
-        "ga_generations": _STAGE2_LEGACY_GA_GENERATIONS,
-        "ga_maximum_evaluations": _STAGE2_LEGACY_GA_EVALUATIONS,
-        "ga_stop_on_no_improvement": True,
-        "ga_require_full_generations": False,
-    }
-    requested_ga_contract = {
-        "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
-        "ga_maximum_evaluations": STAGE2_FORMAL_GA_EVALUATIONS,
-        "ga_stop_on_no_improvement": False,
-        "ga_require_full_generations": True,
-    }
-    for name, expected in legacy_ga_contract.items():
-        if name in legacy_search_config and legacy_search_config[name] != expected:
-            return False
-    for name, expected in requested_ga_contract.items():
-        if requested_search_config.get(name) != expected:
-            return False
-    for name in legacy_ga_contract:
-        legacy_search_config.pop(name, None)
-        requested_search_config.pop(name, None)
-    legacy["evaluation_budget"] = None
-    requested["evaluation_budget"] = None
-    legacy["search_config"] = legacy_search_config
-    requested["search_config"] = requested_search_config
-
-    legacy_manifest = legacy.get("requested_manifest")
-    requested_manifest = requested.get("requested_manifest")
-    if not isinstance(legacy_manifest, Mapping) or not isinstance(
-            requested_manifest, Mapping
-    ):
-        return False
-    legacy_manifest = dict(legacy_manifest)
-    requested_manifest = dict(requested_manifest)
-    if not _stage2_ga_full_run_invocation_extension_matches(
-            legacy_manifest.get("stage2_invocation"),
-            requested_manifest.get("stage2_invocation"),
-    ):
-        return False
-    legacy_algorithm = legacy_manifest.get("algorithm_contract")
-    requested_algorithm = requested_manifest.get("algorithm_contract")
-    if not _stage2_ga_full_run_algorithm_extension_matches(
-            legacy_algorithm, requested_algorithm,
-    ):
-        return False
-    if (
-            legacy_manifest.get("algorithm_contract_hash")
-            != stable_json_hash(legacy_algorithm)
-            or requested_manifest.get("algorithm_contract_hash")
-            != stable_json_hash(requested_algorithm)
-            or not _is_sha256(
-                legacy_manifest.get("strict_identity_context_hash")
-            )
-            or not _is_sha256(
-                requested_manifest.get("strict_identity_context_hash")
-            )
-    ):
-        return False
-    for name in (
-            "stage2_invocation",
-            "algorithm_contract",
-            "algorithm_contract_hash",
-            "strict_identity_context_hash",
-    ):
-        legacy_manifest[name] = None
-        requested_manifest[name] = None
-    legacy["requested_manifest"] = legacy_manifest
-    requested["requested_manifest"] = requested_manifest
-    return legacy == requested
-
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
     if isinstance(value, Mapping):
@@ -279,8 +59,6 @@ def _is_sha256(value: Any) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
-
-
 
 
 def limits_from_reference(reference: Any) -> ConstraintLimits:
@@ -352,62 +130,6 @@ def _atomic_json(path: str, payload: Any) -> None:
         os.fsync(directory_fd)
     finally:
         os.close(directory_fd)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _invalid_metrics(limits: ConstraintLimits, runtime_metrics: Any) -> SearchMetrics:
@@ -759,10 +481,6 @@ def _write_observation_row(path: str, row: Mapping[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
-
-
-
-
 def _search_preload_from_rows(
         rows: Sequence[Mapping[str, Any]],
         ) -> tuple[SearchEvaluation, ...]:
@@ -794,8 +512,6 @@ def load_search_preload(path: str) -> tuple[SearchEvaluation, ...]:
         dict_only=True,
         missing_ok=False,
     ))
-
-
 
 
 def _without_search_runtime_marker(
@@ -905,8 +621,6 @@ def _validate_persisted_online_result(
         raise RuntimeError(
             "Stage-2 completed online best does not match persisted result"
         )
-
-
 
 
 def _promotion_payload(value: Any) -> dict[str, Any]:
@@ -1402,10 +1116,6 @@ def _prepare_strict_materialization_fingerprints(
             )
         fingerprints[family] = fingerprint
     return fingerprints
-
-
-
-
 
 
 def _strict_reference_for_trial_count(
@@ -2280,15 +1990,12 @@ def run_layerwise_search_baseline(
     formal_ga_full_run = bool(
         strict_run and normalized_backend == "coinn_ga"
     )
-    ga_generations = (
-        STAGE2_FORMAL_GA_GENERATIONS
-        if formal_ga_full_run else _STAGE2_LEGACY_GA_GENERATIONS
-    )
+    ga_generations = STAGE2_FORMAL_GA_GENERATIONS
     ga_maximum_evaluations = int(
         int(population_size)
         + ga_generations * (int(population_size) - int(ga_elite_count))
     )
-    ga_stop_on_no_improvement = not formal_ga_full_run
+    ga_stop_on_no_improvement = False
     ga_require_full_generations = formal_ga_full_run
     if strict_run and int(seed) != 42:
         raise ValueError("Stage-2 comparators with strict validation require seed 42")
@@ -2369,7 +2076,6 @@ def run_layerwise_search_baseline(
 
     preload: tuple[SearchEvaluation, ...] = ()
     persisted_search_result: SearchResult | None = None
-    extension_from_completed_run: dict[str, Any] | None = None
     existing_manifest = (
         read_json_file(manifest_path)
         if os.path.exists(manifest_path)
@@ -2404,24 +2110,11 @@ def run_layerwise_search_baseline(
         resume_contract_matches = (
             existing_manifest.get("resume_contract") == resume_contract
         )
-        extending_completed_ga = bool(
-            not resume_contract_matches
-            and strict_run
-            and normalized_backend == "coinn_ga"
-            and existing_status in {
-                "complete_strict_feasible",
-                "complete_least_violating",
-            }
-            and _stage2_ga_full_run_extension_contract_matches(
-                existing_manifest.get("resume_contract"),
-                resume_contract,
-            )
-        )
-        if not resume_contract_matches and not extending_completed_ga:
+        if not resume_contract_matches:
             raise RuntimeError(
                 "search baseline resume contract does not match the existing run"
             )
-        if existing_status in completed_statuses and not extending_completed_ga:
+        if existing_status in completed_statuses:
             return _load_plain_completed_search_run(
                 output_dir=output_dir,
                 manifest=existing_manifest,
@@ -2429,59 +2122,7 @@ def run_layerwise_search_baseline(
                     communication_importance_ratio
                 ),
             )
-        if extending_completed_ga:
-            legacy_run = _load_plain_completed_search_run(
-                output_dir=output_dir,
-                manifest=existing_manifest,
-                communication_importance_ratio=float(
-                    communication_importance_ratio
-                ),
-            )
-            legacy_result = legacy_run["result"]
-            _validate_ga_completion_proof(
-                legacy_result,
-                patience_generations=int(patience_generations),
-                generation_cap=_STAGE2_LEGACY_GA_GENERATIONS,
-                maximum_evaluations=_STAGE2_LEGACY_GA_EVALUATIONS,
-                stop_on_no_improvement=True,
-                require_full_generations=False,
-            )
-            if legacy_result.termination_reason != "ga_no_incumbent_improvement":
-                raise RuntimeError(
-                    "completed Stage-2 GA extension requires the legacy "
-                    "incumbent-stagnation endpoint"
-                )
-            if legacy_result.evaluation_count >= budget:
-                raise RuntimeError(
-                    "completed Stage-2 GA cannot be extended beyond its target"
-                )
-            preload = load_search_preload(observation_path)
-            if len(preload) != legacy_result.observation_count:
-                raise RuntimeError(
-                    "completed Stage-2 GA preload does not match persisted evidence"
-                )
-            extension_from_completed_run = {
-                "previous_status": existing_status,
-                "previous_evaluation_count": int(
-                    legacy_result.evaluation_count
-                ),
-                "previous_observation_count": int(
-                    legacy_result.observation_count
-                ),
-                "termination_reason": str(
-                    legacy_result.termination_reason
-                ),
-                "legacy_generation_cap": _STAGE2_LEGACY_GA_GENERATIONS,
-                "legacy_evaluation_cap": _STAGE2_LEGACY_GA_EVALUATIONS,
-                "target_generation_count": STAGE2_FORMAL_GA_GENERATIONS,
-                "target_evaluation_count": STAGE2_FORMAL_GA_EVALUATIONS,
-                "replay_semantics": (
-                    "ordered observations reconstruct RNG and population; "
-                    "completed model evaluations are not repeated"
-                ),
-                "strict_selection_superseded": True,
-            }
-        elif existing_status == "search_complete_pending_strict":
+        if existing_status == "search_complete_pending_strict":
             persisted_search_result = _load_persisted_search_result(output_dir)
             _validate_persisted_online_result(
                 output_dir=output_dir,
@@ -2596,10 +2237,6 @@ def run_layerwise_search_baseline(
     if strict_candidate_store_checkpoint_size is not None:
         run_manifest["strict_candidate_store_checkpoint_size"] = int(
             strict_candidate_store_checkpoint_size
-        )
-    if extension_from_completed_run is not None:
-        run_manifest["extension_from_completed_run"] = dict(
-            extension_from_completed_run
         )
     _atomic_json(manifest_path, run_manifest)
 

@@ -75,9 +75,8 @@ def _build_tiny_model(seed=1234):
         max_position_embeddings=64,
         num_labels=2,
     )
-    # All self-attentions are replaced before any forward, so the base impl is
-    # moot; forcing eager just matches the approx-attention path. Set as an
-    # attribute for cross-version robustness (kwarg handling varies).
+
+
     cfg._attn_implementation = "eager"
     model = BertForSequenceClassification(cfg)
     model.eval()
@@ -94,9 +93,8 @@ def _fixed_batch(seed=7):
 
 @unittest.skipUnless(_HAVE_TORCH, "torch/transformers not available")
 class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
-    # A schedule that exercises: first install, degree changes (reuse + degree
-    # update), and returning to a prior config. Only degrees the policy can
-    # actually pick (GELU in {1,2,4}, softmax in {2..6}); 3 layers each.
+
+
     SCHEDULE = [
         ([4, 4, 4], [6, 6, 6]),
         ([2, 1, 4], [4, 2, 5]),
@@ -113,7 +111,7 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         handler_fast = ReversibleLayerHandler(model_fast)
         handler_fast.reuse_approx_modules = True
         handler_slow = ReversibleLayerHandler(model_slow)
-        handler_slow.reuse_approx_modules = False  # original reconstruct-every-call
+        handler_slow.reuse_approx_modules = False
 
         batch = _fixed_batch()
 
@@ -148,10 +146,10 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
 
         n_layers = 3
         n_configs = len(self.SCHEDULE)
-        # Slow path reconstructs every softmax install (all 3 layers, every config).
+
         self.assertEqual(handler_slow._approx_softmax_rebuilds, n_layers * n_configs)
-        # Fast path reconstructs each layer at most once (cache miss only on first
-        # install of that layer); subsequent installs reuse + update degree.
+
+
         self.assertLessEqual(handler_fast._approx_softmax_rebuilds, n_layers)
         self.assertLess(handler_fast._approx_softmax_rebuilds, handler_slow._approx_softmax_rebuilds)
 
@@ -176,10 +174,9 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         h_fast = ReversibleLayerHandler(model_fast)
         h_fast.reuse_approx_modules = True
         h_slow = ReversibleLayerHandler(model_slow)
-        h_slow.reuse_approx_modules = False  # original reconstruct-every-call reference
+        h_slow.reuse_approx_modules = False
 
-        # apply_configuration only touches self.model / self.reversible_handler /
-        # self.layers_attribute — a SimpleNamespace stand-in exercises the real code.
+
         self_fast = SimpleNamespace(model=model_fast, reversible_handler=h_fast,
                                     layers_attribute="bert.encoder.layer")
         self_slow = SimpleNamespace(model=model_slow, reversible_handler=h_slow,
@@ -189,8 +186,8 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         with torch.inference_mode():
             for step, (gelu, softmax) in enumerate(self.SCHEDULE):
                 lie.LayerImportanceEvaluator.apply_configuration(self_fast, gelu, softmax)
-                # Force the reference arm through the pre-delta full-install
-                # behavior while retaining the no-reuse module baseline.
+
+
                 self_slow._last_applied_config = None
                 h_slow._last_stage1_applied_config = None
                 lie.LayerImportanceEvaluator.apply_configuration(self_slow, gelu, softmax)
@@ -206,9 +203,9 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
 
         n_layers = 3
         n_configs = len(self.SCHEDULE)
-        # Reconstruct-every-call reference rebuilds every config.
+
         self.assertEqual(h_slow._approx_softmax_rebuilds, n_layers * n_configs)
-        # Real fast path engages: each layer reconstructed at most once.
+
         self.assertLessEqual(h_fast._approx_softmax_rebuilds, n_layers)
 
     def test_fresh_equivalence_guard_blocks_reuse_when_hook_present(self):
@@ -219,14 +216,14 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         handler.reuse_approx_modules = True
 
         _install_stage1_config(handler, [4, 4, 4], [6, 6, 6])
-        before = handler._approx_softmax_rebuilds  # 3 (one per layer)
+        before = handler._approx_softmax_rebuilds
 
-        # Simulate a BLB block-4 hook on layer 1's cached attention module.
+
         cached = handler._approx_softmax_cache[1]
         cached._block4_v_hook = lambda v: v
         self.assertFalse(handler._approx_attn_is_fresh_equivalent(cached))
 
-        # Re-install: layer 1 must reconstruct (guard tripped), others reuse.
+
         _install_stage1_config(handler, [4, 4, 4], [6, 6, 6])
         self.assertEqual(handler._approx_softmax_rebuilds, before + 1)
 

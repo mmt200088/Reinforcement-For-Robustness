@@ -788,10 +788,7 @@ def graph_key_for_stage1(
     layer: int,
     stage1_config: Mapping[str, Sequence[int]],
 ) -> str:
-    """Map BLB Stage-1 per-layer degrees to a Rescale_optimizer graph key.
-
-    For block 5, GELU degree 0 is the ReLU-replacement graph ``block5_n0``.
-    """
+    """Map Stage-1 per-layer degrees to a Rescale graph key."""
 
     def _degrees(long_key: str, short_key: str) -> Sequence[int]:
         values = stage1_config.get(long_key)

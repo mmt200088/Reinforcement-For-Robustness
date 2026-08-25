@@ -82,11 +82,6 @@ from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .modulus_chain import ModulusChain
 
 
-# ---------------------------------------------------------------------------
-# Inputs / outputs
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class _PreparedFusionPairs:
     """Validated immutable fusion policy reused by a preloaded session."""
@@ -98,41 +93,23 @@ class _PreparedFusionPairs:
 class ReplanInputs:
     """User-supplied data for one what-if replan call."""
 
-    #: Baseline skeleton, e.g. ``[0, 1, 3, 5, M+1]``.  The final entry must
-    #: be ``graph.dummy_sink_index``.  Length R+2 where R = number of rescales.
+
     skeleton: List[int]
 
-    #: Baseline t vector, length R+1 (one entry per stage anchor s_0..s_R).
-    #: t_baseline[r] is the scale at s_r right after the rescale (or the
-    #: source scale at s_0).  Optional; supplied for reference / logging.
+
     t_baseline: Optional[List[int]] = None
 
-    #: NEW pre-selected t vector, length R+1.  ``t_new[r]`` is the desired
-    #: post-rescale scale at the r-th rescale point (or source scale at r=0).
-    #: This is the user "action": the outgoing scaling factor at each
-    #: rescale stage.
+
     t_new: List[int] = field(default_factory=list)
 
-    #: Optional override: q_head_bits / q_tail_bits.  Default = 60 / 60.
+
     q_head_bits: int = 60
     q_tail_bits: int = 60
 
-    #: Optional propagation override, keyed by multiplication node name.
-    #:
-    #: For CTPT_MUL:
-    #:   value must be int -> node.scale_delta_bits = value
-    #:
-    #: For CTCT_MUL:
-    #:   value == "x2"      -> symmetric mode (other_ct_scale_bits = None)
-    #:   value is int       -> asymmetric mode (other_ct_scale_bits = value)
-    #:
-    #: This lets users co-optimize stage t and per-op propagation deltas.
+
     delta_overrides: Optional[Dict[str, Union[int, str]]] = None
 
-    #: Optional legal rescale-fusion pairs, using 1-indexed stage positions.
-    #: For example, [(1, 2)] means only the first and second rescale
-    #: stages may be fused. None keeps the legacy behaviour where any
-    #: adjacent pair is considered; [] disables fusion entirely.
+
     allowed_fusion_pairs: Optional[
         Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
     ] = None
@@ -142,11 +119,11 @@ class ReplanInputs:
 class FusionEvent:
     """One fusion operation log entry."""
 
-    #: Position (skeleton index r) of the small prime that got fused away.
+
     fused_position: int
-    #: Side it was merged into: "prev" (r-1) or "next" (r+1).
+
     fused_into: str
-    #: Bit-widths involved.
+
     small_q: int
     neighbour_q_before: int
     neighbour_q_after: int
@@ -162,37 +139,34 @@ class ReplanResult:
 
     valid: bool = False
 
-    #: The skeleton AFTER fusion (with the dummy-sink as last entry).
+
     skeleton: List[int] = field(default_factory=list)
 
-    #: The chain AFTER fusion.  May not satisfy [q_min, q_max] when
-    #: ``valid == False`` (in which case ``invalid_chain`` is also set).
+
     chain: Optional[ModulusChain] = None
 
-    #: Per-stage drops as initially computed from ``t_new`` (before any fusion).
-    #: Length = R_initial.
+
     q_initial: List[int] = field(default_factory=list)
 
-    #: Per-stage drops AFTER all fusions.  Length = R_final.
+
     q_final: List[int] = field(default_factory=list)
 
-    #: New t vector after fusions (length R_final + 1).
+
     t_final: List[int] = field(default_factory=list)
 
-    #: Per-stage drop deltas vs the *baseline* drops, BEFORE fusion (one
-    #: entry per baseline stage).  Useful for diagnostics.
+
     delta_q_vs_baseline: List[int] = field(default_factory=list)
 
-    #: List of fusion events (in chronological order).
+
     fusions: List[FusionEvent] = field(default_factory=list)
 
-    #: When valid is False, the chain at the moment fusion gave up.
+
     invalid_chain: Optional[ModulusChain] = None
 
-    #: Human-readable status / error.
+
     message: str = ""
 
-    #: Echo of user-supplied propagation overrides actually applied.
+
     applied_delta_overrides: Dict[str, Union[int, str]] = field(default_factory=dict)
 
     @property
@@ -225,11 +199,6 @@ class ReplanResult:
             lines.append(f"  invalid_chain   : {self.invalid_chain.summary()}")
         lines.append("=" * 64)
         return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Step 1: recompute drops from new t
-# ---------------------------------------------------------------------------
 
 
 def _recompute_drops(
@@ -321,7 +290,7 @@ def _apply_delta_overrides(
                 applied[name] = int(raw)
             continue
 
-        # CTCT_MUL
+
         if raw == "x2":
             node.other_ct_scale_bits = None
             if applied is not None:
@@ -336,11 +305,6 @@ def _apply_delta_overrides(
             )
 
     return applied if applied is not None else {}
-
-
-# ---------------------------------------------------------------------------
-# Step 2: fusion-tolerant feasibility check
-# ---------------------------------------------------------------------------
 
 
 def _normalize_allowed_fusion_pairs(
@@ -442,7 +406,7 @@ def _fuse_chain(
                 return False, skeleton, q_bits, t_vec, fusions, ModulusChain(...)
 
     """
-    # work on local mutable copies
+
     skel = list(skeleton)
     q = list(q_bits)
     t = list(t_vec)
@@ -452,14 +416,13 @@ def _fuse_chain(
         if isinstance(allowed_fusion_pairs, _PreparedFusionPairs)
         else _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
     )
-    # Each q slot tracks the original stage ids it has absorbed.  This keeps
-    # legal-fusion decisions tied to the baseline graph, not to shifted indices
-    # after an earlier fusion.
+
+
     stage_groups: List[List[int]] = [[r] for r in range(1, len(q) + 1)]
 
-    # ``r`` is the 1-indexed stage; q_bits index is r-1
+
     while True:
-        # find first r with q < q_min
+
         r_bad: Optional[int] = None
         for r in range(1, len(q) + 1):
             if q[r - 1] < q_min:
@@ -471,10 +434,7 @@ def _fuse_chain(
 
         small = q[r_bad - 1]
 
-        # try fuse with NEXT first (preferred — the spec says
-        # "去掉前面进行rescale 的那个 q, 后面的模数 + 前面的去掉的q",
-        # i.e. the small one on the LEFT is removed and its bits go
-        # into the LATER neighbour's slot, position 不变).
+
         side = None
         idx_neighbour = -1
         if (
@@ -485,7 +445,7 @@ def _fuse_chain(
             and (q[r_bad] + small) <= q_max
         ):
             side = "next"
-            idx_neighbour = r_bad   # 0-indexed in q
+            idx_neighbour = r_bad
         elif (
             r_bad > 1
             and _is_fusion_boundary_allowed(
@@ -507,10 +467,10 @@ def _fuse_chain(
             stage_groups[idx_neighbour] = stage_groups[r_bad - 1] + stage_groups[idx_neighbour]
             del q[r_bad - 1]
             del stage_groups[r_bad - 1]
-            # remove the rescale at s_{r_bad} from the skeleton
+
             del skel[r_bad]
-            # remove t at the rescale-r_bad point: t had length R+1,
-            # one slot per stage anchor. Stage r_bad's anchor is gone.
+
+
             del t[r_bad]
             events.append(FusionEvent(
                 fused_position=r_bad, fused_into="next",
@@ -518,15 +478,15 @@ def _fuse_chain(
                 neighbour_q_before=before,
                 neighbour_q_after=after,
             ))
-        else:  # "prev"
+        else:
             before = q[idx_neighbour]
             after = before + small
             q[idx_neighbour] = after
             stage_groups[idx_neighbour] = stage_groups[idx_neighbour] + stage_groups[r_bad - 1]
             del q[r_bad - 1]
             del stage_groups[r_bad - 1]
-            # the small q' is at position r_bad in the skeleton; its
-            # rescale step is removed.
+
+
             del skel[r_bad]
             del t[r_bad]
             events.append(FusionEvent(
@@ -535,11 +495,6 @@ def _fuse_chain(
                 neighbour_q_before=before,
                 neighbour_q_after=after,
             ))
-
-
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
 
 
 def replan_with_user_actions(
@@ -616,7 +571,7 @@ def replan_with_user_actions(
             applied_delta_overrides=applied_delta_overrides,
         )
 
-    # delta vs baseline (if provided)
+
     delta_q: List[int] = []
     if baseline_q_bits is not None and len(baseline_q_bits) == R:
         delta_q = [int(qn) - int(qb) for qn, qb in zip(q_initial, baseline_q_bits)]
@@ -634,7 +589,7 @@ def replan_with_user_actions(
                 too_big = []
             too_big.append(r)
 
-    # Any non-positive drop is unfixable by fusion semantically. Report it.
+
     if has_non_positive:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,
@@ -657,7 +612,7 @@ def replan_with_user_actions(
             ),
         )
 
-    # Quickly check oversized drops; fusion cannot fix q > q_max.
+
     if too_big:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,
@@ -680,7 +635,7 @@ def replan_with_user_actions(
             ),
         )
 
-    # run fusion
+
     try:
         valid, new_skel, q_after, t_after, events, bad = _fuse_chain(
             skeleton, q_initial, list(inputs.t_new), q_min, q_max,

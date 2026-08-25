@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import List
 
-_WORKER_SEED_MULTIPLIER = 2654435761  # Knuth's multiplicative-hash constant
+_WORKER_SEED_MULTIPLIER = 2654435761
 
 
 def derive_episode_seed(base_seed: int, window_idx: int, global_episode_idx: int) -> int:

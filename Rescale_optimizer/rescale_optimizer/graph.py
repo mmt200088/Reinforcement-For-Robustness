@@ -73,10 +73,6 @@ from enum import Enum, auto
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
-# ---------------------------------------------------------------------------
-# Enums
-# ---------------------------------------------------------------------------
-
 class NodeType(Enum):
     """
     Classification of computation nodes.
@@ -93,31 +89,22 @@ class NodeType(Enum):
       endpoint of tail edges when the computation finishes without a
       final rescale.
     """
-    SOURCE     = auto()   # c_0  initial operand (not rescalable)
-    DUMMY_SINK = auto()   # c_{M+1}  virtual terminal
-    CTCT_MUL   = auto()   # ct × ct  – rescalable multiplication
-    CTPT_MUL   = auto()   # ct × pt  – rescalable multiplication
-    ROTATION   = auto()   # rotation (non-mul, has compute cost)
-    PT_OP      = auto()   # plaintext arithmetic (non-mul, has compute cost)
-    PT         = auto()   # plaintext leaf (no cost)
+    SOURCE     = auto()
+    DUMMY_SINK = auto()
+    CTCT_MUL   = auto()
+    CTPT_MUL   = auto()
+    ROTATION   = auto()
+    PT_OP      = auto()
+    PT         = auto()
 
 
-#: Multiplication-like node types — the only positions where a rescale
-#: operation can be inserted.
 MULTIPLICATION_TYPES = frozenset({
     NodeType.CTCT_MUL, NodeType.CTPT_MUL,
 })
 
-#: Node types that occupy a cut-point index (0..M).  Includes SOURCE
-#: (index 0, not rescalable) plus all multiplications (indices 1..M).
-#: ``DUMMY_SINK`` (index M+1) is handled separately because it is
-#: purely virtual.
+
 CUT_POINT_TYPES = frozenset({NodeType.SOURCE}) | MULTIPLICATION_TYPES
 
-
-# ---------------------------------------------------------------------------
-# Amplitude Profile / SNR Requirement / Noise Lookup Table
-# ---------------------------------------------------------------------------
 
 @dataclass
 class AmplitudeProfile:
@@ -215,10 +202,6 @@ class NoiseLookupTable:
         return f"NoiseLookupTable(ops={list(self.table.keys())})"
 
 
-# ---------------------------------------------------------------------------
-# Compute Node
-# ---------------------------------------------------------------------------
-
 @dataclass
 class ComputeNode:
     """
@@ -264,7 +247,6 @@ class ComputeNode:
     cost_intercept: float = 0.0
     other_ct_scale_bits: Optional[int] = None
 
-    # ------------------------------------------------------------------
 
     @property
     def is_rescalable(self) -> bool:
@@ -290,10 +272,6 @@ class ComputeNode:
     def weighted_cost(self, level: int) -> float:
         return self.count * self.unit_cost(level)
 
-
-# ---------------------------------------------------------------------------
-# Cut Point
-# ---------------------------------------------------------------------------
 
 @dataclass
 class CutPoint:
@@ -337,10 +315,6 @@ class CutPoint:
     def is_dummy_sink(self) -> bool:
         return self.node.node_type == NodeType.DUMMY_SINK
 
-
-# ---------------------------------------------------------------------------
-# Edges: stage edge + tail edge
-# ---------------------------------------------------------------------------
 
 @dataclass
 class StageEdge:
@@ -394,10 +368,6 @@ class TailEdge:
         return self.total_cost_intercept
 
 
-# ---------------------------------------------------------------------------
-# Cost parameters
-# ---------------------------------------------------------------------------
-
 @dataclass
 class CostParams:
     """
@@ -415,10 +385,6 @@ class CostParams:
     alpha: float = 1.0
     beta: float = 0.1
 
-
-# ---------------------------------------------------------------------------
-# PropagateScale
-# ---------------------------------------------------------------------------
 
 def propagate_scale(start_scale_bits: int,
                     path_nodes: Sequence[ComputeNode]) -> int:
@@ -460,10 +426,6 @@ def propagate_scale(start_scale_bits: int,
     return s
 
 
-# ---------------------------------------------------------------------------
-# RescaleGraph — 顶层容器
-# ---------------------------------------------------------------------------
-
 @dataclass
 class RescaleGraph:
     """
@@ -492,9 +454,7 @@ class RescaleGraph:
     stage_edges: Dict[Tuple[int, int], StageEdge] = field(default_factory=dict)
     tail_edges: Dict[int, TailEdge] = field(default_factory=dict)
 
-    #: ``stage_node_lists[k]`` 是 (c_k, c_{k+1}] 之间的节点列表（含 c_{k+1}
-    #: 自身，不含 c_k）。  由 Feasibility-DAG 构建过程写入；供 Alg 8
-    #: ValidateCutPoints 在任意两个 cut point 之间做 PropagateScale 使用。
+
     stage_node_lists: List[List[ComputeNode]] = field(default_factory=list)
 
     noise_table: NoiseLookupTable = field(default_factory=NoiseLookupTable)
@@ -503,7 +463,6 @@ class RescaleGraph:
     q_legal_min: int = 30
     q_legal_max: int = 60
 
-    # ---- sizes --------------------------------------------------------
 
     @property
     def M(self) -> int:
@@ -516,13 +475,12 @@ class RescaleGraph:
 
     @property
     def num_real_cut_points(self) -> int:
-        return self.M + 1     # c_0 ... c_M
+        return self.M + 1
 
     @property
     def q_max(self) -> int:
         return self.q_legal_max
 
-    # ---- queries ------------------------------------------------------
 
     def get_cut_point(self, index: int) -> CutPoint:
         return self.cut_points[index]
@@ -567,7 +525,6 @@ class RescaleGraph:
             out.extend(self.stage_node_lists[k])
         return out
 
-    # ---- summary ------------------------------------------------------
 
     def summary(self) -> str:
         lines = [

@@ -88,31 +88,31 @@ from .replan_interface import (
 )
 
 __all__ = [
-    # graph
+
     "AmplitudeProfile", "SNRRequirement", "NoiseLookupTable",
     "CostParams", "ComputeNode", "CutPoint",
     "NodeType", "CUT_POINT_TYPES", "MULTIPLICATION_TYPES", "RescaleGraph",
     "StageEdge", "TailEdge", "propagate_scale",
-    # feasibility
+
     "build_feasibility_dag", "find_min_sf",
-    # reachability
+
     "Reachability", "compute_reachability",
-    # backward DP
+
     "DPResult", "build_dp_table", "backtrack_from", "deviate_at",
     "run_backward_dp", "stage_edge_cost", "tail_edge_cost",
-    # modulus chain
+
     "ChainResult", "ModulusChain",
     "validate_cut_points", "repair_chain",
     "best_first_repairable_skeleton", "compress_headroom",
     "construct_modulus_chain",
-    # optimizer
+
     "OptimizationConfig", "OptimizationResult",
     "optimize_rescale", "print_result",
-    # config loader
+
     "load_graph_from_json", "build_from_dict",
-    # replan (what-if + fusion-tolerant feasibility)
+
     "FusionEvent", "ReplanInputs", "ReplanResult", "replan_with_user_actions",
-    # high-level variable/return-value replan interface
+
     "BaselineRecord", "CompactReplanResult", "DEFAULT_FUSION_POLICY",
     "FusionPair", "ReplanSession",
     "SUPPORTED_GELU_GRAPH_DEGREES", "build_new_compact_config",

@@ -192,7 +192,7 @@ def run_installed_model_on_dataloader(
     The caller is responsible for installing any function/noise cfg before this
     function is called and clearing it afterwards when needed.
     """
-    del split_name  # Kept in the signature so call sites can pass their context.
+    del split_name
     model.eval()
     loss_tensors: List[torch.Tensor] = []
     loss_counts: List[int] = []

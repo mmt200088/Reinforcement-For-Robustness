@@ -31,11 +31,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from json_utils import read_json_file
 
-# ---------------------------------------------------------------------------
-# Per-block SOURCE (chain input / cut_point_sf[0]) → cfg fresh + RL fresh field.
-# A block's SOURCE node may be named differently across graphs (block5: x_mean
-# for n1/n2/n4, inv_std for n0) but always maps to the same block fresh field.
-# ---------------------------------------------------------------------------
+
 _SOURCE_CFG_FIELD: Dict[int, str] = {
     1: "gelu_out_fresh",
     2: "inv_std_fresh",
@@ -90,12 +86,6 @@ def _node(**kw: Any) -> NodeBinding:
     return NodeBinding(**kw)
 
 
-# ---------------------------------------------------------------------------
-# COMPLETE node → cfg/RL map. Covers EVERY cut-point of every full chain in
-# Rescale_optimizer/configs/<profile>/*.json (verified by
-# unmapped_full_chain_nodes). block3's ``ctct_square_<k>`` is generated on the
-# fly (one per softmax degree) and handled in ``_node_binding``.
-# ---------------------------------------------------------------------------
 _NODE_MAP: Dict[int, Dict[str, NodeBinding]] = {
     1: {
         "ctpt_ffn2":       _node(**_enc("wffn2_encode", "wffn2_sf"),
@@ -110,7 +100,7 @@ _NODE_MAP: Dict[int, Dict[str, NodeBinding]] = {
         "ctct_x_mean_over_std": _node(**_rsc("normalize_result_rescale", "normalize_rescale_sf")),
         "ctpt_gama1":           _node(**_enc("gamma_encode", "gamma_sf"),
                                        **_rsc("gamma_result_rescale", "gamma_rescale_sf")),
-        # Q/K shared chain: K-side primary, Q-side bound equal.
+
         "ctpt_wq_wk":           _node(**_enc("wk_encode", "wk_sf", "wq_sf"),
                                        **_rsc("wk_result_rescale", "wk_rescale_sf", "wq_rescale_sf")),
         "ctpt_rotKT_mask1":     _node(**_enc("kt_mask1_encode", "kt_mask1_sf", "q_mask1_sf"),
@@ -124,10 +114,10 @@ _NODE_MAP: Dict[int, Dict[str, NodeBinding]] = {
     3: {
         "ctpt_inv_2n": _node(**_enc("inv_2n_encode", "inv_2n_sf"),
                              **_rsc("x_inv_2n_result_rescale", "x_inv_2n_rescale_sf")),
-        # ctct_square_<k> handled by _node_binding (degree-dependent count).
+
     },
     4: {
-        # softmax_out_mask ↔ v_mask bound (one RL action drives both).
+
         "ctpt_mask2":             _node(**_enc("softmax_out_mask_encode", "softmax_out_mask_sf", "v_mask_sf"),
                                         **_rsc("softmax_out_mask_rescale", "softmax_out_mask_rescale_sf", "v_mask_rescale_sf")),
         "ctct_rot_softmax_mul_v": _node(**_rsc("softmax_v_matmul_rescale", "softmax_v_matmul_rescale_sf")),
@@ -149,14 +139,13 @@ _NODE_MAP: Dict[int, Dict[str, NodeBinding]] = {
                                      **_rsc("wffn1_result_rescale", "wffn1_rescale_sf")),
         "ctct_gelu_x2":        _node(**_rsc("gelu_power_rescales", "gelu_power_rescale_sf_0", tuple_index=0)),
         "ctct_gelu_x4":        _node(**_rsc("gelu_power_rescales", "gelu_power_rescale_sf_1", tuple_index=1)),
-        # graph merges the coeff·x^k chain into one node; cfg reads tuple [-1].
+
         "ctpt_gelu_coeff":     _node(**_enc("gelu_coeff_encode", "gelu_coeff_sf"),
                                      **_rsc("gelu_coeff_mul_rescales", "gelu_coeff_mul_rescale_sf_0", tuple_index=-1)),
     },
 }
 
-# block3 cfg exposes only 4 RL square slots (square_rescale_sf_0..3); squares
-# beyond that (n5/n6) reuse the last slot — matches the historical behaviour.
+
 _BLOCK3_MAX_SQUARE_SLOT = 3
 
 
@@ -175,23 +164,19 @@ def _node_binding(block_idx: int, node_name: str) -> Optional[NodeBinding]:
     return _NODE_MAP.get(int(block_idx), {}).get(name)
 
 
-# ---------------------------------------------------------------------------
-# Skeleton-driven derivation
-# ---------------------------------------------------------------------------
 @dataclass
 class GraphStagePlan:
     """Skeleton-derived plan for one graph (one (block, degree) config)."""
     graph_key: str
     block_idx: int
-    # ordered t_new stages: (cfg_field, tuple_index). Stage 0 is SOURCE (fresh);
-    # stages 1.. are rescale fields in skeleton order. A None cfg_field marks an
-    # unmapped rescale node (caller should fall back to baseline t for it).
+
+
     t_new_entries: List[Tuple[Optional[str], Optional[int]]] = field(default_factory=list)
-    # RL action slots that are ACTIVE rescale stages on this skeleton (primary +
-    # bound). The source fresh RL field is NOT included.
+
+
     active_rescale_rl_fields: List[str] = field(default_factory=list)
-    # ordered (node_name, NodeBinding) for the rescale stages — for baseline /
-    # action wiring that needs the per-stage binding, not just the field name.
+
+
     rescale_stage_bindings: List[Tuple[str, NodeBinding]] = field(default_factory=list)
     unmapped_rescale_nodes: List[str] = field(default_factory=list)
 
@@ -219,13 +204,13 @@ def derive_stage_plan(
     plan.t_new_entries.append((src_cfg, None))
 
     for cp in _cut_points(archive_entry):
-        if cp.get("sf_post") is None:  # not a rescale stage on this skeleton
+        if cp.get("sf_post") is None:
             continue
         name = str(cp.get("name") or "")
         binding = _node_binding(block_idx, name)
         if binding is None or binding.rescale_cfg_field is None:
             plan.unmapped_rescale_nodes.append(name)
-            plan.t_new_entries.append((None, None))  # positional placeholder
+            plan.t_new_entries.append((None, None))
             continue
         plan.t_new_entries.append((binding.rescale_cfg_field, binding.rescale_tuple_index))
         plan.rescale_stage_bindings.append((name, binding))
@@ -235,9 +220,6 @@ def derive_stage_plan(
     return plan
 
 
-# ---------------------------------------------------------------------------
-# Archive / full-chain helpers + completeness guard
-# ---------------------------------------------------------------------------
 def _archive_entries_from_results(results: Any) -> Dict[str, Mapping[str, Any]]:
     out: Dict[str, Mapping[str, Any]] = {}
     for entry in list(results or []):
@@ -300,10 +282,6 @@ def unmapped_full_chain_nodes(block_idx: int, config: Mapping[str, Any]) -> List
     return missing
 
 
-# ---------------------------------------------------------------------------
-# Public per-node helpers (consumed by baseline extraction + action build so
-# they share this one source). All node-name agnostic where the chain allows.
-# ---------------------------------------------------------------------------
 def source_rl_field(block_idx: int) -> Optional[str]:
     """RL fresh action slot for a block's SOURCE (cut_point_sf[0]), name-agnostic."""
     return _SOURCE_RL_FIELD.get(int(block_idx))

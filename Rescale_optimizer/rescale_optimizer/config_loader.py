@@ -149,10 +149,6 @@ from .optimizer import OptimizationConfig
 logger = logging.getLogger("rescale_optimizer")
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def load_graph_from_json(
     path: Union[str, Path],
 ) -> Tuple[RescaleGraph, OptimizationConfig, Optional[List[int]]]:
@@ -211,19 +207,16 @@ def build_from_dict(
             "Config must contain a non-empty 'stages' list (c_1..c_M)."
         )
 
-    # --- noise table & defaults ---------------------------------------
+
     noise_table = _build_noise_table(noise_cfg)
     default_amp = _build_amp(defaults.get("amplitude_profile"))
     default_snr = _build_snr(defaults.get("snr_requirement"))
     default_op_type = str(defaults.get("op_type", "rescale"))
-    # Scalar fallback for A^{budget}_j when neither the top-level vector
-    # nor the per-cut-point field is set.  Kept for backward
-    # compatibility; prefer the vector ``amplitude_budgets``.
+
+
     default_budget = int(defaults.get("amplitude_budget_bits", 15))
 
-    # Validate any optional top-level per-cut-point vectors.  Length
-    # must be M + 1 = len(stages) + 1 (c_0..c_M; dummy sink c_{M+1}
-    # has its own ``dummy_sink`` section).
+
     expected_len = len(stages_cfg) + 1
 
     def _check_vec_length(name: str, vec: Any) -> None:
@@ -251,7 +244,7 @@ def build_from_dict(
         _check_vec_length("snr_requirements", snr_req_vec)
         snr_req_vec = [_build_snr(x) for x in snr_req_vec]
 
-    # --- assemble nodes in topological order --------------------------
+
     nodes: List[ComputeNode] = []
     cut_point_nodes: List[ComputeNode] = []
     topo_counter = [0]
@@ -266,7 +259,7 @@ def build_from_dict(
         nodes.append(n)
         return n
 
-    # c_0: source -----------------------------------------------------
+
     src_node = _new_node(
         name=str(source_cfg.get("name", "source")),
         node_type=NodeType.SOURCE,
@@ -278,19 +271,19 @@ def build_from_dict(
     )
     cut_point_nodes.append(src_node)
 
-    # c_1..c_M via stages ---------------------------------------------
+
     for k, stage in enumerate(stages_cfg):
         if not isinstance(stage, Mapping):
             raise ValueError(
                 f"stages[{k}] must be an object with 'nodes' and 'cut_point'."
             )
 
-        # non-cut-point nodes in (c_k, c_{k+1})
+
         stage_nodes_list = stage.get("nodes", []) or []
         for i, node_spec in enumerate(stage_nodes_list):
             ntype_str = str(node_spec.get("type", "ROTATION"))
             ntype = _parse_non_cp_type(ntype_str, where=f"stages[{k}].nodes[{i}]")
-            # PT leaves: ignore any 'delta_bits' metadata and force 0.
+
             scale_delta = int(node_spec.get("scale_delta_bits", 0))
             if ntype == NodeType.PT:
                 if "delta_bits" in node_spec and scale_delta == 0:
@@ -317,7 +310,7 @@ def build_from_dict(
                 cost_intercept=float(node_spec.get("cost_intercept", 0.0)),
             )
 
-        # cut point c_{k+1}
+
         cp_spec = stage.get("cut_point")
         if cp_spec is None:
             raise ValueError(f"stages[{k}] is missing its 'cut_point' entry.")
@@ -355,7 +348,7 @@ def build_from_dict(
         )
         cut_point_nodes.append(cp_node)
 
-    # c_{M+1}: dummy sink ---------------------------------------------
+
     dummy_node = _new_node(
         name=str(dummy_cfg.get("name", "dummy_sink")),
         node_type=NodeType.DUMMY_SINK,
@@ -364,7 +357,7 @@ def build_from_dict(
         count=0,
     )
 
-    # --- cut points ---------------------------------------------------
+
     cut_points: List[CutPoint] = []
 
     def _budget_for(j: int, spec: Mapping[str, Any]) -> int:
@@ -413,7 +406,7 @@ def build_from_dict(
             budget_bits=_budget_for(k + 1, cp_spec),
         ))
 
-    # dummy sink cut point (virtual)
+
     cut_points.append(CutPoint(
         index=len(cut_points),
         node=dummy_node,
@@ -423,7 +416,7 @@ def build_from_dict(
         amplitude_budget_bits=int(dummy_cfg.get("amplitude_budget_bits", 0)),
     ))
 
-    # --- graph --------------------------------------------------------
+
     graph = RescaleGraph(
         nodes=nodes,
         cut_points=cut_points,
@@ -433,7 +426,7 @@ def build_from_dict(
         q_legal_max=int(global_cfg.get("q_legal_max", 60)),
     )
 
-    # --- optimization config ------------------------------------------
+
     opt_config = _build_opt_config(opt_cfg_raw)
 
     amplitude_budgets = [
@@ -442,10 +435,6 @@ def build_from_dict(
 
     return graph, opt_config, amplitude_budgets
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _build_amp(spec: Optional[Mapping[str, Any]]) -> AmplitudeProfile:
     if not spec:

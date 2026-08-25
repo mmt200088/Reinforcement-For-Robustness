@@ -4,15 +4,12 @@ from __future__ import annotations
 from collections import deque
 import copy
 from dataclasses import asdict, dataclass, field
-import hashlib
-import json
-import logging
 import math
 import os
 import random
 import time
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -37,9 +34,6 @@ from .sequential_policy import (
     SequentialPPOConfig,
 )
 from .truncation_levels import (
-    CHECKPOINT_K_DOMAIN_KEY,
-    checkpoint_k_domain_contract,
-    validate_checkpoint_k_domain,
     validate_exact_k_domain,
 )
 
@@ -80,19 +74,10 @@ def resolve_cuda_rng_role_registry(
 
     stored_registry = checkpoint.get("cuda_rng_state_by_role")
     if stored_registry is None:
-        legacy_states = checkpoint.get("cuda_rng_state_all")
-        if legacy_states is None:
-            if current_count == 0:
-                return [], []
-            raise RuntimeError("layerwise checkpoint CUDA RNG state is missing")
-        registry = list(legacy_states)
-        if len(registry) != current_count:
-            raise RuntimeError(
-                "legacy layerwise checkpoint GPU count changed: "
-                f"checkpoint={len(registry)}, current={current_count}; "
-                "exact CUDA RNG role mapping is unavailable"
-            )
-        return registry, list(registry)
+        raise RuntimeError(
+            "layerwise checkpoint is missing the CUDA RNG role registry; "
+            "a fresh run is required"
+        )
 
     version = int(checkpoint.get("cuda_rng_role_registry_version", 0) or 0)
     if version != CUDA_RNG_ROLE_REGISTRY_VERSION:
@@ -162,11 +147,6 @@ class SequentialTrainConfig:
     final_constraint_probability: float = 0.95
     communication_importance_ratio: float = 1.0
 
-
-# ---------------------------------------------------------------------------
-# v2-style console helpers (rounded box / banner / progress bar / time fmt)
-# Ported from noise_rl_module_v2 so the sequential path has the same look-and-feel.
-# ---------------------------------------------------------------------------
 
 def _seq_log_major_rule(log_fn, title: str, width: int = 68) -> None:
     """Banner: ═══════ on either side of a title line."""
@@ -812,7 +792,7 @@ def _run_layerwise_training_branch(
         network_axis_weights,
         validate_communication_importance_ratio,
     )
-    from .training import _build_legacy_compatible_best_noise_config
+    from .training import _build_best_noise_config
 
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
@@ -1358,7 +1338,7 @@ def _run_layerwise_training_branch(
         best_action_group["boosted_overrides"] = selected_metadata.get(
             "boosted_overrides", []
         )
-        legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
+        best_noise = _build_best_noise_config(evaluator)
         status.set_best(
             float(selected.reward or 0.0),
             best_action_vec=best_full_vector,
@@ -1382,13 +1362,13 @@ def _run_layerwise_training_branch(
             "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
             "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
             "best_noise_config": {
-                key: value.copy() for key, value in legacy_best.items()
+                key: value.copy() for key, value in best_noise.items()
             },
             "stable_search_best_noise_config": {
-                key: value.copy() for key, value in legacy_best.items()
+                key: value.copy() for key, value in best_noise.items()
             },
             "stable_joint_best_noise_config": {
-                key: value.copy() for key, value in legacy_best.items()
+                key: value.copy() for key, value in best_noise.items()
             },
             "status": completion_status,
             "scientific_status": scientific_status,
@@ -2989,7 +2969,7 @@ def _run_layerwise_training_branch(
         "best_metrics": summary.get("best_metrics"),
         "best_resource_objective": summary.get("best_resource_objective"),
         "strict_pareto_frontier": summary.get("strict_pareto_frontier", []),
-        # Read-only compatibility alias for report consumers predating v4.
+
         "best_variable_cost": summary.get("best_variable_cost"),
         "best_reward": summary.get("best_reward"),
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
@@ -3152,7 +3132,7 @@ def _run_layerwise_training_branch(
     cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(
         **cost_reference_noise_config
     )
-    legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
+    best_noise = _build_best_noise_config(evaluator)
     best_reward = summary.get("best_reward")
     if best_reward is None:
         best_reward = -float("inf")
@@ -3174,12 +3154,12 @@ def _run_layerwise_training_branch(
             key: value.copy() for key, value in cost_reference_noise_config.items()
         },
         "baseline_tot_c": float(cost_reference_tot_c),
-        "best_noise_config": {key: value.copy() for key, value in legacy_best.items()},
+        "best_noise_config": {key: value.copy() for key, value in best_noise.items()},
         "stable_search_best_noise_config": {
-            key: value.copy() for key, value in legacy_best.items()
+            key: value.copy() for key, value in best_noise.items()
         },
         "stable_joint_best_noise_config": {
-            key: value.copy() for key, value in legacy_best.items()
+            key: value.copy() for key, value in best_noise.items()
         },
         "limit_loss": limits["loss"],
         "limit_p": limits["metric1"],
@@ -3224,7 +3204,7 @@ def _run_layerwise_training_branch(
             "strict_pareto_frontier": summary.get(
                 "strict_pareto_frontier", []
             ),
-            # Read-only compatibility alias for report consumers predating v4.
+
             "best_variable_cost": summary.get("best_variable_cost"),
             "best_promotion_evidence": summary.get("best_promotion_evidence"),
             "best_axis_counterfactuals": summary.get(
@@ -3262,10 +3242,6 @@ def _run_layerwise_training_branch(
         },
         "layerwise_summary": summary,
     }
-
-
-
-
 
 
 def _build_search_invocation_contract(
@@ -3505,14 +3481,6 @@ def _selected_action_identity_payload(
     return canonical_selected_identity(evaluation)
 
 
-
-
-
-
-
-
-
-
 def _validate_completed_search_resume_result(
         result: Mapping[str, Any],
         expected_result: Mapping[str, Any],
@@ -3527,8 +3495,6 @@ def _validate_completed_search_resume_result(
         )
 
 
-
-
 def _build_completed_search_resume_result(
         *,
         runner: Any,
@@ -3539,7 +3505,7 @@ def _build_completed_search_resume_result(
         ) -> dict[str, Any]:
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_action import describe_layerwise_action_matrix
-    from .training import _build_legacy_compatible_best_noise_config
+    from .training import _build_best_noise_config
 
     manifest = dict(inner_run.get("manifest") or {})
     selected = inner_run.get("selected")
@@ -3710,7 +3676,7 @@ def _build_completed_search_resume_result(
     best_action_group["boosted_overrides"] = selected_metadata.get(
         "boosted_overrides", []
     )
-    legacy_best = _build_legacy_compatible_best_noise_config(
+    best_noise = _build_best_noise_config(
         runner.evaluator
     )
     accounting_names = (
@@ -3736,13 +3702,13 @@ def _build_completed_search_resume_result(
     return {
         **common,
         "best_noise_config": {
-            key: value.copy() for key, value in legacy_best.items()
+            key: value.copy() for key, value in best_noise.items()
         },
         "stable_search_best_noise_config": {
-            key: value.copy() for key, value in legacy_best.items()
+            key: value.copy() for key, value in best_noise.items()
         },
         "stable_joint_best_noise_config": {
-            key: value.copy() for key, value in legacy_best.items()
+            key: value.copy() for key, value in best_noise.items()
         },
         "status": "completed" if strict_feasible else "completed_infeasible",
         "scientific_status": (
@@ -4178,15 +4144,11 @@ def _preflight_completed_search_resume(
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
     from glue_data_protocol import validate_dataset_protocol_binding
-    from json_utils import read_json_file, stable_json_hash
+    from json_utils import read_json_file
 
     from .search_baseline_runner import (
-        STAGE2_FORMAL_GA_EVALUATIONS,
-        _STAGE2_LEGACY_GA_EVALUATIONS,
         _atomic_json,
         _load_plain_completed_search_run,
-        _stage2_ga_full_run_invocation_extension_matches,
-        _validate_ga_completion_proof,
     )
     from .search_baselines import normalize_search_backend
 
@@ -4257,155 +4219,15 @@ def _preflight_completed_search_resume(
         resume_contract.get("requested_manifest")
         if isinstance(resume_contract, Mapping) else None
     )
-    completed_invocation = (
-        requested_manifest.get("stage2_invocation")
-        if isinstance(requested_manifest, Mapping) else None
-    )
-    extending_legacy_ga = bool(
-        status in {
-            "complete_strict_feasible",
-            "complete_least_violating",
-        }
-        and backend == "coinn_ga"
-        and _stage2_ga_full_run_invocation_extension_matches(
-            completed_invocation, invocation,
-        )
-    )
     if persisted_invocation != invocation:
-        if (
-                not extending_legacy_ga
-                or persisted_invocation != completed_invocation
-        ):
-            raise RuntimeError(
-                "Stage-2 comparator invocation does not match existing artifacts"
-            )
+        raise RuntimeError(
+            "Stage-2 comparator invocation does not match existing artifacts"
+        )
     if status not in completed_statuses:
         if os.path.isfile(resume_result_path):
             raise RuntimeError(
                 "Stage-2 resume result exists before inner search completion"
             )
-        return None
-
-    if extending_legacy_ga:
-        inner_run = _load_plain_completed_search_run(
-            output_dir=search_output_dir,
-            manifest=manifest,
-            communication_importance_ratio=float(
-                manifest.get("communication_importance_ratio", 1.0)
-            ),
-        )
-        legacy_result = inner_run["result"]
-        legacy_search_config = (
-            resume_contract.get("search_config")
-            if isinstance(resume_contract, Mapping) else None
-        )
-        if not isinstance(legacy_search_config, Mapping):
-            raise RuntimeError(
-                "completed Stage-2 GA has no legacy search contract"
-            )
-        _validate_ga_completion_proof(
-            legacy_result,
-            patience_generations=int(
-                legacy_search_config.get("patience_generations", -1)
-            ),
-            generation_cap=int(
-                legacy_search_config.get("ga_generations", -1)
-            ),
-            maximum_evaluations=int(
-                legacy_search_config.get("ga_maximum_evaluations", -1)
-            ),
-            stop_on_no_improvement=bool(
-                legacy_search_config.get(
-                    "ga_stop_on_no_improvement", True,
-                )
-            ),
-            require_full_generations=bool(
-                legacy_search_config.get(
-                    "ga_require_full_generations", False,
-                )
-            ),
-        )
-        if (
-                legacy_result.termination_reason
-                != "ga_no_incumbent_improvement"
-                or int(resume_contract.get("evaluation_budget", -1))
-                != _STAGE2_LEGACY_GA_EVALUATIONS
-                or legacy_result.evaluation_count
-                >= STAGE2_FORMAL_GA_EVALUATIONS
-        ):
-            raise RuntimeError(
-                "completed Stage-2 GA is not eligible for full-run extension"
-            )
-
-        archived_resume_path = os.path.join(
-            search_output_dir,
-            "resume_result.pre_ga200_extension.json",
-        )
-        if os.path.isfile(resume_result_path):
-            if os.path.exists(archived_resume_path):
-                raise RuntimeError(
-                    "Stage-2 GA extension has conflicting resume-result archives"
-                )
-            os.replace(resume_result_path, archived_resume_path)
-            directory_fd = os.open(search_output_dir, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        pending_context_path = os.path.join(
-            search_output_dir, "pending_strict_resume_context.json",
-        )
-        archived_pending_context_path = os.path.join(
-            search_output_dir,
-            "pending_strict_resume_context.pre_ga200_extension.json",
-        )
-        if os.path.isfile(pending_context_path):
-            if os.path.exists(archived_pending_context_path):
-                raise RuntimeError(
-                    "Stage-2 GA extension has conflicting pending-strict "
-                    "context archives"
-                )
-            os.replace(pending_context_path, archived_pending_context_path)
-            directory_fd = os.open(search_output_dir, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        _atomic_json(invocation_path, invocation)
-        extension_receipt = {
-            "schema_version": "stage2_ga_full_run_extension_preflight_v1",
-            "legacy_invocation_hash": stable_json_hash(
-                completed_invocation
-            ),
-            "requested_invocation_hash": stable_json_hash(invocation),
-            "legacy_resume_contract_hash": stable_json_hash(
-                resume_contract
-            ),
-            "legacy_status": status,
-            "legacy_evaluation_count": int(
-                legacy_result.evaluation_count
-            ),
-            "target_evaluation_count": STAGE2_FORMAL_GA_EVALUATIONS,
-            "resume_result_archived": os.path.isfile(
-                archived_resume_path
-            ),
-            "validated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        receipt_path = os.path.join(
-            search_output_dir, "ga200_extension_preflight.json",
-        )
-        if os.path.isfile(receipt_path):
-            previous_receipt = read_json_file(receipt_path)
-            comparable_previous = dict(previous_receipt)
-            comparable_current = dict(extension_receipt)
-            comparable_previous.pop("validated_at", None)
-            comparable_current.pop("validated_at", None)
-            if comparable_previous != comparable_current:
-                raise RuntimeError(
-                    "Stage-2 GA extension preflight receipt is inconsistent"
-                )
-        else:
-            _atomic_json(receipt_path, extension_receipt)
         return None
 
     if (
@@ -4550,8 +4372,6 @@ def _build_stage2_materialization_env(
     }
 
 
-
-
 class _ProbeRunnerOwnerHolder:
     """Own one shared probe pool across every Stage-2 exit path."""
 
@@ -4663,8 +4483,8 @@ def run_sequential_via_runner(
 
 def _run_sequential_via_runner_locked(
         *,
-        runner,                           # BLBStage2RLRunner (avoid circular import)
-        train_cfg,                        # BLBStage2TrainConfig
+        runner,
+        train_cfg,
         fixed_gelu,
         fixed_softmax,
         fixed_label,
@@ -4676,12 +4496,8 @@ def _run_sequential_via_runner_locked(
         ) -> Dict[str, Any]:
     """Drive the sequential RL pipeline using BLBStage2RLRunner's setup helpers.
 
-    Reuses ``runner._build_probe_batches``, ``runner._build_rescale_bridge``,
-    ``runner._estimate_baseline_metrics``, and ``resolve_blb_persistence_dir``
-    so the env / model / persistence / baseline-cost story is identical to the
-    legacy single-shot path. The rollout loop is replaced with
-    :func:`train_sequential` and a small bookkeeping shell saves a curve / a
-    final-report markdown / a checkpoint in the same persistent directory.
+    Reuses the runner's probe, Rescale, baseline, and persistence owners so the
+    policy and strict evaluation share one materialization path.
 
     Returns a noise_stage_result dict matching the keys downstream consumers
     (UnifiedFinalEvaluationModule, BLBActionFinalEvaluationModule) read from
@@ -4690,7 +4506,6 @@ def _run_sequential_via_runner_locked(
     ``limit_p`` / ``limit_s``, ``baseline_tot_c``.
     """
     from .action_io import action_vec_to_slots_list
-    from .action_space import action_dims_for_config, describe_action_vector
     from .diagnostics import (
         EpisodeStats,
         PPOUpdateStats,
@@ -4700,18 +4515,16 @@ def _run_sequential_via_runner_locked(
         BLBRewardCrashWatcher,
         BLBStatusBoard,
         BLBStepDetailsWriter,
-        write_diagnostic_curves,
         write_training_curves,
     )
     from .probe_runner import enable_cuda_reward_probe_fast_math
     from .reward import ParetoCostArchive
     from .training import (
-        _build_legacy_compatible_best_noise_config,
-        _selection_float,
+        _build_best_noise_config,
         resolve_blb_persistence_dir,
     )
 
-    # Keep baseline and reward-probe kernels in the same mode for every GPU count.
+
     enable_cuda_reward_probe_fast_math()
     ev = runner.evaluator
     stage2_model_type = resolve_stage2_model_type(
@@ -4757,7 +4570,7 @@ def _run_sequential_via_runner_locked(
     log = runner._make_log_safe(ev.log)
     active_rl_mode = "layerwise_robust"
 
-    # ---------- 0.1) Persistent dir ----------
+
     legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
     blb_progress_dir = resolve_blb_persistence_dir(ev)
     try:
@@ -4787,7 +4600,7 @@ def _run_sequential_via_runner_locked(
     )
     log(f"  {bullet} BLB 持久化目录：{blb_progress_dir}")
 
-    run_basename = os.path.basename(os.path.normpath(str(getattr(ev, "run_output_dir", "") or ""))) \
+    run_basename = os.path.basename(os.path.normpath(str(getattr(ev, "run_output_dir", "") or "")))\
         or "blb_stage2_default_run"
     status = BLBStatusBoard(
         blb_progress_dir,
@@ -4805,10 +4618,7 @@ def _run_sequential_via_runner_locked(
     )
     status.set_phase("装载 stage1 GELU/Softmax 多项式近似")
 
-    # Stage2 root (parent of progress/) — host of details/ + warning.txt so the
-    # layout matches what legacy noise_rl_module_v2 produced. The legacy single-
-    # shot BLBStage2RLRunner.run() already wires these into its loop; the
-    # sequential path missed them before 2026-05-17 and the user noticed.
+
     blb_stage2_root = os.path.dirname(os.path.normpath(blb_progress_dir))
     details_batch_size = max(int(train_cfg.rollout_size) * 3, 360)
     details_writer = BLBStepDetailsWriter(
@@ -4830,7 +4640,7 @@ def _run_sequential_via_runner_locked(
         f"（PPO rollout 平均奖励较上一次跌幅 > {crash_watcher._drop_threshold:.2f} 时记录）"
     )
 
-    # ---------- 1-3) shared production materializer setup ----------
+
     materialization_setup = _build_stage2_materialization_env(
         runner=runner,
         train_cfg=train_cfg,
@@ -4850,7 +4660,7 @@ def _run_sequential_via_runner_locked(
     max_sfs = calibrated_action_context.max_sfs
     baseline_action_vec = materialization_setup["baseline_action_vec"]
 
-    # ---------- 3.5) Multi-GPU reward-probe runner (opt-in) ----------
+
     reward_devices = list(getattr(train_cfg, "reward_devices", []) or [])
     if reward_devices and len(reward_devices) >= 2:
         from .probe_runner import build_probe_runner
@@ -4873,7 +4683,7 @@ def _run_sequential_via_runner_locked(
         }
         base_env.probe_runner = shared_probe_runner_owner.view("F1")
 
-    # ---------- 4) baseline cost / reward weights ----------
+
     from .env import estimate_baseline_cost_stats
     from .reward import calibrate_weights_from_baseline
     precomputed = {
@@ -4888,10 +4698,7 @@ def _run_sequential_via_runner_locked(
     )
     base_env.baseline = baseline
 
-    # baseline accuracy/stability (CLEAN model — used for the cost-side
-    # baseline metric1 reference; loss_std here is 0 since no noise is installed
-    # and we use a deterministic forward path. We deliberately do NOT use this
-    # value to set stab_threshold — see noisy preflight below.)
+
     if pending_strict_resume_context is None:
         baseline_metrics = runner._estimate_baseline_metrics(base_env)
     else:
@@ -4902,44 +4709,25 @@ def _run_sequential_via_runner_locked(
     baseline.loss_std = float(baseline_metrics.loss_std)
     baseline.metric1_mean = float(baseline_metrics.metric1_mean)
     baseline.metric2_mean = float(baseline_metrics.metric2_mean)
-    # v3 stability path: copy per-trial stds for m1 / m2 too — combined_stab_excess
-    # in compute_reward needs baseline.metric{1,2}_std to derive the per-channel
-    # thresholds and normalize the excess. Clean preflight stds are typically 0
-    # (deterministic forward), so the noisy preflight below also writes them.
+
+
     baseline.metric1_std = float(getattr(baseline_metrics, "metric1_std", 0.0) or 0.0)
     baseline.metric2_std = float(getattr(baseline_metrics, "metric2_std", 0.0) or 0.0)
     baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
     baseline_clean_metric2 = float(baseline_metrics.metric2_mean)
 
-    # Adaptive scalar cost uses structural normalizers. Fusion and K/truncation
-    # get interval bonuses; total_bits stays a weak linear term.
+
     baseline.typical_bits_drop = float(
         max(baseline.total_bits_sum / max(int(base_env.num_layers), 1), 1.0)
     )
     baseline.typical_fusion_count = float(base_env.num_layers)
     baseline.typical_k_drop = 5.0
 
-    # Now baseline is fully populated; calibrate reward weights (v2-style
-    # `calibrate_weights_from_baseline` writes baseline_metric1 into the
-    # weights so margin_acc has the right denominator).
+
     weights = calibrate_weights_from_baseline(baseline)
     base_env.reward_weights = weights
 
-    # ---------- 4.5) NOISY baseline preflight: calibrate acc/stab gates ----------
-    # Before this preflight the sequential path used to derive
-    #   stab_threshold = baseline.loss_std * 1.5 + 1e-3
-    # but baseline.loss_std comes from the *clean* model (no BLB noise installed,
-    # K trials produce identical losses → std = 0), so the threshold ended up at
-    # 0.001 — below the per-trial noise floor of every real candidate. Every
-    # episode would then trip priority-2, the reward fell into the inf-fallback
-    # branch (terminal_reward = -priority2_penalty - 1.0 * priority2_scale = -150
-    # exactly), and PPO got essentially zero gradient signal across action space.
-    # See diagnostics/diagnostics_summary.md from the s1t0.005 run for evidence.
-    #
-    # Fix: install the all-max baseline action with real BLB noise, run K trials,
-    # and read the *noisy* probe metrics. Calibrate the gates from these so
-    # candidates can be ranked by accuracy/stability deltas rather than all
-    # collapsing into the same fallback.
+
     noisy_baseline_metric1 = baseline_clean_metric1
     noisy_baseline_metric2 = baseline_clean_metric2
     noisy_baseline_loss_std = 0.0
@@ -4947,10 +4735,8 @@ def _run_sequential_via_runner_locked(
     noisy_baseline_metric2_std = 0.0
     noisy_baseline_loss_mean = float(baseline.loss_mean)
     preflight_ok = False
-    # Episode-parallel deterministic mode: key the preflight probe noise too
-    # (reserved pseudo-episode -1) so the calibrated acc/stab thresholds are
-    # identical for any GPU count and across reruns. Legacy mode (flag unset)
-    # keeps the true-random preflight bit-for-bit.
+
+
     def run_legacy_preflight() -> None:
         nonlocal noisy_baseline_metric1
         nonlocal noisy_baseline_metric2
@@ -4974,9 +4760,8 @@ def _run_sequential_via_runner_locked(
                 noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
                 raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
                 noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
-                # Overwrite baseline std fields with the noisy preflight values —
-                # these feed v3 combined_stab_excess thresholds. Keep means tied to
-                # the clean reference so rank/report code has a stable frame.
+
+
                 baseline.loss_std = noisy_baseline_loss_std
                 baseline.metric1_std = noisy_baseline_metric1_std
                 baseline.metric2_std = noisy_baseline_metric2_std
@@ -4989,23 +4774,14 @@ def _run_sequential_via_runner_locked(
         run_legacy_preflight=run_legacy_preflight,
     )
 
-    # Resolve gates from the noisy preflight + the user's tolerances.
-    # tolerances come from rl_tune.py CLI (stage2_limit_tolerance,
-    # stage2_stability_tolerance), which the launcher feeds from the preset
-    # (defaults 0.005 / 0.005 in mrpc-blb-stage2-rl.conf).
+
     allowed_acc_drop = max(0.0, float(getattr(ev, "stage2_limit_tolerance", 0.05)))
     stability_tol = max(0.0, float(getattr(ev, "stage2_stability_tolerance", 1.2)))
-    # 2026-06-11 fix: the v3 per-channel stability gates (m1_std / m2_std /
-    # loss_std inside compute_reward) derive their thresholds from
-    # weights.stab_tolerance, which silently stayed at the dataclass default
-    # (0.5) regardless of --stage2-stability-tolerance. Wire the CLI tolerance
-    # through so relaxing stability actually relaxes ALL stability channels,
-    # not just the env-level loss_std gate below.
+
+
     weights.stab_tolerance = float(stability_tol)
 
-    # ADR-015/Stage-1 alignment: Stage-1 reward shape plus std stability. The
-    # active default gates off the ADR-011/012 exploration patches that were
-    # tuned for the old tiered reward. Saturation is already off (tau=0).
+
     weights.reward_design = "robust_constrained"
     log(
         f"  {bullet} reward_design={weights.reward_design}"
@@ -5013,31 +4789,22 @@ def _run_sequential_via_runner_locked(
 
     user_acc_threshold = float(base_env.acc_threshold)
     if not (np.isfinite(user_acc_threshold) and user_acc_threshold > 0.0):
-        # Default: floor the gate at noisy_baseline × (1 - tolerance), so a
-        # configured 0.001 is exactly a 0.1% relative drop. Do not subtract a
-        # one-sample probe guard here: that made the true trainer gate looser
-        # than the CLI/config value.
+
+
         new_acc_threshold = _noisy_metric_threshold_from_baseline(
             noisy_baseline_metric=float(noisy_baseline_metric1),
             tolerance=float(allowed_acc_drop),
         )
         base_env.acc_threshold = new_acc_threshold
 
-    # v3: derive a separate m2 threshold from the noisy m2 baseline. Same
-    # relative tolerance as m1; the thresholds differ only because
-    # baseline.m1 != baseline.m2.
+
     if base_env.acc_threshold_m2 is None:
         base_env.acc_threshold_m2 = _noisy_metric_threshold_from_baseline(
             noisy_baseline_metric=float(noisy_baseline_metric2),
             tolerance=float(allowed_acc_drop),
         )
 
-    # 2026-06-15 (user spec): loss_mean is also a hard constraint (LOWER-better),
-    # aligning with Stage-1's loss/m1/m2 joint gate. Threshold lets the noisy
-    # baseline loss RISE by the SAME limit_tolerance the accuracy gate allows m1/m2
-    # to DROP — i.e. "loss 允许上浮 0.5%". Relative form (loss has no discrete
-    # probe-quantization, so no one-sample guard). Only consumed when
-    # reward_design="continuous"; the tiered rollback ignores it.
+
     if base_env.loss_threshold is None:
         base_env.loss_threshold = float(noisy_baseline_loss_mean) * (1.0 + float(allowed_acc_drop))
 
@@ -5061,9 +4828,8 @@ def _run_sequential_via_runner_locked(
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
-        # Loss channel is still passed as the legacy env-level override; m1/m2
-        # derive from baseline.metric{1,2}_std inside compute_reward through the
-        # same weights.stab_tolerance multiplier.
+
+
         base_env.stab_threshold = float(stab_threshold_loss)
         stab_calib_summary = (
             f"multiplier formula: "
@@ -5445,9 +5211,7 @@ def _run_sequential_via_runner_locked(
         f"static_skeletons archive：{ss_baseline_obj.archive_path}",
     ])
 
-    # Keep the Pareto archive for diagnostics and empirical exploration stats.
-    # It no longer supplies the PPO scalar cost reward unless
-    # RewardWeights.cost_reward_mode is explicitly set to "pareto_only".
+
     base_env.pareto_cost_archive = ParetoCostArchive(baseline=baseline)
     log(
         f"  {bullet} Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 "

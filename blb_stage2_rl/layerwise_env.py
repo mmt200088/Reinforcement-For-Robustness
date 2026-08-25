@@ -326,10 +326,8 @@ class BLBStage2LayerwiseEnv:
         candidate_vector = np.asarray(application.full_vector, dtype=int).copy()
         graph_keys = dict(spec.graph_keys_by_block)
         graph_keys[3] = f"block3_exp_n{self._attn_degrees[spec.layer_idx]}"
-        # This loop collects SF/fusion optimizer diagnostics, not policy
-        # coordinates. Layer-0 Block1 has no RO graph, while its selected K is
-        # already present in ``application.decoded`` and is included below in
-        # terminal cost, model materialization, and PPO slot credit.
+
+
         active_blocks = (2, 3, 4, 5) if spec.layer_idx == 0 else (1, 2, 3, 4, 5)
 
         runtimes: List[BlockRuntimeResult] = []
@@ -387,9 +385,8 @@ class BLBStage2LayerwiseEnv:
             communication_importance_ratio=self.communication_importance_ratio,
         )
         resource_objective = self._resource_objective_payload(variable_cost)
-        # The base reward API still transports one bounded scalar. It is the
-        # network-weighted resource score; exact selection also applies the
-        # strict joint and isolated-axis validation gates.
+
+
         external_cost_score = float(variable_cost.ppo_resource_score)
         external_cost_rank = float(variable_cost.ppo_resource_score)
         if not 0.0 <= external_cost_score <= 1.0:
@@ -605,8 +602,8 @@ class BLBStage2LayerwiseEnv:
             "external_cost_score": float(external_cost_score),
             "external_cost_rank": float(external_cost_rank),
             "resource_objective": copy.deepcopy(dict(resource_objective)),
-            # Transitional payload key for readers that already consume this
-            # location.  Its contents use only the new dual-resource schema.
+
+
             "variable_cost": copy.deepcopy(dict(resource_objective)),
             "policy_actions": self.action_history,
             "decoded_actions": decoded_actions,
@@ -616,8 +613,8 @@ class BLBStage2LayerwiseEnv:
             ],
             "k_choices": k_choices,
             "fusion_option_ids": [dict(row) for row in self._fusion_option_ids],
-            # Stable report order: layer first, then block. Tuple keys remain
-            # internal-only for the base.step boosted_overrides contract.
+
+
             "boosted_overrides": boosted_override_rows,
             "pending_full_vector": [int(value) for value in self._pending_full_vec],
         }

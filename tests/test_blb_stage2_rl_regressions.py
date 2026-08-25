@@ -1173,9 +1173,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
             compute_reward,
         )
 
-        # --- Case 1: acc fail (well below threshold) + invalid_chain ---
-        # metric_ok=False (both acc_violation AND invalid trigger it).
-        # priority label = 1 (acc/invalid takes precedence).
+
         accuracy_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.0, loss_mean=float("inf"), loss_std=float("inf")),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 0, "total_fusion_count": 0})(),
@@ -1191,14 +1189,12 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertGreater(accuracy_breakdown.acc_violation, 0.0)
         self.assertFalse(accuracy_breakdown.metric_ok)
         self.assertEqual(accuracy_breakdown.tier_bonus, 0.0)
-        # Total reward is clipped shaping only (no tier bonus), bounded in
-        # the [-5, +5] range so PPO advantages stay well-conditioned.
+
+
         self.assertLessEqual(accuracy_breakdown.reward, 5.0)
         self.assertGreaterEqual(accuracy_breakdown.reward, -10.0)
 
-        # --- Case 2: acc OK but optimizer invalid ---
-        # invalid is a hard P1 failure under the current reward contract:
-        # metric_ok=False, priority=1, tier_bonus=0.
+
         cost_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.1),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 200, "total_fusion_count": 0})(),
@@ -1213,12 +1209,10 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(cost_breakdown.priority, 1)
         self.assertFalse(cost_breakdown.metric_ok)
         self.assertEqual(cost_breakdown.tier_bonus, 0.0)
-        # invalid_penalty contributes -5 to shaping; clipped at -5.
+
         self.assertEqual(cost_breakdown.invalid_term, -5.0)
 
-        # --- Case 3: nonfinite stability, acc OK, no invalid ---
-        # metric_ok=True (acc OK + not invalid), but nonfinite std is a hard P2
-        # stability failure. It receives no tier bonus and no cost reward.
+
         nonfinite_stability = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=float("inf")),
             type("Signals", (), {"any_invalid": False, "total_bits_sum": 200, "total_fusion_count": 0})(),
@@ -1236,7 +1230,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(nonfinite_stability.cost_score, 0.0)
         self.assertLessEqual(nonfinite_stability.reward, 0.0)
 
-        # --- Case 4: everything OK → both tier bonuses ---
+
         all_ok = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.5),
             type("Signals", (), {"any_invalid": False, "total_bits_sum": 100, "total_fusion_count": 0})(),
@@ -1442,8 +1436,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             model=TinyModel(),
             probe_batches=[probe],
             rescale_bridge=bridge,
-            # RO still evaluates 4 SF/fusion blocks. Layer-0 Block1 K is
-            # model-side only and does not add a replan request.
+
+
             baseline=BaselineCostStats(
                 total_bits_sum=400,
                 total_fusion_count=0,
@@ -1463,11 +1457,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertTrue(done)
         self.assertFalse(info["invalid"])
         self.assertFalse(info["reward_breakdown"].invalid)
-        # The all-max action matches the test baseline (same total_bits, fusion,
-        # avg_k), so cost_score / k_drop / bits_drop must be zero. v2-style
-        # Current bounded reward does not emit the historical +40 tier bonus.
-        # This regression guards the optimizer-baseline scoring path: the
-        # baseline action has zero cost-side gain while still passing the gates.
+
+
         breakdown = info["reward_breakdown"]
         self.assertEqual(breakdown.k_drop, 0.0)
         self.assertEqual(breakdown.bits_drop, 0.0)
@@ -1540,13 +1531,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
 
         self.assertTrue(done)
         self.assertTrue(info["invalid"])
-        # When Rescale_optimizer reports any_invalid, env.step short-circuits the
-        # model forward and emits a P1 invalid reward with the invalid_penalty
-        # docked. This was the behaviour the user asked for on
-        # 2026-05-17 ("出现 invalid chain 再去做推理就没有意义了") and is
-        # documented in CLAUDE.md → "Sequential invalid-action mask + skip-forward".
-        # The reward priority / invalid_penalty contract is preserved; only the
-        # wasted model forward is skipped.
+
+
         self.assertFalse(info["forward_ran"])
         self.assertEqual(model.forward_count, 0)
         self.assertEqual(
@@ -1594,8 +1580,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # RO has 59 SF/fusion requests; model materialization separately
-        # contains all 60 K actions, including layer-0 Block1.
+
+
         self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
 
@@ -1631,8 +1617,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # RO has 59 SF/fusion requests; model materialization separately
-        # contains all 60 K actions, including layer-0 Block1.
+
+
         self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
         self.assertEqual(
@@ -1676,17 +1662,6 @@ class BLBActionDescriptionRegressionTests(unittest.TestCase):
 
 
 class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
-    def test_phase0_preflight_report_names_current_operator_entrypoints(self):
-        from scripts.blb_phase0_preflight import build_phase0_entrypoint_report
-
-        repo_root = Path(__file__).resolve().parents[1]
-        report = build_phase0_entrypoint_report(repo_root)
-
-        self.assertIn("llama_7B_LayerImportance.sh", report)
-        self.assertIn("run rl --preset bert-base-mrpc-stage2-rl", report)
-        self.assertIn("blb_stage2_rl/training.py", report)
-        self.assertIn("Rescale_optimizer", report)
-
     def test_candidate_store_hash_fidelity_and_rank_key_are_stable(self):
         from blb_stage2_rl.candidate_store import (
             CandidateStore,
@@ -1710,9 +1685,8 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             self.assertTrue(store.should_evaluate(action, "F1"))
             store.append({"action_indices": action, "fidelity": "F1", "valid": True})
             self.assertFalse(store.should_evaluate(action, "F1"))
-            # F2/F3 were dropped on 2026-05-16 (see candidate_store.FIDELITY_ORDER
-            # docstring). The active ladder is F0 → F1 → F4, so promotion past
-            # F1 must be checked with F4.
+
+
             self.assertTrue(store.should_evaluate(action, "F4"))
             store.append({"action_indices": action, "fidelity": "F4", "valid": True})
             self.assertFalse(store.should_evaluate(action, "F4"))
@@ -1817,9 +1791,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
             "train": self._rows(128),
             "validation_full": self._rows(408),
         }
-        evaluator.dataset_splits_mm = {}
         evaluator.dataloaders = {}
-        evaluator.dataloaders_mm = {}
         evaluator._eval_cache = Stage1EvalCache()
         evaluator._stage1_worker_eval_cache = Stage1EvalCache()
         evaluator._eval_cache.put(("stage1",), (1.0, 2.0, 3.0, 4.0))

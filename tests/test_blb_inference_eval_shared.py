@@ -291,7 +291,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
             split_name="validation_full",
         )
 
-        # Threshold predictions are [0, 1, 1, 0], not argmax over shape (B,1).
+
         self.assertAlmostEqual(result.metric1, 0.75)
         self.assertAlmostEqual(result.metric2, 0.7666666666666667)
 

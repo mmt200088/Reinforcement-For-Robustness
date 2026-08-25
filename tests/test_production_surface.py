@@ -61,6 +61,19 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "rescale_invoker_kind",
     "HeuristicStubInvoker",
     "SubprocessInvoker",
+    "importance-aware-sparse-tuning-IST-paper",
+    "class PolicyNetwork(",
+    "class ValueNetwork(",
+    "class DualHeadValueNetwork(",
+    "class LSTMStrategyNetwork(",
+    "DisentangledNormalizer",
+    "use_ist",
+    "adapter_name",
+    "lora_target_modules",
+    "wandb_project",
+    "transformers.models.gpt2",
+    "_GPT2_PATHS",
+    "_gpt2_qkv",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}
@@ -99,6 +112,9 @@ def active_source_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def tracked_text(relative: str) -> str:
+    worktree_path = REPO_ROOT / relative
+    if worktree_path.is_file():
+        return worktree_path.read_text(encoding="utf-8", errors="replace")
     completed = subprocess.run(
         ["git", "show", f"HEAD:{relative}"],
         cwd=REPO_ROOT,

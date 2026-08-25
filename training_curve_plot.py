@@ -25,7 +25,7 @@ def _moving_average(values, window: int):
 def _stage1_window(moving_average_window: Optional[int]) -> int:
     if moving_average_window is not None:
         return int(max(1, moving_average_window))
-    # Mirrors layer_importance_evaluator: min(max(5, PPO_UPDATE_INTERVAL // 5), 50)
+
     return 24
 
 

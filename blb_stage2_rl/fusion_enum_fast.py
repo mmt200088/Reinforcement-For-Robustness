@@ -45,14 +45,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-try:  # torch-free test lane (blb_stage2_rl on sys.path)
-    import fusion_count_map as fcm
-    import fusion_enum
-except ImportError:  # package context
-    from . import (
-        fusion_count_map as fcm,  # type: ignore
-        fusion_enum,  # type: ignore
-    )
+from . import fusion_count_map as fcm
+from . import fusion_enum
 
 import noise_tables
 
@@ -60,10 +54,6 @@ InstalledNoisePoint = fcm.InstalledNoisePoint
 EvaluatedConfig = fusion_enum.EvaluatedConfig
 _NOISE_DISTS = fusion_enum._NOISE_DISTS
 
-
-# ---------------------------------------------------------------------------
-# Combo-range iteration (contiguous sharding, no modulo skip-spinning)
-# ---------------------------------------------------------------------------
 
 def unrank_combo(choices_lens: Sequence[int], rank: int) -> List[int]:
     """Mixed-radix unranking: rank → per-slot choice positions (row-major,
@@ -94,10 +84,6 @@ def iter_combo_range(choices_lens: Sequence[int], start: int, stop: int):
             cur[i] = 0
 
 
-# ---------------------------------------------------------------------------
-# Template (pure data — picklable to torch-free worker processes)
-# ---------------------------------------------------------------------------
-
 @dataclass
 class PointSpec:
     """How one installed Gaussian point's SF is resolved per combo.
@@ -118,10 +104,10 @@ class PointSpec:
     kind: str
     distribution: str
     N: int
-    skel_pos: int = -1          # rescale: skeleton position r >= 1
-    node: str = ""              # encode: propagation_deltas name
-    slot_idx: int = -1          # enum-slot index supplying the proposed SF
-    const_sf: int = 0           # const: fixed SF; encode/slot fallback const
+    skel_pos: int = -1
+    node: str = ""
+    slot_idx: int = -1
+    const_sf: int = 0
 
 
 @dataclass
@@ -150,22 +136,18 @@ class FastEnumTemplate:
     block_idx: int
     n_block: int
     baseline_t_new: List[int]
-    baseline_deltas: Dict[str, Any]          # values may be int or "x2"
-    skeleton_node_ids: List[int]             # baseline skeleton (node id per position)
-    # per enum slot e (aligned with ctx.enum_positions):
-    slot_t_targets: List[List[int]]          # t_new indices fed by slot e
-    slot_d_targets: List[List[str]]          # delta keys fed by slot e
-    slot_choice_sfs: List[List[int]]         # decoded SF per choice of slot e
-    enum_positions: List[int]                # block-slot positions (action vec)
-    enum_choices: List[List[int]]            # action indices per slot
+    baseline_deltas: Dict[str, Any]
+    skeleton_node_ids: List[int]
+
+    slot_t_targets: List[List[int]]
+    slot_d_targets: List[List[str]]
+    slot_choice_sfs: List[List[int]]
+    enum_positions: List[int]
+    enum_choices: List[List[int]]
     baseline_block_indices: List[int]
     points: List[PointSpec] = field(default_factory=list)
     derived_deltas: List[DerivedDeltaSpec] = field(default_factory=list)
 
-
-# ---------------------------------------------------------------------------
-# Hot loop (torch-free)
-# ---------------------------------------------------------------------------
 
 def _build_var_lut() -> Dict[Tuple[int, str], Dict[int, float]]:
     lut: Dict[Tuple[int, str], Dict[int, float]] = {}
@@ -187,8 +169,8 @@ def _var_of(lut: Mapping[Tuple[int, str], Mapping[int, float]], N: int, sf: int,
         v = per.get(int(sf))
         if v is not None:
             return v
-    # Out-of-table SF (shouldn't happen post-snap) — fall back to the real call
-    # so the fast path can never silently diverge from noise_tables semantics.
+
+
     return float(noise_tables.variance(int(N), int(sf), str(dist)))
 
 
@@ -257,7 +239,7 @@ def eval_combo_fast(
             node_id = int(skel[spec.skel_pos])
             cpt = cut_points.get(node_id)
             if cpt is None:
-                continue  # fused away — point absent (0 contribution)
+                continue
             if "sf_post" in cpt:
                 sf = int(cpt["sf_post"])
             else:
@@ -270,7 +252,7 @@ def eval_combo_fast(
                 sf = sf_by_slot[spec.slot_idx] if spec.slot_idx >= 0 else spec.const_sf
         elif spec.kind == "slot":
             sf = sf_by_slot[spec.slot_idx]
-        else:  # const
+        else:
             sf = spec.const_sf
         points.append(InstalledNoisePoint(int(sf), spec.distribution, int(spec.N)))
 
@@ -337,11 +319,6 @@ def enumerate_range_fast(
     return reducer.results(), reducer.num_valid
 
 
-# ---------------------------------------------------------------------------
-# Template derivation (torch side — runs once per block-type in the builder's
-# main process; everything it emits is plain data for the torch-free workers)
-# ---------------------------------------------------------------------------
-
 def _walk_cfg_points_with_attrs(cfg: Any, n_block: int) -> List[Tuple[str, int, str, int]]:
     """[(attr_path, sf, distribution, N)] over the cfg's noise points.
 
@@ -377,7 +354,12 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
     ``sync_block*`` functions. Raises on any wiring that does not behave as
     an exact identity map of the decoded SF.
     """
-    from action_space import _BLOCK_SPECS, NUM_LEVELS_PER_DIM_BY_BLOCK_KIND, _field_level_values, action_vector_to_cfgs
+    from .action_space import (
+        NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
+        _BLOCK_SPECS,
+        _field_level_values,
+        action_vector_to_cfgs,
+    )
 
     from rescale_optimizer_bridge import (
         GRAPH_NODE_TO_CFG_ATTR,
@@ -478,7 +460,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
                     f"{graph}: slot {fname}: inconsistent wiring across levels "
                     f"({(tt, dd)} vs {(t_targets, d_targets)})"
                 )
-            # points-side: which cfg attrs carry this slot's proposed SF
+
             pts_v = _walk_cfg_points_with_attrs(cfg_v, int(ctx.N_block))
             if len(pts_v) != len(pts0):
                 raise RuntimeError(
@@ -497,7 +479,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         slot_t_targets.append(list(t_targets or []))
         slot_d_targets.append(list(d_targets or []))
 
-    # ---- mirror discovery through the real sync functions ----
+
     sync_fns = {
         2: (sync_block2_qk_binding, sync_block2_aux_fresh_binding),
         4: (sync_block4_v_mask_binding,),
@@ -523,7 +505,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
             if src is not None and src != attr:
                 mirror_of[attr] = src
 
-    # ---- skeleton-position attrs (source + rescales) ----
+
     skel_entries = list(bridge._cfg_to_t_new_table.get(graph, ()))
     attr_of_skel: Dict[int, str] = {}
     for r, entry in enumerate(skel_entries):
@@ -574,10 +556,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
                 )
             return DeltaTermSpec(slot_idx=-1, const_sf=int(point.scaling_factor))
 
-        # ``default_block4_cfg_to_delta`` defines this as
-        # SF(v_fresh) + SF(v_mask_encode). action_space binds v_mask_encode to
-        # softmax_out_mask_encode, so the RL-visible second term is
-        # ``softmax_out_mask_sf``.
+
         derived_deltas.append(DerivedDeltaSpec(
             node="ctct_rot_softmax_mul_v",
             terms=[
@@ -603,10 +582,6 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         derived_deltas=derived_deltas,
     )
 
-
-# ---------------------------------------------------------------------------
-# Mandatory golden-vs-fast equivalence gate
-# ---------------------------------------------------------------------------
 
 def verify_template(
     template: FastEnumTemplate,
@@ -669,10 +644,6 @@ def verify_template(
         checked += 1
     return {"checked": int(checked), "num_random": int(num_random)}
 
-
-# ---------------------------------------------------------------------------
-# Worker entry (torch-free process: imports only this module + ReplanSession)
-# ---------------------------------------------------------------------------
 
 def enumerate_range_worker(payload: Mapping[str, Any]) -> Tuple[int, List[Tuple], float, int]:
     """Multiprocessing worker over a contiguous combo-rank range.

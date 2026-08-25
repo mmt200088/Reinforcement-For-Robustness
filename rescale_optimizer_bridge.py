@@ -1,44 +1,8 @@
-"""In-process Rescale optimizer bridge for Stage-2 search and evaluation.
+"""Materialize BLB configs through the in-process Rescale optimizer.
 
-把 BLB 噪声选择（Block 1-5 的 ``Block*NoiseConfig``）转成 ``Rescale_optimizer``
-的 ``replan`` 输入（``t_new`` + ``delta_overrides``），调用优化器，再从返回
-JSON 抽出三个 RL 奖励信号：
-
-    1) ``fusion_count``        ── 模数链 fusion 次数（越少越好）
-    2) ``total_bits``          ── 模数链 total_bits（越小越好）
-    3) ``invalid_chain``       ── 链合法性（None=合法；非 None=不合法 + 原因）
-
-The production path preloads every graph and baseline into
-``InProcessInvoker``. Missing profiles or invalid optimizer state fail closed.
-
-invoker 调用签名：``invoker(config_name, payload)``，``payload`` 支持两种形态：
-
-  (1) **bare dict**（向后兼容）：``{"node_name": delta, ...}``，被当作
-      ``delta_overrides``，``t_new`` 默认取 baseline t_baseline。
-  (2) **rich dict**：``{"t_new": [int, ...], "delta_overrides": {...}}``，``t_new``
-      长度必须 == baseline skeleton 的 R+1。
-
-reward 部分**只给信号，不给最终公式** —— 用户明说了 reward 不止依赖这三项。
-
-典型用法：
-
-    from rescale_optimizer_bridge import (
-        InProcessInvoker, RescaleOptimizerBridge,
-        aggregate_optimizer_signals,
-    )
-    inv = InProcessInvoker.from_profile(
-        rescale_optimizer_root="Rescale_optimizer",
-        profile="mrpc",
-        configs_dir="Rescale_optimizer/configs/mrpc",
-    )
-    bridge = RescaleOptimizerBridge(invoker=inv)
-    out = bridge.evaluate(
-        config_name="block1_mrpc",
-        block_name="block1",
-        cfg=block1_cfg,                # Block1NoiseConfig
-        t_new=[30, 34, 34],            # length R+1; None ⇒ 用 baseline
-    )
-    print(out.fusion_count, out.total_bits, out.invalid_chain)
+The bridge owns conversion to ``t_new`` and ``delta_overrides`` and returns
+fusion count, total modulus bits, and chain validity. Reward construction stays
+with the Stage-2 environment.
 """
 from __future__ import annotations
 
@@ -58,10 +22,6 @@ from function_handler import (
     Block5NoiseConfig,
 )
 
-
-# ---------------------------------------------------------------------------
-# 解析后的优化器输出
-# ---------------------------------------------------------------------------
 
 @dataclass
 class RescaleOptimizerOutput:
@@ -92,16 +52,12 @@ class RescaleOptimizerOutput:
             "valid": self.valid,
             "fusion_count": int(self.fusion_count),
             "total_bits": int(self.total_bits),
-            "invalid_chain": self.invalid_chain,  # None or dict
+            "invalid_chain": self.invalid_chain,
         }
 
 
 def _parse_optimizer_raw(raw: dict, *, config_name: str) -> RescaleOptimizerOutput:
-    """从原始 JSON 抽出 fusion_count / total_bits / invalid_chain。
-
-    严格按照用户给的 JSON 结构解析；缺字段时 fall back 到合理默认（不抛异常，
-    保持 RL loop 稳健性，但是 valid 会被设为 False 让 RL 视作失败动作）。
-    """
+    """Extract optimizer signals and fail closed on malformed output."""
     if not isinstance(raw, Mapping):
         return RescaleOptimizerOutput(
             config_name=config_name, fusion_count=0, total_bits=0,
@@ -117,7 +73,7 @@ def _parse_optimizer_raw(raw: dict, *, config_name: str) -> RescaleOptimizerOutp
     chain = result.get("chain") or {}
     total_bits = chain.get("total_bits")
     if total_bits is None:
-        # 链不合法 → 优先取 invalid_chain 内的 total_bits（如果有），否则 0
+
         if isinstance(invalid_chain, Mapping):
             total_bits = invalid_chain.get("total_bits", 0)
         else:
@@ -134,19 +90,9 @@ def _parse_optimizer_raw(raw: dict, *, config_name: str) -> RescaleOptimizerOutp
     )
 
 
-# ---------------------------------------------------------------------------
-# Invoker protocol
-# ---------------------------------------------------------------------------
-
 @runtime_checkable
 class RescaleOptimizerInvoker(Protocol):
-    """``invoker(config_name, delta_overrides) -> raw JSON dict``。
-
-    实现方负责：
-      * 把 ``delta_overrides`` 喂给 ``Rescale_optimizer``（命名规则同用户给的 JSON 例子）
-      * 返回完整 JSON（dict），里面至少要包含 ``fusion_count`` 与 ``result.chain.total_bits``
-        / ``result.invalid_chain``
-    """
+    """Invoke one named graph with Rescale override inputs."""
     def __call__(self, config_name: str, delta_overrides: dict) -> dict: ...
 
 
@@ -203,7 +149,7 @@ def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], Li
             continue
         cname = str(entry["config_name"])
         skel = [int(x) for x in entry.get("skeleton", [])]
-        # t_baseline
+
         t_for_idx: Dict[int, int] = {}
         for row in entry.get("cut_point_sf", []):
             i = int(row["i"])
@@ -212,7 +158,7 @@ def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], Li
             elif "sf" in row:
                 t_for_idx[i] = int(row["sf"])
         t_base = [t_for_idx[i] for i in skel if i in t_for_idx]
-        # q_bits
+
         mc = entry.get("modulus_chain", {}) or {}
         drop_order = list(mc.get("drop_order", []))
         q_base = [int(x) for x in drop_order[1:-1]] if len(drop_order) >= 2 else []
@@ -261,8 +207,7 @@ class InProcessInvoker:
             if root not in sys.path:
                 sys.path.insert(0, root)
 
-        # Lazy import keeps this module usable when Rescale_optimizer
-        # isn't installed (e.g. unit tests that only need the bridge skeleton).
+
         from rescale_optimizer import ReplanSession
 
         self._session = ReplanSession(
@@ -485,22 +430,12 @@ def default_block5_cfg_to_delta(cfg: Block5NoiseConfig) -> Dict[str, Union[int, 
     if cfg.gelu_degree >= 4:
         deltas["ctct_gelu_x4"] = "x2"
     if int(cfg.gelu_degree) >= 1:
-        # degree 0 = ReLU：block5_n0 graph 没有 ctpt_gelu_coeff 节点（无多项式系数），
-        # 所以 degree 0 不发这个 delta（与 replan_actions_block5_n0.json 对齐）。
+
+
         deltas["ctpt_gelu_coeff"] = int(cfg.gelu_coeff_encode.scaling_factor)
     return deltas
 
 
-# ---------------------------------------------------------------------------
-# Inverse map: graph node name -> (cfg attribute path that drives this node).
-#
-# Stays in sync with default_block{N}_cfg_to_delta above. Each entry maps a
-# graph node (the key the bridge sends in delta_overrides) back to the cfg
-# attribute the bridge read to produce that value. Literal-valued entries
-# (e.g. "ctct_ext_square" -> "x2") have no cfg origin and are absent here.
-#
-# `block5` entries gated on cfg.gelu_degree are listed unconditionally; the
-# caller must skip those that don't apply for the active degree.
 GRAPH_NODE_TO_CFG_ATTR: Dict[int, Dict[str, str]] = {
     1: {
         "ctpt_ffn2":    "wffn2_encode",
@@ -509,7 +444,7 @@ GRAPH_NODE_TO_CFG_ATTR: Dict[int, Dict[str, str]] = {
     },
     2: {
         "ctpt_gama1":       "gamma_encode",
-        # ``ctpt_wq_wk`` 现在从 ``cfg.wk_encode`` 读（Q/K 绑定，K 侧为主）
+
         "ctpt_wq_wk":       "wk_encode",
         "ctpt_rotKT_mask1": "kt_mask1_encode",
         "ctpt_rotKT_mask2": "kt_mask2_encode",
@@ -542,24 +477,6 @@ _DEFAULT_BLOCK_MAPPERS: Dict[str, CfgToDeltaFn] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# BLB cfg → t_new 映射（per-(block, profile) 默认 + 可注册覆盖）
-# ---------------------------------------------------------------------------
-# 为什么需要这张表：
-#   ``Rescale_optimizer`` 的 ``replan_with_user_actions`` 接受的 ``t_new`` 是
-#   "skeleton 上每个 stage 的目标 SF"。BLB 的 cfg 里每个 rescale 字段（如
-#   ``Block1NoiseConfig.mean_result_rescale``）的 ``scaling_factor`` 就是该
-#   rescale 点的目标 SF —— 只是哪些 rescale 点真正落到 skeleton 上由 graph
-#   决定。所以需要一张 (config_name) → (skeleton 顺序的 cfg 字段路径) 的表。
-#
-#   skeleton 第 r=0 个 stage 是 source，对应 cfg 的 fresh 字段；
-#   skeleton 第 r>=1 个 stage 是某个 multiplication 节点之后的 rescale 点，
-#   对应 cfg 的 *_result_rescale 字段。
-#
-# 当 RL 没启用某个 rescale 字段 (cfg.field is None) 时，``cfg_to_t_new_from_table``
-# 会把该位置 fallback 到 baseline t (如果调用方提供 baseline_t_new)，否则该
-# (config_name) 整体放弃自动派生 t_new，让 invoker 走 baseline。
-
 @dataclass(frozen=True)
 class _SkelEntry:
     """skeleton 上某个 stage 对应到 cfg 哪个字段。
@@ -574,33 +491,24 @@ class _SkelEntry:
     tuple_index: Optional[int] = None
 
 
-# 默认表：覆盖 ``Rescale_optimizer/configs/mrpc/`` 下 11 个 baseline。
-# 其它 profile（wnli 等）需要自行扩展或通过 ``RescaleOptimizerBridge(cfg_to_t_new_overrides=...)``
-# 注册。
 DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
-    # --- block 1 (mrpc): skeleton=[0, 2, 4, 5]
-    #   i=0 (gelu_out)     → fresh
-    #   i=2 (ctpt_inv_d_1) → mean (μ) 的 rescale
-    #   i=4 (ctpt_inv_d_2) → var 的 rescale
+
+
     "block1_mrpc": (
         _SkelEntry("gelu_out_fresh"),
         _SkelEntry("mean_result_rescale"),
         _SkelEntry("var_result_rescale"),
     ),
-    # --- block 2 (mrpc): current static_skeletons selects:
-    #   i=0 (inv_std)         → cfg.inv_std_fresh
-    #   i=2 (ctpt_gama1)      → gamma rescale
-    #   i=4 (ctpt_rotKT_mask1)→ kt_mask1/q_mask1 rescale
-    #   i=6 (ctct_preprocess_qkt) → qkt matmul rescale
+
+
     "block2_mrpc": (
         _SkelEntry("inv_std_fresh"),
         _SkelEntry("gamma_result_rescale"),
         _SkelEntry("kt_mask1_result_rescale"),
         _SkelEntry("qkt_matmul_result_rescale"),
     ),
-    # --- block 3 (mrpc, exp_n<degree>): skeleton=[0, 2..(2+deg-1), dummy]
-    #   i=0          → cfg.x_fresh
-    #   i=2..        → cfg.square_rescales[k-1]
+
+
     "block3_exp_n2": (
         _SkelEntry("x_fresh"),
         _SkelEntry("square_rescales", 0),
@@ -625,8 +533,8 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("square_rescales", 1),
         _SkelEntry("square_rescales", 2),
         _SkelEntry("square_rescales", 3),
-        # cfg 只有 max degree-1 的 square_rescales（受 RL action 维度限制 max=4）；
-        # 第 5 次平方就重用最后一个 entry 作为 fallback。
+
+
         _SkelEntry("square_rescales", 3),
     ),
     "block3_exp_n6": (
@@ -638,51 +546,31 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("square_rescales", 3),
         _SkelEntry("square_rescales", 3),
     ),
-    # --- block 4: current static_skeletons selects:
-    #   i=0  (rot_softmax)             → softmax_out_fresh
-    #   i=2  (ctct_rot_softmax_mul_v)  → softmax_v_matmul_rescale
-    #   i=5  (ctpt_inv_d_1)            → ln_mean_result_rescale
-    #   i=6  (ctct_square)             → ln_square_result_rescale
+
+
     "block4": (
         _SkelEntry("softmax_out_fresh"),
         _SkelEntry("softmax_v_matmul_rescale"),
         _SkelEntry("ln_mean_result_rescale"),
         _SkelEntry("ln_square_result_rescale"),
     ),
-    # --- block 5 (n=0, ReLU): ReplanSession 实测 skeleton=[0, 1, 3, 4]，
-    #     t_baseline=[30, 30, 30]（3 槽）。ReLU 无多项式 GELU 节点，rescale 点
-    #     只有 normalize + wffn1：
-    #   i=0 (inv_std, SOURCE)     → x_centered_fresh（两个 fresh 绑定相等）
-    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
-    #   i=3 (ctpt_wffn1)          → wffn1_result_rescale
-    "block5_n0": (
-        _SkelEntry("x_centered_fresh"),
-        _SkelEntry("normalize_result_rescale"),
-        _SkelEntry("wffn1_result_rescale"),
-    ),
-    # --- block 5 (n=1): current static_skeletons selects:
-    #   i=0 (x_mean)            → x_centered_fresh
-    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
-    #   i=4 (ctpt_gelu_coeff)   → gelu_coeff_mul_rescales[-1]（深度最大的那个 coeff·x^k）
+
+
     "block5_n1": (
         _SkelEntry("x_centered_fresh"),
         _SkelEntry("normalize_result_rescale"),
         _SkelEntry("gelu_coeff_mul_rescales", -1),
     ),
-    # --- block 5 (n=2): skeleton=[0, 1, 3, 5, 6]
-    #   i=0 (x_mean)              → x_centered_fresh
-    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
-    #   i=3 (ctpt_wffn1)          → wffn1_result_rescale
-    #   i=5 (ctpt_gelu_coeff)     → gelu_coeff_mul_rescales[-1]
+
+
     "block5_n2": (
         _SkelEntry("x_centered_fresh"),
         _SkelEntry("normalize_result_rescale"),
         _SkelEntry("wffn1_result_rescale"),
         _SkelEntry("gelu_coeff_mul_rescales", -1),
     ),
-    # --- block 5 (n=4): skeleton=[0, 1, 3, 4, 6, 7]
-    #   i=4 (ctct_gelu_x2) → gelu_power_rescales[0]（x²）
-    #     注：graph 把 x³ 折进 x⁴，所以只看 x² 这一个 power rescale 进 t_new
+
+
     "block5_n4": (
         _SkelEntry("x_centered_fresh"),
         _SkelEntry("normalize_result_rescale"),
@@ -802,30 +690,15 @@ def _derive_t_new_table_from_invoker(invoker: Any) -> Dict[str, Tuple[_SkelEntry
     return out
 
 
-# ---------------------------------------------------------------------------
-# 主桥接
-# ---------------------------------------------------------------------------
-
 @dataclass
 class _BlockRequest:
     config_name: str
     cfg: Any
-    block_name: str  # "block1" .. "block5"
+    block_name: str
 
 
 class RescaleOptimizerBridge:
-    """一站式：BLB cfg → delta_overrides → 调用 Rescale_optimizer → 解析输出。
-
-    设计取舍：
-      * 每个 (block, layer) 不一定对应一个独立的 ``Rescale_optimizer`` config；
-        典型场景下用户的 ``Rescale_optimizer`` 是按 (block, dataset) 切的，比如
-        ``block1_mrpc``、``block1_qqp``。RL 一回合可能跑多个 (block, dataset) 组合。
-      * 因此 ``evaluate_blocks(...)`` 接受一个 ``{config_name: (block_name, cfg)}``
-        映射，每条记录被独立 invoke 一次。
-
-    cfg → delta_overrides：先看用户在构造时是否传了 ``cfg_to_delta_overrides``
-    覆盖；否则用 ``_DEFAULT_BLOCK_MAPPERS[block_name]``。
-    """
+    """Convert BLB configs, invoke each graph, and parse optimizer output."""
 
     def __init__(
             self,
@@ -844,7 +717,7 @@ class RescaleOptimizerBridge:
                                         覆盖默认 ``default_block{1..5}_cfg_to_delta``
             cfg_to_t_new_overrides:     ``{graph_key: tuple[_SkelEntry, ...]}``，扩展或覆盖
                                         ``DEFAULT_CFG_TO_T_NEW_MAP``。可用于支持 mrpc 之外的
-                                        profile（wnli 等）。
+                                        profile key.
             auto_t_new_from_cfg:        默认 ``True`` ⇒ 当 ``evaluate(t_new=None)`` 时
                                         自动从 cfg 派生 t_new；False ⇒ 保持旧行为
                                         （t_new=None ⇒ invoker fallback 到 baseline）。
@@ -854,14 +727,13 @@ class RescaleOptimizerBridge:
                                         same ReplanSession result dozens of times.
         """
         self.invoker = invoker
-        # cfg → delta_overrides 映射
+
         self._cfg_mappers: Dict[str, CfgToDeltaFn] = dict(_DEFAULT_BLOCK_MAPPERS)
         if cfg_to_delta_overrides:
             for k, fn in cfg_to_delta_overrides.items():
                 self._cfg_mappers[str(k)] = fn
-        # cfg → t_new 映射（per graph_key）。``DEFAULT_CFG_TO_T_NEW_MAP`` is the
-        # static fallback; when the invoker exposes the real skeletons we DERIVE
-        # the map from the actual cut_point_sf so a skeleton regen auto-propagates.
+
+
         self._cfg_to_t_new_table: Dict[str, Tuple[_SkelEntry, ...]] = {
             k: tuple(v) for k, v in DEFAULT_CFG_TO_T_NEW_MAP.items()
         }
@@ -893,7 +765,7 @@ class RescaleOptimizerBridge:
         entry = baselines.get(str(graph_key))
         if not entry:
             return None
-        # entry 形如 (skeleton, t_baseline, q_bits_baseline)
+
         try:
             return list(entry[1]) if entry[1] is not None else None
         except (IndexError, TypeError):
@@ -955,15 +827,15 @@ class RescaleOptimizerBridge:
             ``RescaleOptimizerOutput``（``config_name`` 字段保留 RL 端的原始值，
             含 ``_L<i>`` 后缀）。
         """
-        # ---- (Bug A 修复) 标准化 config_name：剥 _L<i> 后缀作为 graph key ----
+
         graph_key, _layer_idx = _strip_layer_suffix(config_name)
 
-        # ---- delta_overrides ----
+
         deltas = self.cfg_to_delta_overrides(block_name, cfg)
         if extra_overrides:
             deltas.update({str(k): v for k, v in extra_overrides.items()})
 
-        # ---- (Bug B 修复) 如果调用方没传 t_new，从 cfg 自动派生 ----
+
         effective_t_new: Optional[List[int]] = None
         if t_new is not None:
             effective_t_new = [int(x) for x in t_new]
@@ -975,7 +847,7 @@ class RescaleOptimizerBridge:
                 table=self._cfg_to_t_new_table,
             )
 
-        # ---- 构造 invoker payload + deterministic cache key ----
+
         if effective_t_new is not None:
             payload: Any = {
                 "t_new": list(effective_t_new),
@@ -1003,7 +875,7 @@ class RescaleOptimizerBridge:
             raw["_optimizer_cache_hit"] = True
         else:
             self.cache_misses += 1
-            # ---- 调 invoker（用 graph_key，不带 _L<i> 后缀） ----
+
             raw = self._invoke_optimizer(
                 graph_key=graph_key,
                 payload=payload,
@@ -1018,7 +890,7 @@ class RescaleOptimizerBridge:
                 raw = dict(raw)
                 raw["_optimizer_cache_hit"] = False
 
-        # 把派生出的 t_new 回写到 raw（便于上层 introspect / debug）；不破坏原结构
+
         try:
             if isinstance(raw, dict) and effective_t_new is not None and "_t_new_used" not in raw:
                 raw["_t_new_used"] = list(effective_t_new)
@@ -1033,7 +905,7 @@ class RescaleOptimizerBridge:
         except Exception:
             pass
 
-        # 解析时保留原始 config_name（带 _L<i>），让上层能按层归并
+
         return _parse_optimizer_raw(raw, config_name=config_name)
 
     def evaluate_readonly(
@@ -1144,17 +1016,9 @@ class RescaleOptimizerBridge:
         return outputs
 
 
-# ---------------------------------------------------------------------------
-# 奖励信号聚合
-# ---------------------------------------------------------------------------
-
 @dataclass
 class OptimizerRewardSignals:
-    """跨 block 聚合后的 RL 奖励原料。
-
-    业务侧把这些字段组合成最终 reward；本 bridge 不做最终公式（用户明说了
-    reward 不止依赖这三项）。
-    """
+    """Optimizer signals aggregated across one materialized action."""
     total_fusion_count: int
     total_bits_sum: int
     any_invalid: bool
@@ -1182,10 +1046,6 @@ def apply_rotation_flags_to_cfg(cfg: Any, rotation_flag_names) -> None:
             setattr(cfg, name, name in enable)
 
 
-# Rescale_optimizer names rotations by graph stage, while the plaintext model
-# injects their noise at concrete tensor boundaries. Keep that translation in
-# this bridge so every materialization caller (RL, final eval, fixed action, and
-# GLUE export) uses the same authoritative mapping.
 DEFAULT_ROTATION_NAME_MAP_BY_BLOCK: Mapping[
     int, Mapping[str, Tuple[str, ...]]
 ] = {
@@ -1238,15 +1098,6 @@ def default_rotation_name_map(
     return DEFAULT_ROTATION_NAME_MAP_BY_BLOCK.get(int(block_idx), {})
 
 
-# Block 2 Q/K binding: action_space._build_block2_action sets ``wq_sf == wk_sf``
-# (and equivalently for ``q_mask{1,2}`` ↔ ``kt_mask{1,2}``). After the optimizer
-# rewrites cfg via ``apply_optimizer_output_to_cfg``, only ``wk_encode`` /
-# ``kt_mask{1,2}_encode`` get refreshed (those are the names in
-# ``GRAPH_NODE_TO_CFG_ATTR[2]``); the bound Q-side fields stay at the pre-override
-# value. function_handler.handler_block2 reads ``wq_encode`` / ``q_mask*_encode``
-# directly when installing model noise, so without this sync the Q channel ends
-# up with the *RL-decoded* SF while the K channel uses the *optimizer-snapped*
-# SF — silently breaking the Q/K binding invariant.
 _BLOCK2_QK_BINDING_PAIRS = (
     ("wq_encode", "wk_encode"),
     ("q_mask1_encode", "kt_mask1_encode"),
@@ -1284,15 +1135,6 @@ def sync_block2_qk_binding(cfg: Any) -> List[CfgOverrideEntry]:
     return overrides
 
 
-# Block 4 mask2 binding: action_space._build_block4_action sets
-# ``v_mask_encode == softmax_out_mask_encode`` (user spec 2026-05-20 — the two
-# mask2 RL slots represent the same graph node ``ctpt_mask2`` and their action
-# values are bound). After the optimizer rewrites cfg via
-# ``apply_optimizer_output_to_cfg``, only ``softmax_out_mask_encode`` gets
-# refreshed (that's the entry in ``GRAPH_NODE_TO_CFG_ATTR[4]['ctpt_mask2']``).
-# Without this sync the V-side encode would stay at the pre-override SF while
-# the softmax_out side moved, silently breaking the binding invariant and the
-# ctct_rot_softmax_mul_v delta computation that depends on cfg.v_mask_encode.
 _BLOCK4_MASK2_BINDING_PAIRS = (
     ("v_mask_encode", "softmax_out_mask_encode"),
 )
@@ -1329,14 +1171,6 @@ def sync_block4_v_mask_binding(cfg: Any) -> List[CfgOverrideEntry]:
     return overrides
 
 
-# Block 2 / Block 5 aux-fresh binding (user spec 2026-05-21):
-# the "x2" CTCT_MUL side node assumes ``SF(side_fresh) == SF(SOURCE_fresh)``,
-# so action_space._build_block{2,5}_action collapses the two fresh slots to
-# ONE action. After apply_optimizer_output_to_cfg rewrites the SOURCE fresh
-# (cfg.inv_std_fresh for block 2, cfg.x_centered_fresh for block 5), the
-# bound counterpart must be mirrored to keep the two SFs equal — otherwise
-# the model installs noise at the wrong variance for the aux fresh side and
-# the optimizer's "x2" prediction diverges from real chain math.
 _BLOCK2_AUX_FRESH_BINDING_PAIRS = (
     ("x_centered_fresh", "inv_std_fresh"),
 )
@@ -1395,30 +1229,12 @@ def sync_block5_aux_fresh_binding(cfg: Any) -> List[CfgOverrideEntry]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Optimizer return -> cfg overrides
-# ---------------------------------------------------------------------------
-#
-# Given a Rescale_optimizer replan output for a single (block, layer) config,
-# rewrite the action-decoded cfg in place so the noise actually installed in
-# the model matches what the optimizer settled on:
-#
-#   * Source / first cut point  -> cfg.<*_fresh>.scaling_factor = sf
-#   * Surviving rescale points   -> cfg.<*_result_rescale>.scaling_factor = sf_post
-#   * Rescale points fused away  -> cfg.<*_result_rescale> = None
-#   * CTPT_MUL propagation deltas -> cfg.<*_encode>.scaling_factor = delta
-#   * Effective rotations        -> cfg.rotation_after_* flags set per rotation_name_map
-#
-# Cfg fields that are pure model-side (no optimizer counterpart) are left
-# untouched and continue to carry the RL-chosen SF. The audit at
-# `reports/blb_opt/orphan_slots/audit_<profile>.md` enumerates those.
-
 @dataclass(frozen=True)
 class CfgOverrideEntry:
     """Single change applied to one cfg attribute, for diagnostics / HTML report."""
-    cfg_attr: str               # e.g. "wffn2_encode.scaling_factor" or "square_rescales[0]"
-    graph_node: Optional[str]   # source graph node name, when known
-    source: str                 # "fresh" | "rescale_post" | "rescale_fused_away" | "propagation_delta" | "rotation_flag"
+    cfg_attr: str
+    graph_node: Optional[str]
+    source: str
     old_value: Any
     new_value: Any
 
@@ -1456,7 +1272,7 @@ def _set_noise_point_tuple_sf(
         items[idx] = None
     else:
         if old_point is None:
-            # No template NoisePoint to copy N from — skip rather than guess.
+
             return (old_sf, None)
         from function_handler import NoisePoint
         items[idx] = NoisePoint(
@@ -1512,20 +1328,17 @@ def apply_optimizer_output_to_cfg(
     table = cfg_to_t_new_table if cfg_to_t_new_table is not None else DEFAULT_CFG_TO_T_NEW_MAP
     skel_entries = list(table.get(str(graph_key), ()))
     if not skel_entries:
-        # No t_new mapping registered — fall back to just propagation_deltas + rotations.
+
         skel_entries = []
 
-    # cut_point_sf entries are keyed by graph node index `i`. Build node-id -> entry.
+
     cut_points: Dict[int, Dict[str, Any]] = {}
     for entry in compact.get("cut_point_sf", []) or []:
         if not isinstance(entry, Mapping) or "i" not in entry:
             continue
         cut_points[int(entry["i"])] = dict(entry)
 
-    # baseline_skeleton[r] = graph node index at baseline position r.
-    # If position 0 has an `sf` entry in cut_points -> apply to source fresh field.
-    # If position r>=1 has an `sf_post` entry -> apply to rescale field.
-    # If position r>=1 baseline node id NOT in cut_points (fused away) -> set rescale field to None.
+
     for r, skel_entry in enumerate(skel_entries):
         if r >= len(baseline_skeleton):
             break
@@ -1547,20 +1360,9 @@ def apply_optimizer_output_to_cfg(
                         ))
             continue
 
-        # A baseline rescale position is "fused away" when the optimizer's
-        # cut_point for it carries no real post-rescale scale. The optimizer
-        # signals this two ways and BOTH must null the cfg rescale field (no
-        # rescale happens there => no rescale noise may be installed):
-        #   * the node is absent from cut_point_sf (cpt is None); or
-        #   * the node is kept as a PASSTHROUGH — present with `sf` (the
-        #     accumulated scale flowing through) but no `sf_post` key (no drop).
-        #     A fused rescale takes this passthrough form, e.g. block4 fc=1 keeps
-        #     ctct_rot_softmax_mul_v with sf=66 and no sf_post while its 27-prime
-        #     fuses into the next stage; only the surviving stages carry sf_post.
-        # Read straight from cut_point_sf, so the fused location is detected
-        # automatically for ANY modulus chain — never hard-coded.
+
         if cpt is None or cpt.get("sf_post") is None:
-            # Baseline rescale position fused away — disable cfg rescale field.
+
             if tuple_index is None:
                 old_val = getattr(cfg, cfg_field, None)
                 if old_val is not None:
@@ -1604,7 +1406,7 @@ def apply_optimizer_output_to_cfg(
                         old_value=old, new_value=new,
                     ))
 
-    # Propagation deltas: per-CTPT_MUL applied delta after replan.
+
     node_to_attr = GRAPH_NODE_TO_CFG_ATTR.get(int(block_idx), {})
     for entry in compact.get("propagation_deltas", []) or []:
         if not isinstance(entry, Mapping):
@@ -1612,7 +1414,7 @@ def apply_optimizer_output_to_cfg(
         name = str(entry.get("name", ""))
         delta = entry.get("delta")
         if not isinstance(delta, int):
-            # "x2" or non-integer -> no cfg correspondence
+
             continue
         cfg_field = node_to_attr.get(name)
         if cfg_field is None:
@@ -1626,10 +1428,7 @@ def apply_optimizer_output_to_cfg(
                 old_value=old, new_value=new,
             ))
 
-    # Effective rotations: reset every model flag, then enable exactly the
-    # rotations retained by replan. Counts are preserved because graph entries
-    # such as Block 4's pre-inv-d rotation represent three independent
-    # rotations, not one boolean event.
+
     eff_rotations = compact.get("effective_rotations", []) or []
     enabled_flags: List[str] = []
     repeat_counts: Dict[str, int] = {}
@@ -1670,7 +1469,7 @@ def apply_optimizer_output_to_cfg(
                 repeat_counts.get(flag_name, 0) + int(raw_count)
             )
 
-    # Capture state before reset so we can report which flags changed.
+
     pre_flags = {
         n: bool(getattr(cfg, n))
         for n in vars(cfg).keys()

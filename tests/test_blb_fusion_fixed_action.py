@@ -28,22 +28,20 @@ import unittest
 from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-_RO_ROOT = _REPO_ROOT / "Rescale_optimizer"
-for _p in (str(_REPO_ROOT), str(_BLB_DIR), str(_RO_ROOT)):
+for _p in (str(_REPO_ROOT), str(_REPO_ROOT / "Rescale_optimizer")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import numpy as np
 
-import fusion_count_map as fcm
-import fusion_fixed_action as ffa
+from blb_stage2_rl import fusion_count_map as fcm
+from blb_stage2_rl import fusion_fixed_action as ffa
 
 
 class MatchOptionIdTest(unittest.TestCase):
     def setUp(self):
         self.m = fcm.FusionCountMap.load("mrpc")
-        # block2 is one of the boosted block-types (opt 1 carries the boost).
+
         self.graph = self.m.graphs["block2_mrpc"]
 
     def test_matches_baseline_option_zero(self):
@@ -56,13 +54,13 @@ class MatchOptionIdTest(unittest.TestCase):
 
     def test_matches_boosted_option_ignoring_k_slot(self):
         opt1 = next(o for o in self.graph.options if o.option_id == 1)
-        # Sanity: this option IS the boosted one (the whole reason the flat vec
-        # alone loses information).
+
+
         self.assertTrue(opt1.boosted)
         self.assertTrue(opt1.explicit_field_values)
         slice1 = np.asarray(opt1.action_indices, dtype=int).copy()
-        # The K slot is decided independently of the option; the matcher must
-        # ignore it. Perturb it and still match option 1.
+
+
         k = int(self.graph.k_slot_index)
         slice1[k] = (int(slice1[k]) + 1) % 5
         self.assertEqual(
@@ -71,10 +69,8 @@ class MatchOptionIdTest(unittest.TestCase):
         )
 
     def test_matches_legacy_all_max_baseline_with_slot_dims(self):
-        # A legacy all-max full action vector encodes rescale slots as their max
-        # grid index, while the fusion-count baseline option keeps fused-away /
-        # absent rescales at idx0=None. When the slice is exactly all-max, it is
-        # still an unambiguous baseline option.
+
+
         slot_dims = [15] * int(self.graph.block_num_slots)
         slot_dims[int(self.graph.k_slot_index)] = 5
         legacy_all_max = np.asarray([d - 1 for d in slot_dims], dtype=int)
@@ -94,8 +90,8 @@ class MatchOptionIdTest(unittest.TestCase):
             ffa.match_option_id(action_slice=bad, graph=self.graph, graph_key="block2_mrpc")
 
     def test_every_committed_option_round_trips(self):
-        # Every option's own action_indices must resolve back to itself across
-        # all committed graphs (no accidental ambiguity introduced by boost).
+
+
         for gk, graph in self.m.graphs.items():
             for opt in graph.options:
                 sl = np.asarray(opt.action_indices, dtype=int)
@@ -142,7 +138,7 @@ class SelectFusionEvalMetadataTest(unittest.TestCase):
     def test_explicit_fusion_config_is_left_as_is(self):
         existing = {"schema_version": "fusion_count_fixed_action_v1", "group": {"option_by_step": {"3": 0}}}
         md = self._call(existing_metadata=existing)
-        self.assertEqual(md["group"], {"option_by_step": {"3": 0}})  # not overwritten
+        self.assertEqual(md["group"], {"option_by_step": {"3": 0}})
 
     def test_per_slot_run_untouched(self):
         md = self._call(fusion_count_action=False, fusion_group=None)
@@ -150,8 +146,8 @@ class SelectFusionEvalMetadataTest(unittest.TestCase):
         self.assertNotIn("group", md)
 
     def test_non_best_candidate_untouched(self):
-        # A cost-matched random / range-mutated candidate differs from base_action
-        # and must NOT get boost-replay (it is an arbitrary vec, not a map option).
+
+
         md = self._call(action_vec=[9, 9, 9, 9, 9])
         self.assertNotIn("schema_version", md)
 

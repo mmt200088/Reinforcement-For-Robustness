@@ -423,8 +423,8 @@ class BLBActionFinalEvaluationModule:
         )
 
         base_action = self._resolve_base_action(search_best_stage2)
-        # Always build the "selected" candidate first via the grid/config path —
-        # this anchors the cost target for cost-matched random sampling below.
+
+
         selected_candidates = build_action_candidates(
             num_layers=total_layers,
             profile=profile,
@@ -438,13 +438,7 @@ class BLBActionFinalEvaluationModule:
             isolate_random_seed=(final_eval_handoff is not None),
         )
 
-        # 加大精度 handoff: in fusion-count mode the trained best is a flat grid-index
-        # vector; reattach the per-step fusion (option, K) selection so the boosted
-        # config is replayed (decode → _decode_fusion_count_fixed_action → boosted
-        # explicit_field_values), matching the training terminal probe. Persisted
-        # group (from the runner) is preferred; otherwise it is reconstructed from
-        # the vector + the committed map. Only the trained best (== base_action) is
-        # touched — cost-matched random candidates keep the default index decode.
+
         fusion_count_action = bool(
             isinstance(search_best_stage2, dict)
             and search_best_stage2.get("blb_v3_fusion_count_action")
@@ -575,7 +569,7 @@ class BLBActionFinalEvaluationModule:
                 self._capture_isolated_candidate_rng_state()
             )
 
-        # ---- Evaluate selected candidates first ----
+
         selected_results: List[Dict[str, Any]] = []
         for idx, candidate in enumerate(selected_candidates, start=1):
             ev.log(
@@ -608,7 +602,7 @@ class BLBActionFinalEvaluationModule:
                 f"fusion={result['total_fusion_count']}"
             )
 
-        # ---- Generate cost-matched random candidates based on first selected ----
+
         cost_match_diagnostics: Optional[CostMatchedSamplingDiagnostics] = None
         random_results: List[Dict[str, Any]] = []
         if self.random_enabled and self.cost_match_count > 0 and selected_results:
@@ -1351,8 +1345,8 @@ class BLBActionFinalEvaluationModule:
             if truncation_source_fractional_bits is not None
             else (24 if evaluator_source_bits is None else evaluator_source_bits)
         )
-        # apply_optimizer_outputs_to_cfgs is intentionally invoked only inside
-        # materialize_decoded_action so final eval shares the online RL seam.
+
+
         return materialize_decoded_action(
             action_indices=np.asarray(action_vec, dtype=int).reshape(-1).tolist(),
             decoded=decoded,
@@ -1483,10 +1477,8 @@ class BLBActionFinalEvaluationModule:
         total_layers = int(ev.total_layers)
         expected_all = set(range(total_layers))
         expected = {
-            # Mirror BLBNoiseRLBridge.apply semantics:
-            #   * layer-0 block1 is installed as truncation-only,
-            #   * Block3 baseline SF plus selected K is installed on every layer,
-            #   * first_input noise remains deprecated and absent.
+
+
             "block1": expected_all,
             "block2": expected_all,
             "block3": expected_all,
@@ -1791,9 +1783,8 @@ class BLBActionFinalEvaluationModule:
         ev.apply_configuration(gelu, softmax)
         self._clear_legacy_noise()
         try:
-            # NOTE: first_input fresh deprecated（layer-0 input 视为无损 HE 配置）；
-            # layer-0 block1 以 noise-disabled 的 K-only cfg 安装；
-            # decoded.first_input_sf 仍为占位（=0），不传给 bridge。
+
+
             bridge.apply(
                 block1_cfgs=decoded.block1_cfgs,
                 block2_cfgs=decoded.block2_cfgs,
@@ -2165,9 +2156,6 @@ class BLBActionFinalEvaluationModule:
         _atomic_json(output_path, output)
         return output_path
 
-    # ------------------------------------------------------------------
-    # Comparison helpers (selected vs random) + new outputs
-    # ------------------------------------------------------------------
 
     def _cost_match_diagnostics_to_dict(
             self, diag: Optional[CostMatchedSamplingDiagnostics]
@@ -2354,9 +2342,6 @@ class BLBActionFinalEvaluationModule:
         plt.close(fig)
         return path
 
-    # ------------------------------------------------------------------
-    # Optional auto-trigger of GLUE submission for the selected BLB action
-    # ------------------------------------------------------------------
 
     def _attach_relative_metrics(baseline, results):
         for result in results:

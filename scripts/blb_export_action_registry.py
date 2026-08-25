@@ -384,7 +384,7 @@ def _slot_semantics_markdown(payload: Dict[str, Any]) -> str:
         if len(seen) == 1 or (len(seen) > 1 and record.get("block_index") != prev_block):
             if prev_block is not None:
                 lines.append("")
-            lines.extend([f"## Block {record.get('block_index')}", "", "| field | kind | semantic_type | 用户语义 |", "|---|---|---|---|"])
+            lines.extend([f"## Block {record.get('block_index')}", "", "| field | kind | semantic_type | meaning |", "|---|---|---|---|"])
         lines.append(
             f"| `{record['field']}` | `{record['kind']}` | `{record['semantic_type']}` | "
             f"{record.get('user_prompt_semantics', '')} |"

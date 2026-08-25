@@ -915,8 +915,8 @@ def _candidate_resource_fields(candidate: Any) -> dict[str, Any]:
     compute = _field(candidate, "compute_saving")
     communication = _field(candidate, "communication_saving")
     if compute is None or communication is None:
-        # Read-only compatibility for pre-v9 unit tests/report fixtures.  Live
-        # candidates always carry an action matrix and are recomputed above.
+
+
         legacy = _finite(_field(candidate, "variable_cost"), name="variable_cost")
         compute = communication = legacy
     compute_value = _finite(compute, name="compute_saving")
@@ -1006,7 +1006,6 @@ def strict_resource_pareto_frontier(
             frontier.append((identity, candidate))
     frontier.sort(key=lambda item: strict_selection_key(item[0], item[1]))
     return {identity: candidate for identity, candidate in frontier}
-
 
 
 def _strict_best_snapshot(
@@ -1257,7 +1256,7 @@ class LayerwiseConvergenceTracker:
             "minimum_episodes": int(self.minimum_episodes),
             "best_robust_feasible_objective": best,
             "current_robust_feasible_objective": current,
-            # Read-only aliases retained until report fixtures migrate to v9.
+
             "best_robust_feasible_cost": (
                 None if best is None else float(best[0])
             ),
@@ -2084,8 +2083,8 @@ def _promotion_probe_seed(
         & 0x7FFFFFFFFFFFFFFF
     )
     occupied = {int(seed) for seed in existing_seeds}
-    # Attempt domains are pairwise disjoint. With N occupied seeds, N+1
-    # attempts guarantee at least one trial set has no overlap.
+
+
     for attempt_idx in range(len(occupied) + 1):
         probe_seed = derive_layerwise_promotion_probe_seed(
             seed_material,
@@ -2982,8 +2981,8 @@ def promote_candidate_if_eligible(
             )
         )
     elif frontier_cost is not None:
-        # Compatibility path for isolated pre-v9 test fixtures only.  The live
-        # trainer always supplies frontier_candidates and uses F/C dominance.
+
+
         legacy_cost = _finite(variable_cost, name="variable_cost")
         dominated = legacy_cost < float(frontier_cost) - 1.0e-12
     if dominated:
@@ -3530,10 +3529,6 @@ def _first_detached_scalar(value: Any) -> Any:
 
 
 def _policy_input(value: np.ndarray, device: Any) -> Any:
-    try:
-        import torch
-    except ImportError:
-        return value
     return torch.as_tensor(value, device=device)
 
 
@@ -4422,7 +4417,7 @@ def train_layerwise(
 
         local_episode += 1
         completed = local_episode
-        # The environment's direct terminal return is the PPO source of truth.
+
         if retain_history:
             rewards.append(episode_reward)
         entropy_snapshot = {

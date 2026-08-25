@@ -6,16 +6,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 import torch
 import torch.nn as nn
-from transformers import AutoModel
-from transformers.models.bert.modeling_bert import BertSelfAttention, BertAttention
-try:
-    from transformers.models.gpt2.modeling_gpt2 import Conv1D as _GPT2Conv1D
-except Exception:  # pragma: no cover - transformers always ships this, but be defensive
-    _GPT2Conv1D = None
-try:
-    from transformers.models.gpt2.modeling_gpt2 import GPT2Attention as _GPT2Attention
-except Exception:  # pragma: no cover
-    _GPT2Attention = None
+from transformers.models.bert.modeling_bert import BertSelfAttention
 import copy
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, Tuple
@@ -32,25 +23,9 @@ def _print_blb_install(message: str) -> None:
     print(message)
 
 
-# ---------------------------------------------------------------------------
-# 独立噪声 RNG（与 torch 全局 RNG 完全隔离）
-# ---------------------------------------------------------------------------
-# 设计目标：用户可能在外部脚本（如 layer_importance_evaluator.py）里调
-# ``torch.manual_seed(...)`` 来做"可复现的搜索"。如果我们的噪声采样走 PyTorch
-# 全局 RNG（``torch.randn_like`` 默认就是），就会被外部 seed 污染——同样的
-# scaling factor 配置每次都得到一模一样的噪声样本，违背"加 Gaussian 噪声"的语义。
-#
-# 解决：所有噪声采样统一走一个/一组独立的 ``torch.Generator``（按 device 分组），
-# 进程启动时用 OS 熵 (``os.urandom``) 填充种子。外部 ``torch.manual_seed``
-# 只动 ``torch.default_generator``，影响不到这里的 generator。
-#
-# 后门：``reseed_noise_rng(seed)`` 允许用户临时把噪声 RNG 也固定下来（仅当
-# 真的需要复现某次实验时用），用 ``reseed_noise_rng(None)`` 恢复真随机模式。
-# ---------------------------------------------------------------------------
-
-_NOISE_GENERATORS: dict = {}     # str(device) -> torch.Generator
-_TRUNCATION_GENERATORS: dict = {}  # same key space, independent RNG domain
-_NOISE_RNG_SEED_MODE: str = "os"  # "os" / "fixed"
+_NOISE_GENERATORS: dict = {}
+_TRUNCATION_GENERATORS: dict = {}
+_NOISE_RNG_SEED_MODE: str = "os"
 _NOISE_RNG_FIXED_SEED: Optional[int] = None
 _NOISE_RNG_LOCAL = _threading.local()
 
@@ -145,16 +120,6 @@ def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
     gen = _get_noise_generator(reference.device)
     return torch.empty_like(reference).normal_(0.0, float(std), generator=gen)
 
-
-# ---------------------------------------------------------------------------
-# Truncation (PPTI 模拟：MPC ↔ HE 转换时的小数截断)
-# ---------------------------------------------------------------------------
-# 用法：在每个 BLB Block 的"最终输出"上调用 ``_apply_truncation(x, k, mode)``
-# 模拟 MPC/HE 互转之前对结果保留 k 位小数。默认 binary 保留历史行为；
-# stochastic_ring 是显式启用的备选数值模拟。数学：
-#   binary：trunc(x · 2^k) / 2^k         （保留 k 位二进制小数；CKKS 默认）
-#   decimal：trunc(x · 10^k) / 10^k      （保留 k 位十进制小数）
-# k=None  → 不截断（仅用于明确关闭某个 truncation 点）。
 
 _BINARY_TRUNCATION_FUSED_CUDA_ENABLED = str(
     _os.environ.get("BLB_STAGE2_TRUNCATION_FUSED_CUDA", "1")
@@ -377,9 +342,6 @@ def reseed_noise_rng_for_device(
     truncation_generator.manual_seed(_derive_truncation_seed(int(seed)))
 
 
-# ---------------------------------------------------------------------------
-# Helpers shared by BERT and GPT-2 code paths.
-# ---------------------------------------------------------------------------
 def _get_attr_path(obj, path):
     """Resolve a dotted attribute path starting from ``obj``."""
     for part in path.split("."):
@@ -395,32 +357,23 @@ def _set_attr_path(obj, path, value):
     setattr(obj, parts[-1], value)
 
 
-def _is_gpt2_conv1d(module) -> bool:
-    return _GPT2Conv1D is not None and isinstance(module, _GPT2Conv1D)
-
-
-# GELU approximation coeff
-# GELU_COEEF[i][0]-positive; GELU_COEEF[i][1]-negative (-2.7, 2.7)
 GELU_COEEF = {
-            # degree 0: same coefficients as degree 1, but applied without piecewise comparison
+
             0: [[-0.20266642, 1.07484643], [-0.20266642, -0.57484643+0.5]],
-            # todo: change the pivot point of degree 1
-            # pivot point: use SEAF- -2.5, -0.75, 0 , 0.5, 2.5?
+
+
             1: [[-0.20266642, 1.07484643], [-0.20266642, -0.57484643+0.5]],
             2: [[-0.12136484, 0.94386247, 0.04261206],[-0.12136484, -0.44386247+0.5, 0.04261206]],
-            # relative error: -0.75 pivot point
-            # 1: [[5.9839183235390844e-05, 0.6170698026386807], [-0.2052886977665538, -0.0759420475301809]],
-            # 2: [[4.680008304412681e-06, 0.4740042074483325, 0.29206518457930236],[-0.3773006655410396, -0.25069817033674346, -0.04239126463806122]],
-            
-            
+
+
             3: [[-0.01524885, 0.57426473, 0.35500657, -0.07415983], [-0.01524885, -0.07426473+0.5, 0.35500657, 0.07415983]],
             4: [[0.00746413, -0.07087454+0.5, 0.58960402, -0.20949432, 0.02540485], [ 0.00746413, 0.07087454+0.5, 0.58960402, 0.20949432, 0.02540485]]
-            # 4: [[0.00162080853184154, -0.03798164612714154+0.5, 0.5410550166368381, -0.18352506127082727, 0.020848611754127593], [0.00162080853184154, 0.03798164612714154+0.5, 0.5410550166368381, 0.18352506127082727, 0.020848611754127593]]
+
 }
 
-# SiLU approximation coeff (Bumblebee piecewise)
+
 SiLU_COEEF = {
-#             1: [[0.7618737346704126, 0.5000893434026534],[-0.10118073891975127,-0.013543261873265973]],
+
             1: [[0.14238437510901367, 0.5000053621970405, 0.12920887677506931],[-0.10118073891975127,-0.013543261873265973]],
             2: [[0.14238437510901367, 0.5000053621970405, 0.12920887677506931],[-0.2932427892002413,-0.07801652478737445,-0.005269243960262952]],
             3: [[0.14241236482342567, 0.4999863582405589, 0.12920235286785606, 0],[-0.4233567569791515,-0.14755599495248886,-0.017365847597972207,-0.0006859293250386277]],
@@ -428,7 +381,6 @@ SiLU_COEEF = {
 }
 
 
-# Exponential approximation Taylor bound
 Exp_bound = {
     1:-2,
     2:-4,
@@ -438,9 +390,7 @@ Exp_bound = {
     6:-13
 }
 
-# Transformer-layer input noise table.
-# Values are variances sigma^2 for N(0, sigma^2).
-# Current x-noise injection uses the "fresh" column.
+
 INPUT_NOISE_VARIANCE_TABLE = {
     10: {"encoding": 6.510416e-04, "fresh": 1.310800e+03, "rescale": 5.333984e+00},
     12: {"encoding": 4.069010e-05, "fresh": 8.192500e+01, "rescale": 3.333740e-01},
@@ -489,14 +439,6 @@ def get_input_noise_variance(scaling_factor: int, distribution: str = "fresh") -
     return float(INPUT_NOISE_VARIANCE_TABLE[scaling_factor][distribution_key])
 
 
-# ---------------------------------------------------------------------------
-# BLB-aware multi-N noise variance table.
-# Source: noise_std_table.csv —— 三列分别是 (σ_enc, σ_fresh, σ_rs) 标准差。
-# 这里存的是方差 σ² = std² (用于 N(0, σ²))。
-# 不同 BLB block 用不同 N (8192 / 16384) 对应的表，详见 docs/noise_targets_BLB_mapping.md。
-# ---------------------------------------------------------------------------
-
-# scale_bits → (σ_enc, σ_fresh, σ_rs)；从 noise_std_table.csv 直接抄录的标准差
 _NOISE_STD_RAW = {
     8192: {
         10: (2.551552e-02, 1.337809e+00, 1.333455e+00),
@@ -578,15 +520,15 @@ _NOISE_STD_RAW = {
     },
 }
 
-# 方差表 σ² = std²；外部直接消费这个表
+
 NOISE_VARIANCE_TABLE_BY_N = {
     _N: {
         _sb: {
             "encoding": _stds[0] ** 2,
             "fresh":    _stds[1] ** 2,
             "rescale":  _stds[2] ** 2,
-            # ``rotation`` (KS / galois automorphism 引入的噪声) 当前直接复用
-            # rescale 列的方差。后续如果有更精细的 KS 噪声实测表，可以拆开。
+
+
             "rotation": _stds[2] ** 2,
         }
         for _sb, _stds in _scales.items()
@@ -626,13 +568,8 @@ def get_input_noise_variance_by_N(
         )
     table = NOISE_VARIANCE_TABLE_BY_N[N]
     if scaling_factor not in table:
-        # A scaling factor ABOVE the table max installs no measurable noise: var(46)
-        # is ~2.8e-25 and each +1 SF is ~x0.25, so var(>46) is far below fp precision
-        # (var(49)~4e-27). Return 0.0 (no noise) so the precision boost can push an
-        # installed point past the table max (e.g. block4's ln_mean_rescale -> 49)
-        # instead of crashing. A point BELOW the table min is still an error (that
-        # low-SF / high-noise regime must be snapped to the table min upstream, never
-        # silently dropped). Mirrors noise_tables.variance.
+
+
         if scaling_factor > max(table):
             return 0.0
         raise ValueError(
@@ -786,50 +723,6 @@ def _make_noisy_linear_forward(linear_module: nn.Linear, scaling_factor: int, di
     return noisy_forward
 
 
-def _make_noisy_conv1d_forward(conv1d, scaling_factor: int, distribution: str = "encoding"):
-    """Weight-noise forward for HuggingFace GPT-2 ``Conv1D`` (weight shape ``[in, out]``)."""
-    def noisy_forward(hidden_states):
-        if hidden_states is None:
-            return hidden_states
-        noisy_weight = add_gaussian_weight_noise(
-            conv1d.weight,
-            scaling_factor=scaling_factor,
-            distribution=distribution,
-        )
-        noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
-        bias = conv1d.bias
-        if bias is not None:
-            bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
-        size_out = hidden_states.size()[:-1] + (conv1d.nf,)
-        out = torch.addmm(
-            bias,
-            hidden_states.view(-1, hidden_states.size(-1)),
-            noisy_weight,
-        )
-        return out.view(size_out)
-    return noisy_forward
-
-
-def _make_noisy_projection_forward(module, scaling_factor: int, distribution: str = "encoding"):
-    """Dispatch to the right noisy-forward builder depending on module type."""
-    if _is_gpt2_conv1d(module):
-        return _make_noisy_conv1d_forward(module, scaling_factor, distribution)
-    return _make_noisy_linear_forward(module, scaling_factor, distribution)
-
-
-# ============================================================================
-# BLB Block 1 噪声注入 ── 范围：从前一层 GELU 输出到本层 post-FFN LayerNorm
-# 中 rsqrt 之前。共 8 个噪声注入点（4 必选 + 4 可选 rescale）。
-#
-# 对应 noise_targets_registry.py 里的：
-#   ffn.output_proj
-#   ffn.layernorm.head.{mean_smul, square_ctct, var_smul}
-# 以及 Gelu_out (Block 1 入口) 对应的 input-on-tensor 噪声。
-#
-# 默认 N=8192（按 BLB Figure 10 / 用户手绘图标注），但 N、scaling factor 都
-# 走 NOISE_VARIANCE_TABLE_BY_N 查表，**不写死**，后续可动态调整。
-# ============================================================================
-
 @dataclass
 class NoisePoint:
     """单个噪声注入点的参数三元组：(distribution, scaling_factor, N)。
@@ -837,9 +730,9 @@ class NoisePoint:
     实际 σ² 由 ``get_input_noise_variance_by_N(scaling_factor, distribution, N)``
     查 ``NOISE_VARIANCE_TABLE_BY_N`` 得到，不写死。
     """
-    distribution: str       # "encoding" / "fresh" / "rescale"
-    scaling_factor: int     # 10..46，对应 NOISE_VARIANCE_TABLE_BY_N 的 key
-    N: int = 8192           # 8192 / 16384
+    distribution: str
+    scaling_factor: int
+    N: int = 8192
 
 
 @dataclass
@@ -869,26 +762,21 @@ class Block1NoiseConfig:
     mean_result_rescale: Optional[NoisePoint] = None
     square_result_rescale: Optional[NoisePoint] = None
     var_result_rescale: Optional[NoisePoint] = None
-    # False keeps the Block 1 arithmetic clean while retaining the same
-    # configurable truncation point.  Layer 0 uses this K-only mode.
+
+
     noise_enabled: bool = True
-    # PPTI MPC↔HE 转换的小数截断：施加在 Block 1 末尾（var, rsqrt 之前）。
-    # k=None ⇒ 不截断。
+
+
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
     output_truncation_source_fractional_bits: int = 24
-    # Rotation (KS / galois automorphism) 噪声候选点：
-    #   #1 紧跟 gelu_out fresh 之后（绑定 fresh 的 SF）
-    #   #2 紧跟 W_ffn2·X 的 rescale 之后（绑定 wffn2_result_rescale 的 SF）
-    #   #3 紧跟 #2 之后（也绑定 wffn2_result_rescale 的 SF，连续两次）
-    #   #4 紧跟 (X−μ)² 的 rescale 之后（绑定 square_result_rescale 的 SF）
-    # 取值：True ⇒ 在该位置加 rotation 噪声，SF/N 自动继承绑定源；
-    #       False ⇒ 不加。绑定源为 None 时即便置 True 也不加（无 SF 可继承）。
+
+
     rotation_after_gelu_out_fresh: bool = False
     rotation_after_wffn2_rescale_a: bool = False
     rotation_after_wffn2_rescale_b: bool = False
-    rotation_after_square_rescale: bool = False  # "binary" / "decimal"
+    rotation_after_square_rescale: bool = False
     rotation_repeat_counts: dict = field(default_factory=dict)
 
 
@@ -945,14 +833,6 @@ def make_block1_default_config(
         cfg.var_result_rescale = NoisePoint("rescale", int(var_rescale_sf), int(N))
     return cfg
 
-
-# ---------------------------------------------------------------------------
-# Rotation (KS / galois automorphism) 噪声辅助
-# ---------------------------------------------------------------------------
-# rotation 噪声的 scaling factor 不由它本身决定，而是绑定到它前面紧接着的
-# fresh / rescale 噪声的 SF。``_make_rotation_point`` 把一个 fresh/rescale
-# 的 NoisePoint 转成同 SF / 同 N、distribution="rotation" 的 NoisePoint。
-# 实际查表落在 ``NOISE_VARIANCE_TABLE_BY_N[N][SF]["rotation"]`` 那一列上。
 
 def _make_rotation_point(source: Optional[NoisePoint]) -> Optional[NoisePoint]:
     """把绑定的 fresh/rescale NoisePoint 转成 rotation NoisePoint。
@@ -1052,23 +932,6 @@ def _apply_rotation_noise(
     return value
 
 
-# ============================================================================
-# BLB Block 2 噪声注入 ── 范围：post-FFN LN tail (rsqrt → normalize → γ scale)
-#                          + Wq / Wk 投影 + Q·K^T 之前的 BSGS mask
-#
-# 与 Block 1 相同的设计原则：
-#   * 所有 σ² 走 NOISE_VARIANCE_TABLE_BY_N[N][scale_bits][dist] 查表，**不写死**。
-#   * 默认 N=16384（按 BLB Figure 10），可由 cfg 动态调整。
-#   * encode / fresh 必加；rescale 全部可选 (None = 该处不加 rescale)。
-#
-# 与 Block 1 / 现有 input-X 噪声的关系：
-#   * 旧的 ``replace_layer_input_noise`` 给 attention 入口 X 加 fresh 噪声 ──
-#     在 BLB Block 2 视角下不需要（X 的 PPTI 噪声来源于 LN tail γ 乘法的 rescale）。
-#     legacy 代码保留（stage2 RL 还要用），但 Block 2 install 不会主动激活它。
-#   * Block 1 head 与 Block 2 tail 共用同一个 ``layer.output.LayerNorm``，
-#     因此 ``NoisyBlock1LayerNorm`` 现在接受 ``block2_cfg`` 字段。
-# ============================================================================
-
 @dataclass
 class Block2NoiseConfig:
     """BLB Block 2 噪声配置。
@@ -1106,25 +969,25 @@ class Block2NoiseConfig:
     BLB 共享约束：q_proj / k_proj 共享 scaling factor（动作选择必须一致）。
     本 cfg 把它们做成独立字段以保证可观察性，调用方需自行保证 wq_encode == wk_encode。
     """
-    # ---- LN tail: rsqrt → normalize ----
+
     inv_std_fresh: NoisePoint
     x_centered_fresh: NoisePoint
-    # ---- LN tail: γ scale ----
+
     gamma_encode: NoisePoint
-    # ---- Wk branch ----
+
     wk_encode: NoisePoint
     kt_mask1_encode: NoisePoint
     kt_mask2_encode: NoisePoint
-    # ---- Wq branch ----
+
     wq_encode: NoisePoint
     q_mask1_encode: NoisePoint
     q_mask2_encode: NoisePoint
-    # ---- Wv branch ----
+
     wv_encode: NoisePoint
-    # ---- 合并 Q,K 过程 (Q·K^T 之后的 ones-mask) ----
+
     qkt_merge_mask_encode: NoisePoint
 
-    # ---- Optional rescale ----
+
     normalize_result_rescale: Optional[NoisePoint] = None
     gamma_result_rescale: Optional[NoisePoint] = None
     wk_result_rescale: Optional[NoisePoint] = None
@@ -1136,18 +999,14 @@ class Block2NoiseConfig:
     wv_result_rescale: Optional[NoisePoint] = None
     qkt_matmul_result_rescale: Optional[NoisePoint] = None
     qkt_merge_mask_result_rescale: Optional[NoisePoint] = None
-    # PPTI MPC↔HE 截断：Block 2 末尾（合并 Q,K mask 之后的 attention_scores）。
-    # 即便首层 Block 2 前半部分缺失，本截断仍照常应用（Q·K^T 输出存在）。
+
+
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
     output_truncation_source_fractional_bits: int = 24
-    # Rotation 候选点（共 5 个位置 / 9 个 sub-slot）：
-    #   #1 γ·((X−μ)/std) rescale 之后                         （绑定 gamma_result_rescale）
-    #   #2 Wq/Wk/Wv·X rescale 之后（3 个独立分支）             （绑定各自的 *_result_rescale）
-    #   #3 第 1 个 mask·Q/K^T rescale 之后（仅 Q/K 分支，2 个）（绑定 q/kt_mask1_result_rescale）
-    #   #4 第 2 个 mask·Q/K^T rescale 之后（仅 Q/K 分支，2 个）（绑定 q/kt_mask2_result_rescale）
-    #   #5 Q·K^T matmul rescale 之后                          （绑定 qkt_matmul_result_rescale）
+
+
     rotation_after_gamma_rescale: bool = False
     rotation_after_wq_rescale: bool = False
     rotation_after_wk_rescale: bool = False
@@ -1174,7 +1033,7 @@ def make_block2_default_config(
         q_mask2_sf: int = 22,
         wv_sf: int = 22,
         qkt_merge_mask_sf: int = 22,
-        # rescale 全部可选；传 None = 不加
+
         normalize_rescale_sf: Optional[int] = None,
         gamma_rescale_sf: Optional[int] = None,
         wk_rescale_sf: Optional[int] = None,
@@ -1205,7 +1064,7 @@ def make_block2_default_config(
 
     默认 N=16384（BLB Block 2 推荐表）；也可以传 N=8192 等动态调整。
 
-    BLB 约束（用户应自行保证）：q_proj / k_proj 共享 scaling factor，
+    BLB invariant: q_proj and k_proj share one scaling factor,
     建议 ``wq_sf == wk_sf``。
     """
     cfg = Block2NoiseConfig(
@@ -1275,17 +1134,17 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
                 linear_module.weight,
                 linear_module.bias,
             )
-        # 1. fresh on Gelu_out
+
         x = _sample_and_add_gaussian_for_point(
             hidden_states, cfg.gelu_out_fresh,
         )
-        # 1b. rotation #1：紧跟 gelu_out fresh 之后；SF 继承自 gelu_out_fresh
+
         x = _apply_rotation_noise(
             x,
             cfg.gelu_out_fresh,
             _rotation_repeat_count(cfg, "rotation_after_gelu_out_fresh"),
         )
-        # 2. encode on W_ffn2
+
         weight = linear_module.weight
         noisy_weight = _sample_and_add_gaussian_for_point(
             weight, cfg.wffn2_encode,
@@ -1294,20 +1153,20 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=x.device, dtype=x.dtype)
-        # 3. linear
+
         out = nn.functional.linear(x, noisy_weight, bias)
-        # 4. rescale on result (optional)
+
         if cfg.wffn2_result_rescale is not None:
             out = _sample_and_add_gaussian_for_point(
                 out, cfg.wffn2_result_rescale,
             )
-            # 4b. rotation #2：紧跟 W_ffn2 rescale 之后；SF 继承自 wffn2_result_rescale
+
             out = _apply_rotation_noise(
                 out,
                 cfg.wffn2_result_rescale,
                 _rotation_repeat_count(cfg, "rotation_after_wffn2_rescale_a"),
             )
-            # 4c. rotation #3：紧跟 #2 之后；SF 同样来自 wffn2_result_rescale
+
             out = _apply_rotation_noise(
                 out,
                 cfg.wffn2_result_rescale,
@@ -1348,13 +1207,13 @@ class NoisyBlock1LayerNorm(nn.Module):
             cfg2: Optional["Block2NoiseConfig"] = None,
             ):
         super().__init__()
-        # 直接复用原 LN 的 Parameter，保持训练状态、device、dtype
+
         self.weight = original_ln.weight
         self.bias = original_ln.bias
         self.eps = float(original_ln.eps)
         self.normalized_shape = tuple(original_ln.normalized_shape)
-        self.cfg = cfg          # Block 1 cfg (head)
-        self.cfg2 = cfg2        # Block 2 cfg (tail)
+        self.cfg = cfg
+        self.cfg2 = cfg2
 
     def set_block2_cfg(self, cfg2: Optional["Block2NoiseConfig"]) -> None:
         """安装 / 覆盖 / 关闭（None）Block 2 LN-tail 噪声。"""
@@ -1368,47 +1227,44 @@ class NoisyBlock1LayerNorm(nn.Module):
             cfg is not None and bool(getattr(cfg, "noise_enabled", True))
         )
 
-        # ===================== Block 1: head =====================
-        # ===== mean = sum_x · (1/D) =====
-        sum_x = x.sum(dim=-1, keepdim=True)                            # [B, S, 1]
+
+        sum_x = x.sum(dim=-1, keepdim=True)
         if noise_enabled:
-            # encode on 1/D：模拟 CKKS 真实密文情况——
-            # 以操作数矩阵 x 同形 [B, S, H] 采样 encode 噪声 ε_{b,s,h}，
-            # 然后加标量 1/D（不再是同一个标量 ε）。
-            # 之后与 sum_x ([B, S, 1]) 按位乘（自动 broadcast），得到 [B, S, H] 的 noisy μ。
+
+
             noisy_inv_d = _sample_gaussian_for_point(x, cfg.mean_inv_d_encode)
             noisy_inv_d.add_(1.0 / D)
-            mean = sum_x * noisy_inv_d                                 # [B, S, H]，每 slot 独立噪声
+            mean = sum_x * noisy_inv_d
             if cfg.mean_result_rescale is not None:
                 mean = _sample_and_add_gaussian_for_point(
                     mean, cfg.mean_result_rescale,
                 )
         else:
-            # Block 1 未启用：clean LN head
+
             mean = sum_x / float(D)
 
-        # ===== (x − μ) =====
-        x_centered = x - mean                                          # [B, S, H] or [B, S, 1] mean
 
-        # ===== squaring =====
-        sq = x_centered * x_centered                                   # ct*ct: (x − μ)²，[B, S, H]
+        x_centered = x - mean
+
+
+        sq = x_centered * x_centered
         if noise_enabled and cfg.square_result_rescale is not None:
             sq = _sample_and_add_gaussian_for_point(
                 sq, cfg.square_result_rescale,
             )
-            # Block 1 rotation #4：紧跟 (X−μ)² rescale 之后；SF 继承自 square_result_rescale
+
             sq = _apply_rotation_noise(
                 sq,
                 cfg.square_result_rescale,
                 _rotation_repeat_count(cfg, "rotation_after_square_rescale"),
             )
 
-        # ===== variance = sum_sq · (1/D) =====
-        sum_sq = sq.sum(dim=-1, keepdim=True)                          # [B, S, 1]
+
+        sum_sq = sq.sum(dim=-1, keepdim=True)
         if noise_enabled:
             noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg.var_inv_d_encode)
             noisy_inv_d_var.add_(1.0 / D)
-            var = sum_sq * noisy_inv_d_var                             # [B, S, H]，每 slot 独立噪声
+            var = sum_sq * noisy_inv_d_var
             if cfg.var_result_rescale is not None:
                 var = _sample_and_add_gaussian_for_point(
                     var, cfg.var_result_rescale,
@@ -1416,22 +1272,17 @@ class NoisyBlock1LayerNorm(nn.Module):
         else:
             var = sum_sq / float(D)
 
-        # Block 1 末尾：PPTI MPC↔HE 截断（var = Block 1 输出，rsqrt 之前）
+
         if cfg is not None:
             var = _apply_configured_truncation(var, cfg)
 
-        # ===== Block 1 / Block 2 边界：rsqrt 非线性，无噪 =====
-        # 若 Block 1 噪声启用 → var 是 [B, S, H]，inv_std 也 [B, S, H]
-        # 若仅启用 K 或 Block 2 → var 是 [B, S, 1]，inv_std 也 [B, S, 1]
+
         inv_std = torch.rsqrt(var + self.eps)
 
-        # ===================== Block 2: tail =====================
+
         if cfg2 is not None:
-            # ----- (1) 1/std 与 X-μ 的 ct·ct 乘法（normalize 步） -----
-            # 模拟 CKKS：两个操作数都是 ciphertext，分别加 fresh 噪声后做 ewmulcc。
-            #   * x_centered 永远是 [B, S, H]（x 形状）。
-            #   * inv_std 在 Block 1 启用时为 [B, S, H]；Block 1 关闭时为 [B, S, 1]，
-            #     需要先 expand 到 [B, S, H] 才能保证每 slot 独立 fresh 噪声。
+
+
             if inv_std.shape != x.shape:
                 inv_std = inv_std.expand_as(x).contiguous()
             noisy_inv_std = _sample_and_add_gaussian_for_point(
@@ -1446,9 +1297,8 @@ class NoisyBlock1LayerNorm(nn.Module):
                     normalized, cfg2.normalize_result_rescale,
                 )
 
-            # ----- (2) γ 标量乘法（CKKS smulcp，按 1/D 一样的 broadcast 加噪方式） -----
-            # γ 形状 [H] → broadcast 到 [B, S, H]，每 slot 独立 encode 噪声后做 ewmulcp。
-            gamma_broadcast = self.weight.expand_as(normalized)        # [B, S, H]，view-only
+
+            gamma_broadcast = self.weight.expand_as(normalized)
             noisy_gamma = _sample_and_add_gaussian_for_point(
                 gamma_broadcast, cfg2.gamma_encode,
             )
@@ -1457,16 +1307,16 @@ class NoisyBlock1LayerNorm(nn.Module):
                 gamma_mul = _sample_and_add_gaussian_for_point(
                     gamma_mul, cfg2.gamma_result_rescale,
                 )
-                # Block 2 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
+
                 gamma_mul = _apply_rotation_noise(
                     gamma_mul,
                     cfg2.gamma_result_rescale,
                     _rotation_repeat_count(cfg2, "rotation_after_gamma_rescale"),
                 )
-            # +β 是 ctpt 加法，非乘法 → 不加噪
+
             out = gamma_mul + self.bias
         else:
-            # Block 2 未启用：clean LN tail
+
             normalized = x_centered * inv_std
             out = normalized * self.weight + self.bias
         return out
@@ -1485,7 +1335,7 @@ def _make_block2_qk_proj_forward(
     通过 ``_make_noisy_linear_forward`` 加 W 噪声的 PPTI 语义一致），但额外支持
     在 ``X · W`` 之后加 rescale 噪声（cfg.*_result_rescale 控制是否加）。
 
-    注意：这里**不**对输入 X 加 fresh 噪声 —— 按用户 Block 2 设定，X 的 fresh
+    This path does not add fresh noise to X. Block 2 receives X noise
     噪声在 LN tail γ 乘法的 rescale 那里就够了，旧的 ``replace_layer_input_noise``
     的 fresh-on-X 不再纳入 Block 2 框架（legacy 保留供 stage2 RL 使用）。
     """
@@ -1503,7 +1353,7 @@ def _make_block2_qk_proj_forward(
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
             out = _sample_and_add_gaussian_for_point(out, rescale_point)
-            # rotation：紧跟 rescale 之后；SF 继承自 rescale_point
+
             out = _apply_rotation_noise(
                 out, rescale_point, rotation_after_rescale,
             )
@@ -1531,63 +1381,43 @@ def _make_block2_qkt_merge_hook(
     返回 ``hook(attention_scores) -> attention_scores`` 形状 [B, A, S, S]。
     """
     def hook(qkt_result: Tensor) -> Tensor:
-        # 1. rescale on Q·K^T matmul 结果（可选）
+
         if qkt_matmul_rescale is not None:
             qkt_result = _sample_and_add_gaussian_for_point(
                 qkt_result, qkt_matmul_rescale,
             )
-            # Block 2 rotation #5：紧跟 Q·K^T matmul rescale 之后
+
             qkt_result = _apply_rotation_noise(
                 qkt_result,
                 qkt_matmul_rescale,
                 rotation_after_qkt_matmul_rescale,
             )
-        # 2. ⊙ ones-mask（CKKS ewmulcp）
+
         noisy_mask = _sample_gaussian_for_point(qkt_result, merge_mask_encode)
         noisy_mask.add_(1.0)
         out = qkt_result * noisy_mask
-        # 3. rescale on mask 乘法结果（可选）
+
         if merge_mask_rescale is not None:
             out = _sample_and_add_gaussian_for_point(
                 out, merge_mask_rescale,
             )
-        # 4. Block 2 末尾 truncation
+
         out = _apply_configured_truncation(out, truncation_cfg)
         return out
     return hook
 
 
-# ============================================================================
-# BLB Block 3 噪声注入 ── 范围：softmax exp 多项式近似 (1 + x/2^n)^(2^n)
-#
-# 与 Block 1/2 相同的设计原则：
-#   * 所有 σ² 走 NOISE_VARIANCE_TABLE_BY_N 查表，**不写死**。
-#   * encode / fresh 必加；rescale 全部可选。
-#   * N 默认按 degree 自动选 ── degree=2 → N=8192；degree∈{1,3,4,5,6} → N=16384。
-#     可由 cfg 显式覆盖（保持动态可调整）。
-#
-# Block 3 噪声点（degree=n 时共 1 fresh + 1 encode + (n+1) rescale）：
-#   1) fresh   on x_softmax （softmax 的输入 x，方式同 input X）
-#   2) encode  on 1/2^n     （broadcast 到 [B,A,S,S] 每 slot 独立，方式同 1/D / γ）
-#   3) rescale on x · (1/2^n) 乘法结果         （可选）
-#   4) iterative squaring n 次：每次 y = y² 之后加一个 rescale（可选）
-#
-# 注：1 + x·(1/2^n) 的 +1 是 ctpt 加法，不计乘法，无噪声。
-#     Block 3 末尾的 mask（x < lower_bound → 0）和 norm_div（rec + smulcc）
-#     都是非线性 / MPC 路径，不在 Block 3 的多项式噪声范围内。
-# ============================================================================
-
 @dataclass
 class Block3NoiseConfig:
     """BLB Block 3 噪声配置：softmax exp 多项式近似 (1 + x/2^n)^(2^n)"""
-    degree: int                         # softmax 近似度 n ∈ {1, 2, 3, 4, 5, 6}
-    x_fresh: NoisePoint                 # 必加：fresh on softmax 输入 x
-    inv_2n_encode: NoisePoint           # 必加：encode on 1/2^n broadcast
-    # (n+1) 个可选 rescale；None = 不加该处
-    x_inv_2n_result_rescale: Optional[NoisePoint] = None  # rescale on x · (1/2^n)
-    # 长度必须 == degree；每个元素 None 表示该次平方不加 rescale
+    degree: int
+    x_fresh: NoisePoint
+    inv_2n_encode: NoisePoint
+
+    x_inv_2n_result_rescale: Optional[NoisePoint] = None
+
     square_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
-    # PPTI MPC↔HE 截断：Block 3 末尾（最后一次 squaring 之后，softmax mask/norm_div 之前）
+
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
@@ -1776,7 +1606,7 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
     """
     degree = int(cfg.degree)
     inv_2n_value = 1.0 / float(2 ** degree)
-    sq_rescales = cfg.square_rescales  # tuple len == degree
+    sq_rescales = cfg.square_rescales
 
     def block3_approx_exp(x: Tensor) -> Tensor:
         truncation_scale = _configured_binary_truncation_fused_cuda_scale(
@@ -1794,26 +1624,26 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
                 cfg,
                 binary_already_applied=truncation_scale is not None,
             )
-        # 1. fresh on softmax 输入 x
+
         x = _sample_and_add_gaussian_for_point(x, cfg.x_fresh)
-        # 2. encode on 1/2^n（CKKS smulcp 的 plaintext-side 噪声；按 1/D / γ 同方式 per-slot）
+
         noisy_inv_2n = _sample_gaussian_for_point(x, cfg.inv_2n_encode)
         noisy_inv_2n.add_(inv_2n_value)
-        # 3. ewmulcp: x · (1/2^n)
+
         x_scaled = x * noisy_inv_2n
         if cfg.x_inv_2n_result_rescale is not None:
             x_scaled = _sample_and_add_gaussian_for_point(
                 x_scaled, cfg.x_inv_2n_result_rescale,
             )
-        # 4. 1 + x · (1/2^n)：ctpt 加法（不加噪）
+
         y = 1.0 + x_scaled
-        # 5. iterative squaring degree 次
+
         for k in range(degree):
-            y = y * y                                      # ewmulcc 自乘
+            y = y * y
             rs = sq_rescales[k] if k < len(sq_rescales) else None
             if rs is not None:
                 y = _sample_and_add_gaussian_for_point(y, rs)
-        # 6. Block 3 末尾 truncation
+
         y = _apply_configured_truncation(y, cfg)
         return y
 
@@ -1841,7 +1671,7 @@ def _make_block2_bsgs_mask_hook(
     全 1 mask 沿 tensor 形状广播。
     """
     def hook(tensor: Tensor) -> Tensor:
-        # ----- 第 1 步：tensor ⊙ (ones + ε_enc1) -----
+
         noisy_mask1 = _sample_gaussian_for_point(tensor, mask1_encode)
         noisy_mask1.add_(1.0)
         out = tensor * noisy_mask1
@@ -1850,7 +1680,7 @@ def _make_block2_bsgs_mask_hook(
             out = _apply_rotation_noise(
                 out, mask1_rescale, rotation_after_mask1_rescale,
             )
-        # ----- 第 2 步：out ⊙ (ones + ε_enc2) -----
+
         noisy_mask2 = _sample_gaussian_for_point(out, mask2_encode)
         noisy_mask2.add_(1.0)
         out = out * noisy_mask2
@@ -1862,49 +1692,6 @@ def _make_block2_bsgs_mask_hook(
         return out
     return hook
 
-
-# ============================================================================
-# BLB Block 4 噪声注入 ── 范围：softmax 输出 → softmax×V → Wo → post-attn LN head
-#                          （rsqrt 之前为止；rsqrt + tail 留给 Block 5）
-#
-# 与 Block 1/2/3 相同的设计原则：
-#   * 所有 σ² 走 NOISE_VARIANCE_TABLE_BY_N 查表，**不写死**。
-#   * encode / fresh 必加；rescale 全部可选。
-#   * 默认 N=16384（按用户 BLB 推荐），可由 cfg 动态调整。
-#
-# Block 4 噪声点（共 16 个 = 2 fresh + 6 encode + 8 rescale）：
-#
-#   (a) softmax 输出 mask 步：
-#         1) fresh   on softmax 输出 P
-#         2) encode  on ones-mask
-#         3) rescale on P · ones-mask 结果（可选）
-#
-#   (b) V mask 步：
-#         4) fresh   on V
-#         5) encode  on ones-mask
-#         6) rescale on V · ones-mask 结果（可选）
-#
-#   (c) softmax × V matmul + 合并 mask 步：
-#         7)  rescale on (P_masked · V_masked) matmul 结果（可选）
-#         8)  encode  on ones-mask
-#         9)  rescale on (softmax×V) · ones-mask 结果（可选）
-#
-#   (d) Wo 投影：
-#         10) encode  on W_o
-#         11) rescale on X · W_o 结果（可选；输出即 Att）
-#
-#   (e) post-attn LN head（与 Block 1 head 同结构，运算同 1/D 广播）：
-#         12) encode  on 1/D for μ
-#         13) rescale on μ（可选）
-#         14) rescale on (X − μ)²（可选）
-#         15) encode  on 1/D for variance
-#         16) rescale on variance（可选）
-#
-# 与 legacy ``_apply_softmax_value_noise`` 的关系：
-#   * Block 4 的 softmax_out 与 V hooks 接管 softmax×V 之前的噪声路径；
-#     install Block 4 时 ``_apply_softmax_value_noise`` 路径会被 short-circuit。
-#   * legacy 仍保留供 stage2 RL 使用。
-# ============================================================================
 
 @dataclass
 class Block4NoiseConfig:
@@ -1930,21 +1717,21 @@ class Block4NoiseConfig:
         ln_square_result_rescale:    rescale on post-attn LN (X−μ)²
         ln_var_result_rescale:       rescale on post-attn LN variance
     """
-    # ---- (a) softmax 输出 mask ----
+
     softmax_out_fresh: NoisePoint
     softmax_out_mask_encode: NoisePoint
-    # ---- (b) V mask ----
+
     v_fresh: NoisePoint
     v_mask_encode: NoisePoint
-    # ---- (c) softmax × V mask ----
+
     softmax_v_mask_encode: NoisePoint
-    # ---- (d) Wo ----
+
     wo_encode: NoisePoint
-    # ---- (e) post-attn LN head ----
+
     ln_mean_inv_d_encode: NoisePoint
     ln_var_inv_d_encode: NoisePoint
 
-    # ---- Optional rescale ----
+
     softmax_out_mask_rescale: Optional[NoisePoint] = None
     v_mask_rescale: Optional[NoisePoint] = None
     softmax_v_matmul_rescale: Optional[NoisePoint] = None
@@ -1953,18 +1740,13 @@ class Block4NoiseConfig:
     ln_mean_result_rescale: Optional[NoisePoint] = None
     ln_square_result_rescale: Optional[NoisePoint] = None
     ln_var_result_rescale: Optional[NoisePoint] = None
-    # PPTI MPC↔HE 截断：Block 4 末尾（post-attn LN var, rsqrt 之前）
+
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
     output_truncation_source_fractional_bits: int = 24
-    # Rotation 候选点（共 6 个）：
-    #   #1 softmax 输出·mask rescale 后  （绑定 softmax_out_mask_rescale）
-    #   #2 V·mask rescale 后             （绑定 v_mask_rescale）
-    #   #3 (P_masked·V_masked) matmul rescale 后 （绑定 softmax_v_matmul_rescale）
-    #   #4 (softmax×V)·ones-mask rescale 后      （绑定 softmax_v_mask_rescale）
-    #   #5 Att·Wo rescale 后             （绑定 wo_result_rescale）
-    #   #6 post-attn LN (X−μ)² rescale 后 （绑定 ln_square_result_rescale）
+
+
     rotation_after_softmax_out_mask_rescale: bool = False
     rotation_after_v_mask_rescale: bool = False
     rotation_after_softmax_v_matmul_rescale: bool = False
@@ -1985,7 +1767,7 @@ def make_block4_default_config(
         wo_sf: int = 22,
         ln_mean_inv_d_sf: int = 22,
         ln_var_inv_d_sf: int = 22,
-        # rescale 全部可选；传 None = 不加
+
         softmax_out_mask_rescale_sf: Optional[int] = None,
         v_mask_rescale_sf: Optional[int] = None,
         softmax_v_matmul_rescale_sf: Optional[int] = None,
@@ -2058,13 +1840,13 @@ def _make_block4_input_mask_hook(
     可选 rotation 紧跟 mask_rescale 之后；SF 继承自 mask_rescale_point。
     """
     def hook(tensor: Tensor) -> Tensor:
-        # 1. fresh on tensor
+
         out = _sample_and_add_gaussian_for_point(tensor, fresh_point)
-        # 2. ⊙ ones-mask (CKKS ewmulcp)
+
         noisy_mask = _sample_gaussian_for_point(out, mask_encode_point)
         noisy_mask.add_(1.0)
         out = out * noisy_mask
-        # 3. optional rescale + optional rotation
+
         if mask_rescale_point is not None:
             out = _sample_and_add_gaussian_for_point(
                 out, mask_rescale_point,
@@ -2088,7 +1870,7 @@ def _make_block4_softmax_v_hook(
     matmul rescale 与 mask rescale 各支持一个独立 rotation 选项，SF 继承自各自的 rescale。
     """
     def hook(tensor: Tensor) -> Tensor:
-        # 1. optional rescale on matmul 结果 + optional rotation
+
         if matmul_rescale is not None:
             tensor = _sample_and_add_gaussian_for_point(
                 tensor, matmul_rescale,
@@ -2096,11 +1878,11 @@ def _make_block4_softmax_v_hook(
             tensor = _apply_rotation_noise(
                 tensor, matmul_rescale, rotation_after_matmul_rescale,
             )
-        # 2. ⊙ ones-mask
+
         noisy_mask = _sample_gaussian_for_point(tensor, mask_encode)
         noisy_mask.add_(1.0)
         out = tensor * noisy_mask
-        # 3. optional rescale + optional rotation
+
         if mask_rescale is not None:
             out = _sample_and_add_gaussian_for_point(out, mask_rescale)
             out = _apply_rotation_noise(
@@ -2177,19 +1959,19 @@ class NoisyBlock4LayerNorm(nn.Module):
         self.cfg4 = cfg4
 
     def set_block5_cfg(self, cfg5) -> None:
-        """Block 5 cfg 占位接口；TBD 等用户给完 Block 5 spec 再激活。"""
+        """Install the Block 5 LayerNorm-tail configuration."""
         self.cfg5 = cfg5
 
     def forward(self, x: Tensor) -> Tensor:
         D = int(x.shape[-1])
         cfg4 = self.cfg4
 
-        # ===================== Block 4: head =====================
-        sum_x = x.sum(dim=-1, keepdim=True)                            # [B, S, 1]
+
+        sum_x = x.sum(dim=-1, keepdim=True)
         if cfg4 is not None:
             noisy_inv_d = _sample_gaussian_for_point(x, cfg4.ln_mean_inv_d_encode)
             noisy_inv_d.add_(1.0 / D)
-            mean = sum_x * noisy_inv_d                                 # [B, S, H]
+            mean = sum_x * noisy_inv_d
             if cfg4.ln_mean_result_rescale is not None:
                 mean = _sample_and_add_gaussian_for_point(
                     mean, cfg4.ln_mean_result_rescale,
@@ -2204,7 +1986,7 @@ class NoisyBlock4LayerNorm(nn.Module):
             sq = _sample_and_add_gaussian_for_point(
                 sq, cfg4.ln_square_result_rescale,
             )
-            # Block 4 rotation #6：紧跟 (X−μ)² rescale 之后；SF 继承自 ln_square_result_rescale
+
             sq = _apply_rotation_noise(
                 sq,
                 cfg4.ln_square_result_rescale,
@@ -2223,18 +2005,14 @@ class NoisyBlock4LayerNorm(nn.Module):
         else:
             var = sum_sq / float(D)
 
-        # Block 4 末尾：PPTI MPC↔HE 截断（var = Block 4 输出，rsqrt 之前）
+
         if cfg4 is not None:
             var = _apply_configured_truncation(var, cfg4)
 
-        # ===== Block 4 / Block 5 边界：rsqrt 非线性，无噪 =====
+
         inv_std = torch.rsqrt(var + self.eps)
 
-        # ===================== Block 5: tail =====================
-        # cfg5 提供则按 Block 5 LN tail 加噪：
-        #   1) inv_std / X−μ 各自 fresh + ewmulcc → optional rescale
-        #   2) γ broadcast 到 [B,S,H] + per-slot encode + ewmulcp → optional rescale
-        #   3) +β（ctpt 加法，无噪）
+
         cfg5 = self.cfg5
         if cfg5 is not None:
             if inv_std.shape != x.shape:
@@ -2259,7 +2037,7 @@ class NoisyBlock4LayerNorm(nn.Module):
                 gamma_mul = _sample_and_add_gaussian_for_point(
                     gamma_mul, cfg5.gamma_result_rescale,
                 )
-                # Block 5 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
+
                 gamma_mul = _apply_rotation_noise(
                     gamma_mul,
                     cfg5.gamma_result_rescale,
@@ -2272,48 +2050,12 @@ class NoisyBlock4LayerNorm(nn.Module):
         return out
 
 
-# ============================================================================
-# BLB Block 5 噪声注入 ── 范围：post-attn LN tail (rsqrt → normalize → γ scale)
-#                           + Wffn1 + GELU 多项式近似（degree-aware）
-#
-# 与 Block 1/2/3/4 相同的设计原则：
-#   * 所有 σ² 走 NOISE_VARIANCE_TABLE_BY_N 查表，**不写死**。
-#   * encode / fresh 必加；rescale 全部可选。
-#   * N 默认按 GELU degree 自动选 ── degree=1 → 8192；degree∈{2,4} → 16384。
-#     可由 cfg 显式覆盖（保持动态可调整）。
-#
-# Block 5 噪声点（抛开 GELU 部分共 2 fresh + 2 encode + 3 rescale）：
-#   (a) post-attn LN tail（结构与 Block 2 LN tail 完全一致）：
-#         1) fresh   on 1/std (Block 4→5 边界 ct)
-#         2) fresh   on (X − μ) (Block 4→5 边界 ct)
-#         3) encode  on γ (broadcast 到 [B, S, H] 后每 slot 独立)
-#         4) rescale on (1/std)·(X−μ) 乘法结果（可选）
-#         5) rescale on γ·normalize 乘法结果（可选）
-#
-#   (b) Wffn1 投影：
-#         6) encode  on W_ffn1
-#         7) rescale on X · W_ffn1 结果（可选；输出即 GELU 输入 x）
-#
-#   (c) GELU 多项式近似（degree-aware；用户已给定 degree ∈ {1, 2, 4}）：
-#         8) encode  on **所有多项式系数**（共享同一个 SF；每个系数独立采样噪声）
-#         9..) rescale on 每个 power 计算结果（x², x³, x⁴；degree-1 个）
-#         ..)  rescale on 每个系数乘以 power 的乘法结果（共 degree 个）
-#
-#       degree=1：power=0 个，coeff_mul=1 个 → +0 +1 = 1 rescale
-#       degree=2：power=1 个 (x²)，coeff_mul=2 个 (b·x, c·x²) → +1 +2 = 3 rescale
-#       degree=4：power=3 个 (x², x³=x²·x, x⁴=x²·x²)，coeff_mul=4 个 → +3 +4 = 7 rescale
-#
-# Block 5 GELU 系数 encode 共享 SF：cfg.gelu_coeff_encode 对每个系数独立采噪
-# （不是同一份噪声！相同分布参数、独立样本），与"每个 slot 独立"语义一致。
-# ============================================================================
-
 @dataclass
 class Block5NoiseConfig:
     """BLB Block 5 噪声配置。
 
     Block 5 范围：post-attn LN tail (rsqrt 之后) → Wffn1 → GELU 多项式近似。
-    GELU 部分支持 degree ∈ {0, 1, 2, 4}（按 BLB Figure 10 / 用户 spec）；
-    degree 0 = ReLU（block5_n0 graph，无多项式 GELU 噪声，只有 LN tail + Wffn1）。
+    GELU supports degree in {1, 2, 4}.
 
     必选 (2 fresh + 2 encode + 1 GELU coeff encode)：
         inv_std_fresh:        fresh   on 1/std (Block 4→5 边界 ct)
@@ -2349,17 +2091,16 @@ class Block5NoiseConfig:
     normalize_result_rescale: Optional[NoisePoint] = None
     gamma_result_rescale: Optional[NoisePoint] = None
     wffn1_result_rescale: Optional[NoisePoint] = None
-    # GELU 部分：长度由 degree 决定
+
     gelu_power_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
     gelu_coeff_mul_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
-    # PPTI MPC↔HE 截断：Block 5 末尾（GELU 多项式输出之后）
+
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
     output_truncation_source_fractional_bits: int = 24
-    # Rotation 候选点（共 2 个）：
-    #   #1 γ·((X−μ)/std) rescale 之后  （绑定 gamma_result_rescale）
-    #   #2 W_ffn1·X rescale 之后        （绑定 wffn1_result_rescale）
+
+
     rotation_after_gamma_rescale: bool = False
     rotation_after_wffn1_rescale: bool = False
     rotation_repeat_counts: dict = field(default_factory=dict)
@@ -2402,7 +2143,7 @@ def make_block5_default_config(
     if deg not in (0, 1, 2, 4):
         raise ValueError(f"Block 5 GELU degree 必须 ∈ {{0, 1, 2, 4}}, got {deg}")
     if N is None:
-        # degree 0 (ReLU) 与 degree 1 同属 8K base → N=8192；degree∈{2,4} → 16384
+
         N = 8192 if deg <= 1 else 16384
 
     cfg = Block5NoiseConfig(
@@ -2424,7 +2165,7 @@ def make_block5_default_config(
     if wffn1_rescale_sf is not None:
         cfg.wffn1_result_rescale = NoisePoint("rescale", int(wffn1_rescale_sf), int(N))
 
-    # degree 0 (ReLU) / degree 1 都没有 power rescale（degree-1 → 0；degree-0 → 0）
+
     expected_power_len = max(0, deg - 1)
     if not gelu_power_rescale_sfs:
         cfg.gelu_power_rescales = tuple(None for _ in range(expected_power_len))
@@ -2453,17 +2194,6 @@ def make_block5_default_config(
         )
     return cfg
 
-
-# ============================================================================
-# BLB 首次输入 X 的 fresh 噪声
-#
-# Block 2-5 是 transformer 各层间循环时的 block；它们覆盖了"前一层 LN tail
-# 输出 → Wq/Wk/Wv"这条路径上的噪声。但 transformer 第一次接受输入时，X
-# 是直接进入 layer 0 的 Wq/Wk/Wv 的（没有上一层 LN tail），所以缺一个对
-# 应位置的 fresh 噪声。这里专门补上：在指定层（默认 layer 0）的 forward
-# 入口加 fresh 噪声，与 legacy ``replace_layer_input_noise`` 同语义但走
-# ``NOISE_VARIANCE_TABLE_BY_N`` 多 N 表（保持与其它 BLB 噪声口径一致）。
-# ============================================================================
 
 def _make_blb_first_input_noise_forward(
         original_forward,
@@ -2506,7 +2236,7 @@ def _make_block5_wffn1_forward(
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
             out = _sample_and_add_gaussian_for_point(out, rescale_point)
-            # Block 5 rotation #2：紧跟 W_ffn1·X rescale 之后
+
             out = _apply_rotation_noise(
                 out, rescale_point, rotation_after_rescale,
             )
@@ -2677,7 +2407,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
          c) 非常数项 c_k * x^k：乘法后加可选 rescale（按 cfg5.gelu_coeff_mul_rescales[k-1]）。
       3. 用 mask 选段，与原 PolynomialGELU.forward 一致。
     """
-    coeff_dict = original_gelu.coeff   # {0: pos_coeffs, 1: neg_coeffs}（与 GELU_COEEF[degree] 同型）
+    coeff_dict = original_gelu.coeff
     degree = int(original_gelu.degree)
     cfg_degree = int(cfg5.gelu_degree)
     if degree != cfg_degree:
@@ -2701,12 +2431,12 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
                 x2 = _sample_and_add_gaussian_for_point(x2, rs)
             powers[2] = x2
         if degree >= 4:
-            x3 = powers[2] * x          # x^3 = x² · x
+            x3 = powers[2] * x
             rs = pwr_rs[1] if len(pwr_rs) > 1 else None
             if rs is not None:
                 x3 = _sample_and_add_gaussian_for_point(x3, rs)
             powers[3] = x3
-            x4 = powers[2] * powers[2]  # x^4 = x² · x²
+            x4 = powers[2] * powers[2]
             rs = pwr_rs[2] if len(pwr_rs) > 2 else None
             if rs is not None:
                 x4 = _sample_and_add_gaussian_for_point(x4, rs)
@@ -2716,7 +2446,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
     def _compute_polynomial(powers, coeffs_for_piece, x_ref: Tensor) -> Tensor:
         """c_0 + c_1·x + c_2·x² + ... + c_n·x^n, 每个系数 encode + 每个乘法 rescale。"""
         if len(coeffs_for_piece) != degree + 1:
-            # GELU_COEEF[degree] 期望长度 = degree + 1
+
             raise RuntimeError(
                 f"coeff piece 长度 {len(coeffs_for_piece)} != degree+1 = {degree+1}"
             )
@@ -2726,7 +2456,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
             noisy_coeff = _sample_gaussian_for_point(x_ref, cfg5.gelu_coeff_encode)
             noisy_coeff.add_(coeff_value)
             if k == 0:
-                # 常数项：仅 encode，不乘 power（c_0 · 1 = c_0），无 rescale
+
                 term = noisy_coeff
             else:
                 term = powers[k] * noisy_coeff
@@ -2754,48 +2484,46 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
                 binary_already_applied=truncation_scale is not None,
             )
         powers = _compute_powers(x)
-        # 两段多项式（共享 powers）：负段 sign=1，正段 sign=0
-        y1 = _compute_polynomial(powers, coeff_dict[1], x)   # [-2.7, 0)
-        y2 = _compute_polynomial(powers, coeff_dict[0], x)   # [0, 2.7]
+
+        y1 = _compute_polynomial(powers, coeff_dict[1], x)
+        y2 = _compute_polynomial(powers, coeff_dict[0], x)
         out = _select_piecewise_gelu_output(x, y1, y2)
-        # Block 5 末尾 truncation（GELU 输出之后）
+
         out = _apply_configured_truncation(out, cfg5)
         return out
 
     return block5_gelu_forward
 
 
-# tensor polynomial approximation
 _GELU_PAIRED_POLY_MIN_NUMEL = 12_000_000
 
 
 def polynomial(x, coeff, sign):
-    # x: Tensor, 可能在 cuda:0 或 cpu
+
     device = x.device
     dtype  = x.dtype
 
-    # 1. 生成 x 的幂
+
     powers = torch.stack([x.pow(i) for i in range(len(coeff[sign]))], dim=-1)
 
-    # 2. 在同一设备上创建系数 Tensor
+
     coeff_tensor = torch.tensor(
         coeff[sign],
         device=device,
         dtype=dtype
     )
 
-    # 3. 按维度相乘求和
+
     return (powers * coeff_tensor).sum(dim=-1)
 
 class PolynomialGELU(nn.Module):
     """可逆的三次多项式GELU近似"""
     def __init__(self, degree=4):
         super().__init__()
-        self.coeff = GELU_COEEF[degree]  # 正向系数
+        self.coeff = GELU_COEEF[degree]
         self.degree = degree
-        # Lazily-built {(sign, device, dtype): coeff Tensor}. Plain dict (not a
-        # registered buffer) so it stays out of state_dict; keyed by device so a
-        # module moved to a new device rebuilds correctly.
+
+
         self._coeff_cache = {}
         self._paired_coeff_cache = {}
 
@@ -2808,8 +2536,8 @@ class PolynomialGELU(nn.Module):
         return t
 
     def _poly(self, x: Tensor, sign: int) -> Tensor:
-        # Evaluate in coefficient order to stay close to the old stacked-powers
-        # fp32 rounding while avoiding the (degree+1)-wide powers tensor.
+
+
         coeff_tensor = self._coeff_tensor(sign, x.device, x.dtype)
         n = coeff_tensor.shape[0]
         if n == 1:
@@ -2858,7 +2586,7 @@ class PolynomialGELU(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
 
         if self.degree == 0:
-            # Degree 0: skip piecewise comparison, directly use [-2.7, 0] interval polynomial
+
             return self._poly(x, 1)
 
         if (
@@ -2873,10 +2601,10 @@ class PolynomialGELU(nn.Module):
             y2 = self._poly(x, 0)
         out = _select_piecewise_gelu_output(x, y1, y2)
 
-        # print(f"X : {x}, Y : {out}, OriginGelu: {origin}")
+
         return out
-    
-# change BertsdpaAttention to normal self attention and change its softmax
+
+
 class BertSelfAttentionWithAproximation(BertSelfAttention):
     """BertSelfAttention with softmax approximation"""
     def __init__(self, config, degree, lower_bound, position_embedding_type=None, layer_idx=None):
@@ -2897,47 +2625,34 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         if position_embedding_type is not None:
             self.position_embedding_type = position_embedding_type
         self.layer_idx = layer_idx
-        self.degree = degree 
+        self.degree = degree
         self.lower_bound = lower_bound
         self._softmax_value_noise_state = None
 
     def approximation_exponential(self, x: torch.Tensor) -> torch.Tensor:
-        """近似计算指数函数""" # degree = 1,2,3,4,5,6
-        # (1 + x/2^d)^(2^d) via d sequential squarings instead of a scalar
-        # powf kernel: same value (integer-exponent semantics, negative bases
-        # included; overflow still saturates to inf and is discarded by the
-        # caller's lower-bound mask), ~degree cheap mul kernels instead of one
-        # expensive powf pass. Unit-locked against torch.pow in
-        # tests/test_stage1_eval_accel.py.
+        """近似计算指数函数"""
+
+
         t = 1 + x / (2 ** self.degree)
         for _ in range(self.degree):
             t = t * t
         return t
 
 
-    # do approximation softmax
     def approximation_softmax(self, x: torch.Tensor) -> torch.Tensor:
         """使用指数近似计算softmax"""
-        # print("do approximation softmax")
-        # 计算指数近似,  < lower bound的exp值为0 
-        # need to be optimized
-        # (degree, lower_bound) -> (1, -2), (2, -4), (3, -10), (4, -13), (5, -13), (6, -13)
-        x = x - x.max(dim=-1, keepdim=True)[0] + 1e-9  # 数值稳定处理
-        # print(f"This is x: {x}")
-        # print(torch.isnan(x).any(), torch.isinf(x).any())  # 检测异常值
-        # print(x.abs().max())  # 确认数值量级
+
+
+        x = x - x.max(dim=-1, keepdim=True)[0] + 1e-9
+
 
         exp_approx = self.approximation_exponential(x)
         exp_out = torch.where(x < self.lower_bound, 0.0, exp_approx)
         sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
-        # print(f"this is exp_out: {exp_out}; this is sum_exp: {sum_exp}")
-        return exp_out / sum_exp  # 统一使用掩码后结果
 
-    # error construction
-    # def error_construction(self, scales: torch.Tensor) -> torch.Tensor:
-    #     absolute_error = torch.
-        
-    
+        return exp_out / sum_exp
+
+
     def _looks_like_attention_mask(self, value) -> bool:
         return torch.is_tensor(value) and value.dim() >= 2
 
@@ -2974,8 +2689,8 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         *args,
         **kwargs,
     ):
-       # Follow the current transformers BERT attention flow and replace
-       # only the softmax step with the approximation variant.
+
+
         encoder_attention_mask = kwargs.pop("encoder_attention_mask", None)
         past_key_value = kwargs.pop("past_key_value", None)
         past_key_values = kwargs.pop("past_key_values", None)
@@ -3019,8 +2734,8 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
                 and encoder_attention_mask is None
                 and self._looks_like_attention_mask(candidate)
             ):
-                # Some legacy positional paths may still include a placeholder
-                # encoder-attention mask slot even for encoder-only BERT.
+
+
                 encoder_attention_mask = candidate
                 if tail_pos < len(tail):
                     candidate = tail[tail_pos]
@@ -3046,7 +2761,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
             batch_size, -1, self.num_attention_heads, self.attention_head_size
         ).transpose(1, 2)
 
-        # BLB Block 2: Q BSGS-style mask 模拟（在 Q·K^T 之前对 Q 做两步 ewmulcp）
+
         block2_q_hook = getattr(self, "_block2_q_bsgs_hook", None)
         if block2_q_hook is not None:
             query_layer = block2_q_hook(query_layer)
@@ -3096,16 +2811,14 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
                     key_layer = torch.cat([curr_past_key_value[0], key_layer], dim=2)
                     value_layer = torch.cat([curr_past_key_value[1], value_layer], dim=2)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        # BLB Block 2: K^T BSGS-style mask 模拟（在 Q·K^T 之前对 K^T 做两步 ewmulcp）
+
         kt = key_layer.transpose(-1, -2)
         block2_kt_hook = getattr(self, "_block2_kt_bsgs_hook", None)
         if block2_kt_hook is not None:
             kt = block2_kt_hook(kt)
         attention_scores = torch.matmul(query_layer, kt)
 
-        # BLB Block 2: 合并 Q,K 过程
-        # （Q·K^T matmul 结果上加 rescale + 一次 ones-mask ewmulcp + 结果 rescale）
+
         block2_qkt_merge_hook = getattr(self, "_block2_qkt_merge_hook", None)
         if block2_qkt_merge_hook is not None:
             attention_scores = block2_qkt_merge_hook(attention_scores)
@@ -3122,7 +2835,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
             distance = position_ids_l - position_ids_r
 
             positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
-            positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+            positional_embedding = positional_embedding.to(dtype=query_layer.dtype)
 
             if self.position_embedding_type == "relative_key":
                 relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
@@ -3134,25 +2847,20 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+
             attention_scores = attention_scores + attention_mask
 
-        # Changed Softmax approximation
-        # attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+
         attention_probs = self.approximation_softmax(attention_scores)
 
-        
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
+
         attention_probs = self.dropout(attention_probs)
 
-        # Mask heads if we want to
+
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
 
-        # BLB Block 4: softmax 输出 / V 路径噪声。
-        # 装了 Block 4 hook 时 short-circuit 掉 legacy ``_apply_softmax_value_noise``
-        # （fresh-on-attn_probs / fresh-on-V）。legacy 仍保留供 stage2 RL 使用。
+
         block4_softmax_out_hook = getattr(self, "_block4_softmax_out_hook", None)
         block4_v_hook = getattr(self, "_block4_v_hook", None)
         if block4_softmax_out_hook is not None or block4_v_hook is not None:
@@ -3172,7 +2880,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
             )
         context_layer = torch.matmul(context_attention_probs, context_value_layer)
 
-        # BLB Block 4: softmax×V matmul 之后的 rescale + ones-mask + rescale
+
         block4_softmax_v_hook = getattr(self, "_block4_softmax_v_hook", None)
         if block4_softmax_v_hook is not None:
             context_layer = block4_softmax_v_hook(context_layer)
@@ -3184,154 +2892,20 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
         return outputs
 
-# ---------------------------------------------------------------------------
-# GPT-2 Softmax 近似: 通过 monkey-patch eager_attention_forward 实现
-# ---------------------------------------------------------------------------
-
-def _approx_exponential(x: torch.Tensor, degree: int) -> torch.Tensor:
-    """Taylor 展开近似 exp(x), degree 控制精度.
-
-    与 ``BertSelfAttentionWithAproximation.approximation_exponential`` 同型:
-    repeated squaring 替代标量 powf 内核（同值, 更快）。
-    """
-    t = 1 + x / (2 ** degree)
-    for _ in range(degree):
-        t = t * t
-    return t
-
-
-def _approx_softmax(x: torch.Tensor, degree: int, lower_bound: float) -> torch.Tensor:
-    """使用指数近似计算 softmax, 与 BertSelfAttentionWithAproximation 保持一致."""
-    x = x - x.max(dim=-1, keepdim=True)[0] + 1e-9
-    exp_approx = _approx_exponential(x, degree)
-    exp_out = torch.where(x < lower_bound, 0.0, exp_approx)
-    sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
-    return exp_out / sum_exp
-
-
-def _make_gpt2_approx_attn_forward(attn_module, degree: int, lower_bound: float):
-    """构造一个替代 GPT2Attention.forward 的函数, 将 softmax 替换为近似版本.
-
-    该函数完整复制 HuggingFace eager_attention_forward 的计算逻辑,
-    唯一区别是把 ``nn.functional.softmax(attn_weights, dim=-1)`` 换成
-    ``_approx_softmax(attn_weights, degree, lower_bound)``.
-    """
-    original_forward = attn_module.forward
-
-    def _approx_eager_attention(module, query, key, value,
-                                attention_mask, head_mask=None, **kwargs):
-        attn_weights = torch.matmul(query, key.transpose(-1, -2))
-        if module.scale_attn_weights:
-            attn_weights = attn_weights / torch.full(
-                [], value.size(-1) ** 0.5,
-                dtype=attn_weights.dtype, device=attn_weights.device,
-            )
-        if getattr(module, "scale_attn_by_inverse_layer_idx", False):
-            attn_weights = attn_weights / float(module.layer_idx + 1)
-        if not module.is_cross_attention:
-            query_length, key_length = query.size(-2), key.size(-2)
-            causal_mask = module.bias[:, :, key_length - query_length:key_length, :key_length]
-            mask_value = torch.finfo(attn_weights.dtype).min
-            mask_value = torch.full(
-                [], mask_value, dtype=attn_weights.dtype, device=attn_weights.device,
-            )
-            attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
-        if attention_mask is not None:
-            causal_mask = attention_mask[:, :, :, :key.shape[-2]]
-            attn_weights = attn_weights + causal_mask
-        # ----- 核心替换: 使用近似 softmax -----
-        attn_weights = _approx_softmax(attn_weights, degree, lower_bound)
-        attn_weights = attn_weights.type(value.dtype)
-        attn_weights = module.attn_dropout(attn_weights)
-        if head_mask is not None:
-            attn_weights = attn_weights * head_mask
-        context_attn_weights, context_value = _apply_softmax_value_noise(
-            attn_weights,
-            value,
-            module,
-        )
-        attn_output = torch.matmul(context_attn_weights, context_value)
-        attn_output = attn_output.transpose(1, 2)
-        return attn_output, attn_weights
-
-    def patched_forward(hidden_states, *args, **kwargs):
-        """替换 GPT2Attention.forward, 强制使用带近似 softmax 的 eager attention."""
-        # 保存原始 _attn_implementation, 临时强制 eager 模式
-        orig_impl = attn_module.config._attn_implementation
-        orig_reorder = attn_module.reorder_and_upcast_attn
-        attn_module.config._attn_implementation = "eager"
-        attn_module.reorder_and_upcast_attn = False
-        # 注入自定义 attention 函数
-        import transformers.models.gpt2.modeling_gpt2 as _gpt2_mod
-        _saved_fn = _gpt2_mod.eager_attention_forward
-        _gpt2_mod.eager_attention_forward = _approx_eager_attention
-        try:
-            result = original_forward(hidden_states, *args, **kwargs)
-        finally:
-            _gpt2_mod.eager_attention_forward = _saved_fn
-            attn_module.config._attn_implementation = orig_impl
-            attn_module.reorder_and_upcast_attn = orig_reorder
-        return result
-
-    return patched_forward
-
 
 class ReversibleLayerHandler:
-    """管理GELU/Softmax/噪声替换与恢复的工具类.
+    """Install and restore BERT approximation and BLB noise modules."""
 
-    支持两类 backbone:
-      * BERT 家族 (bert-base / bert-large, roberta): 依赖 ``attention.self.{query,key,value}``
-        / ``attention.output.dense`` / ``intermediate.dense`` / ``output.dense``
-        / ``intermediate.intermediate_act_fn`` 的模块路径.
-      * GPT-2 家族 (openai-community/gpt2): 使用融合的 ``attn.c_attn`` (Conv1D) +
-        ``attn.c_proj`` / ``mlp.c_fc`` / ``mlp.c_proj`` / ``mlp.act``.
-        由于 c_attn 把 Q/K/V 融合成一个 Conv1D, 这里通过一次性包装 c_attn.forward,
-        在单层上按需累加 q/k/v 各自的权重噪声.
-    """
 
-    # Layer-local path tables (relative to a single transformer block).
     _BERT_PATHS = {
         "gelu_act": "intermediate.intermediate_act_fn",
         "wo_dense": "attention.output.dense",
         "wffn1_dense": "intermediate.dense",
         "wffn2_dense": "output.dense",
     }
-    _GPT2_PATHS = {
-        "gelu_act": "mlp.act",
-        "wo_dense": "attn.c_proj",
-        "wffn1_dense": "mlp.c_fc",
-        "wffn2_dense": "mlp.c_proj",
-    }
-
-    @staticmethod
-    def _detect_arch(model) -> str:
-        """Return ``'gpt2'`` or ``'bert'`` based on top-level module layout."""
-        # GPT-2 style: has .transformer.h (list of GPT2Block)
-        transformer = getattr(model, "transformer", None)
-        if transformer is not None and hasattr(transformer, "h"):
-            return "gpt2"
-        # BERT / RoBERTa style
-        if hasattr(model, "bert") or hasattr(model, "roberta"):
-            return "bert"
-        # Fallback: inspect first layer attributes
-        for attr in ("bert", "roberta", "transformer"):
-            sub = getattr(model, attr, None)
-            if sub is None:
-                continue
-            layers = getattr(sub, "h", None) or getattr(getattr(sub, "encoder", None), "layer", None)
-            if layers is None or len(layers) == 0:
-                continue
-            first = layers[0]
-            if hasattr(first, "attn") and hasattr(first.attn, "c_attn"):
-                return "gpt2"
-            if hasattr(first, "attention") and hasattr(first.attention, "self"):
-                return "bert"
-        return "bert"
-
     def __init__(self, model):
         self.model = model
-        self._arch = self._detect_arch(model)
-        self._paths = self._GPT2_PATHS if self._arch == "gpt2" else self._BERT_PATHS
+        self._paths = self._BERT_PATHS
         self._resolved_layers_cache = {}
         self.original_gelu = {}
         self.original_attention = {}
@@ -3345,57 +2919,39 @@ class ReversibleLayerHandler:
             "wffn2": {},
         }
         self.original_softmax_value_noise = {}
-        # --- Approx-module reuse caches (Stage-1 GELU/Softmax degree search) ---
-        # During the Stage-1 degree search the BERT weights are frozen (only the
-        # GTrXL policy is trained) and the policy can only pick approximation
-        # degrees (GELU_MAP/SOFTMAX_MAP never expose the "original" sentinel -1),
-        # so replace_layer_softmax / replace_layer_gelu run every episode but
-        # restore_* never does. Rebuilding a fresh BertSelfAttentionWithAproximation
-        # per layer per episode (CPU kaiming-init of Q/K/V Linears + state_dict
-        # copy + device transfer) is pure overhead that cannot change the forward
-        # result, because a module that copied the frozen weights once stays
-        # bit-identical to one rebuilt every call. Cache the modules and only
-        # update the degree in place. Reuse is gated on the cached module still
-        # being "fresh-equivalent" (see _approx_attn_is_fresh_equivalent) so the
-        # BLB Stage-2 path — which installs extra per-instance hooks after
-        # replace_* — always falls back to the original reconstruct path.
+
+
         self.reuse_approx_modules = True
-        self._approx_softmax_cache = {}   # {layer_idx: BertSelfAttentionWithAproximation}
-        self._approx_gelu_cache = {}      # {(layer_idx, degree): PolynomialGELU}
-        self._approx_softmax_rebuilds = 0  # diagnostics: full reconstruct count
-        self._approx_gelu_rebuilds = 0     # diagnostics: full PolynomialGELU build count
-        # GPT-2 fused Q/K/V state: {layer_idx: {"query"/"key"/"value": (sf, distribution)}}
-        self._gpt2_qkv_state = {}
-        # Wrapped c_attn registry so we install the proxy forward only once per layer.
-        self._gpt2_qkv_wrapped = {}
-        # BLB Block 1 噪声安装状态：保存原始 forward / LayerNorm 模块 + 当前 cfg
-        self.original_block1_ffn2 = {}        # {layer_idx: original ffn2.forward (bound method)}
-        self.original_block1_layernorm = {}   # {layer_idx: original output.LayerNorm module}
-        self.block1_cfg_per_layer = {}        # {layer_idx: Block1NoiseConfig}
-        # BLB Block 2 噪声安装状态
-        self.original_block2_qproj = {}       # {layer_idx: original attention.self.query.forward}
-        self.original_block2_kproj = {}       # {layer_idx: original attention.self.key.forward}
-        self.original_block2_vproj = {}       # {layer_idx: original attention.self.value.forward}
-        self.block2_cfg_per_layer = {}        # {layer_idx: Block2NoiseConfig}
-        # BLB Block 3 噪声安装状态：approximation_exponential 是用 instance attribute
-        # 覆盖 class method 实现的；restore 时 delattr 即可。这里只记录哪些层装过，
-        # 以及当前 cfg 供 introspect 用。
-        self.block3_installed_layers = set()  # set of layer_idx
-        self.block3_cfg_per_layer = {}        # {layer_idx: Block3NoiseConfig}
-        # BLB Block 4 噪声安装状态
-        self.original_block4_wo = {}          # {layer_idx: original attention.output.dense.forward}
-        self.original_block4_post_attn_ln = {}  # {layer_idx: original attention.output.LayerNorm}
-        self.block4_cfg_per_layer = {}        # {layer_idx: Block4NoiseConfig}
-        # BLB Block 5 噪声安装状态
-        self.original_block5_wffn1 = {}       # {layer_idx: original intermediate.dense.forward}
-        self.original_block5_gelu = {}        # {layer_idx: original intermediate.intermediate_act_fn.forward}
-        self.block5_cfg_per_layer = {}        # {layer_idx: Block5NoiseConfig}
-        # BLB 首次输入 X 的 fresh 噪声（layer 0 进入 Wq/Wk/Wv 之前的 X，
-        # 因为没有上一层 LN tail，BLB 缺一个对应位置的 fresh）。
-        # {layer_idx: {"forward": original_layer_forward, "point": NoisePoint}}
+        self._approx_softmax_cache = {}
+        self._approx_gelu_cache = {}
+        self._approx_softmax_rebuilds = 0
+        self._approx_gelu_rebuilds = 0
+
+        self.original_block1_ffn2 = {}
+        self.original_block1_layernorm = {}
+        self.block1_cfg_per_layer = {}
+
+        self.original_block2_qproj = {}
+        self.original_block2_kproj = {}
+        self.original_block2_vproj = {}
+        self.block2_cfg_per_layer = {}
+
+
+        self.block3_installed_layers = set()
+        self.block3_cfg_per_layer = {}
+
+        self.original_block4_wo = {}
+        self.original_block4_post_attn_ln = {}
+        self.block4_cfg_per_layer = {}
+
+        self.original_block5_wffn1 = {}
+        self.original_block5_gelu = {}
+        self.block5_cfg_per_layer = {}
+
+
         self.blb_first_input_noise_state = {}
-        self.backup_model = copy.deepcopy(model)  # 完整模型备份
-    
+        self.backup_model = copy.deepcopy(model)
+
     @staticmethod
     def _approx_attn_is_fresh_equivalent(module) -> bool:
         """True iff ``module`` is bit-identical to a freshly constructed
@@ -3404,7 +2960,7 @@ class ReversibleLayerHandler:
         per-instance hooks. Only then is "reuse the cached module + update the
         degree" equivalent to reconstructing it from scratch."""
         if "approximation_exponential" in vars(module):
-            return False  # block-3 installed an instance-level exp override
+            return False
         if getattr(module, "_softmax_value_noise_state", None) is not None:
             return False
         for hook in ("_block2_q_bsgs_hook", "_block2_kt_bsgs_hook",
@@ -3422,7 +2978,7 @@ class ReversibleLayerHandler:
         return layers
 
     def replace_layer_gelu(self, layer_indices=None, layer_name="model.model.layers", degree=1):
-        """替换指定层的GELU函数 (BERT: intermediate.intermediate_act_fn; GPT-2: mlp.act)"""
+        """Replace GELU in selected BERT layers."""
         act_path = self._paths["gelu_act"]
         for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices:
@@ -3432,20 +2988,14 @@ class ReversibleLayerHandler:
                     }
                 orig_act = _get_attr_path(layer, act_path)
                 orig_training = getattr(orig_act, "training", layer.training)
-                # Reuse a cached PolynomialGELU for this (layer, degree). The
-                # module is stateless apart from a lazily-built coeff-tensor
-                # cache, so reusing it across episodes is bit-identical and skips
-                # rebuilding the coeff tensor on every forward. Keyed per
-                # (layer, degree) — not per degree — so modules stay un-shared
-                # across layers and the BLB block-5 per-instance forward wrap
-                # cannot leak between layers. Skip the cache if a wrap was
-                # installed (instance-level ``forward``).
+
+
                 cached = (self._approx_gelu_cache.get((i, degree))
                           if self.reuse_approx_modules else None)
                 if cached is not None and "forward" not in vars(cached):
                     new_act = cached
                 else:
-                    # degree 0 = ReLU（用 ReLU 替换 GELU）；其余 degree 用多项式 GELU。
+
                     new_act = nn.ReLU() if int(degree) == 0 else PolynomialGELU(degree=degree)
                     self._approx_gelu_rebuilds += 1
                     if self.reuse_approx_modules:
@@ -3454,41 +3004,18 @@ class ReversibleLayerHandler:
                 _set_attr_path(layer, act_path, new_act)
 
         print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
-    
+
     def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
-        """替换指定层的Softmax函数 (BERT: 替换 BertSelfAttention; GPT-2: monkey-patch forward)"""
-        if self._arch == "gpt2":
-            lb = Exp_bound.get(degree)
-            if lb is None:
-                print(f"[ReversibleLayerHandler] 警告: degree={degree} 没有对应的 Exp_bound, 跳过 softmax 近似.")
-                return
-            for i, layer in enumerate(self._resolve_layers(layer_name)):
-                if i in layer_indices:
-                    if i not in self.original_attention:
-                        self.original_attention[i] = {
-                            'attention_forward': layer.attn.forward,
-                        }
-                    layer.attn.forward = _make_gpt2_approx_attn_forward(
-                        layer.attn, degree=degree, lower_bound=lb,
-                    )
-            print(f"已替换 {len(layer_indices)} 层的Softmax函数（GPT-2 approximate softmax, degree={degree}）")
-            return
+        """Replace softmax in selected BERT attention layers."""
         for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices:
-                # 保存原始函数引用
+
                 if i not in self.original_attention:
                     self.original_attention[i] = {
                         'attention': eval("layer."+ attention_name)
                     }
 
-                # Fast path: reuse the cached approx-attention module for this
-                # layer and only update its degree. Bit-identical to a fresh
-                # reconstruct because the BERT weights are frozen during the
-                # degree search, so the cached module (which copied them once)
-                # carries the same weight bits a reconstruct would re-copy.
-                # Gated on the cached module still being installed AND
-                # fresh-equivalent, so non-Stage-1 callers (BLB Stage-2 installs
-                # per-instance hooks after this) fall back to reconstruct.
+
                 cached = self._approx_softmax_cache.get(i) if self.reuse_approx_modules else None
                 if (cached is not None
                         and layer.attention.self is cached
@@ -3497,7 +3024,7 @@ class ReversibleLayerHandler:
                     cached.lower_bound = Exp_bound[degree]
                     continue
 
-                # 应用新函数 (full reconstruct — original behavior)
+
                 orig_self = layer.attention.self
                 orig_sd = orig_self.state_dict()
                 new_attn = BertSelfAttentionWithAproximation(
@@ -3519,7 +3046,7 @@ class ReversibleLayerHandler:
                     self._approx_softmax_cache[i] = new_attn
 
         print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
-    
+
     def replace_layer_input_noise(
             self,
             layer_indices=None,
@@ -3538,7 +3065,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # legacy / BLB 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="legacy")
 
         for i, layer in enumerate(layers):
@@ -3563,8 +3090,6 @@ class ReversibleLayerHandler:
         print(_format_noise_enable_message("input", len(selected), scaling_factor, distribution))
 
     def _get_attention_core_module(self, layer):
-        if self._arch == "gpt2":
-            return layer.attn
         return layer.attention.self
 
     def replace_layer_softmax_value_noise(
@@ -3587,7 +3112,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # legacy / BLB 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="legacy")
 
         state = {
@@ -3612,55 +3137,6 @@ class ReversibleLayerHandler:
             f"V sf={int(value_scaling_factor)}, distribution={str(distribution).lower()})"
         )
 
-    def _ensure_gpt2_qkv_wrapper(self, layer_idx, layer):
-        """Install a single proxy forward on this layer's ``attn.c_attn``.
-
-        The proxy reads ``self._gpt2_qkv_state[layer_idx]`` each forward pass and
-        adds per-slice weight noise (query / key / value) on top of the untouched
-        base Conv1D output. This keeps the three projection noises independent
-        even though GPT-2 stores them as a single fused Conv1D.
-        """
-        if layer_idx in self._gpt2_qkv_wrapped:
-            return
-        c_attn = layer.attn.c_attn  # HuggingFace Conv1D
-        original_forward = c_attn.forward
-        handler = self
-        hidden_size = c_attn.nf // 3
-
-        def proxy_forward(hidden_states, *args, **kwargs):
-            base = original_forward(hidden_states, *args, **kwargs)
-            state = handler._gpt2_qkv_state.get(layer_idx)
-            if not state:
-                return base
-            result = base.clone()
-            in_dim = hidden_states.size(-1)
-            for slot_name, slot_idx in (("query", 0), ("key", 1), ("value", 2)):
-                params = state.get(slot_name)
-                if params is None:
-                    continue
-                sf, dist = params
-                variance = get_input_noise_variance(int(sf), distribution=dist)
-                if variance <= 0.0:
-                    continue
-                std = math.sqrt(variance)
-                # 走独立噪声 RNG，不被外部 torch.manual_seed 污染
-                _gen = _get_noise_generator(hidden_states.device)
-                noise_w = torch.empty(
-                    in_dim, hidden_size,
-                    device=hidden_states.device,
-                    dtype=hidden_states.dtype,
-                ).normal_(0.0, std, generator=_gen)
-                noise_out = torch.matmul(hidden_states, noise_w)
-                start = slot_idx * hidden_size
-                end = start + hidden_size
-                result[..., start:end] = result[..., start:end] + noise_out
-            return result
-
-        c_attn.forward = proxy_forward
-        self._gpt2_qkv_wrapped[layer_idx] = {
-            "c_attn": c_attn,
-            "forward": original_forward,
-        }
 
     def _replace_attention_projection_noise(
             self,
@@ -3681,19 +3157,9 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # legacy / BLB 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="legacy")
 
-        # GPT-2 fused c_attn path: use a per-layer proxy and accumulate state.
-        if self._arch == "gpt2":
-            for i, layer in enumerate(layers):
-                if i not in selected:
-                    continue
-                self._ensure_gpt2_qkv_wrapper(i, layer)
-                state = self._gpt2_qkv_state.setdefault(i, {})
-                state[projection_name] = (int(scaling_factor), str(distribution).lower())
-            print(_format_noise_enable_message(projection_name, len(selected), scaling_factor, distribution))
-            return
 
         projection_store = self.original_projection_noise.setdefault(projection_name, {})
         for i, layer in enumerate(layers):
@@ -3737,7 +3203,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # legacy / BLB 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="legacy")
 
         projection_store = self.original_projection_noise.setdefault(store_key, {})
@@ -3752,7 +3218,7 @@ class ReversibleLayerHandler:
                     "forward": linear_module.forward,
                 }
 
-            linear_module.forward = _make_noisy_projection_forward(
+            linear_module.forward = _make_noisy_linear_forward(
                 linear_module,
                 scaling_factor=int(scaling_factor),
                 distribution=distribution,
@@ -3863,17 +3329,9 @@ class ReversibleLayerHandler:
                 _set_attr_path(layer, act_path, self.original_gelu[i]["act_fn"])
 
         print(f"已恢复 {len(layer_indices)} 层的原始GELU函数（original GELU function）")
-    
+
     def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
-        """恢复指定层的原始Softmax函数"""
-        if self._arch == "gpt2":
-            for i, layer in enumerate(self._resolve_layers(layer_name)):
-                if i in layer_indices and i in self.original_attention:
-                    original_fwd = self.original_attention[i].get('attention_forward')
-                    if original_fwd is not None:
-                        layer.attn.forward = original_fwd
-                    del self.original_attention[i]
-            return
+        """Restore softmax in selected BERT attention layers."""
         for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices and i in self.original_attention:
                 current_training = layer.attention.self.training
@@ -3881,7 +3339,7 @@ class ReversibleLayerHandler:
                 restored_attention.train(bool(current_training))
                 layer.attention.self = restored_attention
 
-   
+
     def restore_layer_input_noise(self, layer_indices=None, layer_name="model.model.layers"):
         """Restore original transformer-layer inputs for selected layers."""
         layers = self._resolve_layers(layer_name)
@@ -3928,20 +3386,6 @@ class ReversibleLayerHandler:
             selected = set(layer_indices)
             if not selected:
                 return
-
-        if self._arch == "gpt2":
-            for i in list(selected):
-                state = self._gpt2_qkv_state.get(i)
-                if state is None:
-                    continue
-                state.pop(projection_name, None)
-                if not state:
-                    self._gpt2_qkv_state.pop(i, None)
-                    # All three slots cleared — restore the base Conv1D forward
-                    wrapped = self._gpt2_qkv_wrapped.pop(i, None)
-                    if wrapped is not None:
-                        wrapped["c_attn"].forward = wrapped["forward"]
-            return
 
         projection_store = self.original_projection_noise.get(projection_name, {})
         for i, layer in enumerate(layers):
@@ -4021,9 +3465,7 @@ class ReversibleLayerHandler:
             layer_name=layer_name,
         )
 
-    # ------------------------------------------------------------------
-    # BLB Block 1：Wffn2 + post-FFN LN head 的完整噪声安装 / 恢复
-    # ------------------------------------------------------------------
+
     def replace_layer_block1_noise(
             self,
             layer_indices=None,
@@ -4056,10 +3498,6 @@ class ReversibleLayerHandler:
         的包装（因为 Block 1 是 ffn2 噪声的严格扩展）。如果想回到 legacy 模式，
         请先调用 ``restore_layer_block1_noise``。
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB Block 1 噪声目前仅支持 BERT 家族 (post-LN, layer.output.{dense,LayerNorm})。"
-            )
 
         if cfg is None:
             cfg = make_block1_default_config()
@@ -4072,30 +3510,30 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # BLB / legacy 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
             if i not in selected:
                 continue
 
-            # ---- 1. 包 layer.output.dense.forward (Wffn2 投影段) ----
+
             ffn2_module = layer.output.dense
             stored_forward = self.original_block1_ffn2.get(i)
-            # 仅在第一次（或重新挂载到不同模块）时记录 original
+
             if stored_forward is None or getattr(stored_forward, "__self__", None) is not ffn2_module:
                 self.original_block1_ffn2[i] = ffn2_module.forward
             ffn2_module.forward = _make_block1_ffn2_forward(ffn2_module, cfg)
 
-            # ---- 2. 替换 layer.output.LayerNorm 为 NoisyBlock1LayerNorm ----
+
             current_ln = layer.output.LayerNorm
             if i not in self.original_block1_layernorm:
-                # 仅在第一次时把 *真正原始的* LN 存下来
+
                 self.original_block1_layernorm[i] = current_ln
             source_ln = self.original_block1_layernorm[i]
             new_ln = NoisyBlock1LayerNorm(source_ln, cfg)
             new_ln.train(source_ln.training)
-            # 跟随原 LN 的 device / dtype
+
             try:
                 ref_param = source_ln.weight
                 new_ln = new_ln.to(device=ref_param.device, dtype=ref_param.dtype)
@@ -4103,7 +3541,7 @@ class ReversibleLayerHandler:
                 pass
             layer.output.LayerNorm = new_ln
 
-            # ---- 3. 记录 cfg ----
+
             self.block1_cfg_per_layer[i] = cfg
 
         rescale_summary = (
@@ -4151,9 +3589,7 @@ class ReversibleLayerHandler:
                 del self.original_block1_layernorm[i]
             self.block1_cfg_per_layer.pop(i, None)
 
-    # ------------------------------------------------------------------
-    # BLB Block 2：post-FFN LN tail + Wq/Wk/Wv + Q/K^T BSGS mask + 合并 Q,K
-    # ------------------------------------------------------------------
+
     def replace_layer_block2_noise(
             self,
             layer_indices=None,
@@ -4162,7 +3598,7 @@ class ReversibleLayerHandler:
             ):
         """安装 BLB Block 2 噪声（22 个注入点）。
 
-        Block 2 范围（按 BLB Figure 10 / 用户手绘图）：
+        Block 2 covers:
           (a) post-FFN LN tail：rsqrt 之后的 (1/std)·(X−μ) → γ scale
           (b) Wq / Wk / Wv 三路投影
           (c) Q / K^T 在 Q·K^T **之前**的两步 BSGS-style ones-mask ewmulcp
@@ -4215,10 +3651,6 @@ class ReversibleLayerHandler:
             input-X fresh 噪声；如果你之前装过 ``replace_layer_input_noise``，
             建议先 ``restore_*`` 再 install Block 2，避免双重加噪。
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB Block 2 噪声目前仅支持 BERT 家族 (attention.self.{q,k,v} + output.LayerNorm)。"
-            )
 
         if cfg is None:
             cfg = make_block2_default_config()
@@ -4231,20 +3663,20 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # BLB / legacy 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
             if i not in selected:
                 continue
 
-            # ---- 1. LN tail：把 cfg2 设到 NoisyBlock1LayerNorm 上 ----
+
             current_ln = layer.output.LayerNorm
             if isinstance(current_ln, NoisyBlock1LayerNorm):
-                # Block 1 已安装：直接 set cfg2
+
                 current_ln.set_block2_cfg(cfg)
             else:
-                # Block 1 未安装：把原 LN 包装为 NoisyBlock1LayerNorm(cfg=None, cfg2=cfg)
+
                 if i not in self.original_block1_layernorm:
                     self.original_block1_layernorm[i] = current_ln
                 source_ln = self.original_block1_layernorm[i]
@@ -4257,10 +3689,10 @@ class ReversibleLayerHandler:
                     pass
                 layer.output.LayerNorm = new_ln
 
-            # ---- 2. Wq / Wk / Wv 投影：encode on W + 可选 rescale on result ----
+
             attn_self = layer.attention.self
 
-            # 检查 attention.self 是否已被替换为带 hook 支持的近似版
+
             if not isinstance(attn_self, BertSelfAttentionWithAproximation):
                 raise RuntimeError(
                     f"layer {i} 的 attention.self 不是 BertSelfAttentionWithAproximation，"
@@ -4298,7 +3730,7 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 3. Q / K^T BSGS hooks ----
+
             attn_self._block2_q_bsgs_hook = _make_block2_bsgs_mask_hook(
                 cfg.q_mask1_encode, cfg.q_mask1_result_rescale,
                 cfg.q_mask2_encode, cfg.q_mask2_result_rescale,
@@ -4320,7 +3752,7 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 4. Q·K^T merge hook（含 Block 2 末尾 truncation 与 rotation #5） ----
+
             attn_self._block2_qkt_merge_hook = _make_block2_qkt_merge_hook(
                 cfg.qkt_matmul_result_rescale,
                 cfg.qkt_merge_mask_encode, cfg.qkt_merge_mask_result_rescale,
@@ -4330,7 +3762,7 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 5. 记录 cfg ----
+
             self.block2_cfg_per_layer[i] = cfg
 
         rescale_summary = (
@@ -4376,7 +3808,7 @@ class ReversibleLayerHandler:
             if i not in selected:
                 continue
 
-            # ---- 1. 还原 attention.self.{q,k,v}.forward ----
+
             attn_self = layer.attention.self
             if i in self.original_block2_qproj:
                 q_module = attn_self.query
@@ -4397,7 +3829,7 @@ class ReversibleLayerHandler:
                     v_module.forward = original_forward
                 del self.original_block2_vproj[i]
 
-            # ---- 2. 清除 hooks ----
+
             for hook_attr in (
                     "_block2_q_bsgs_hook",
                     "_block2_kt_bsgs_hook",
@@ -4409,26 +3841,24 @@ class ReversibleLayerHandler:
                     except AttributeError:
                         setattr(attn_self, hook_attr, None)
 
-            # ---- 3. LayerNorm tail：清除 cfg2 ----
+
             current_ln = layer.output.LayerNorm
             if isinstance(current_ln, NoisyBlock1LayerNorm):
                 if i in self.block1_cfg_per_layer:
-                    # Block 1 仍激活：保留 NoisyBlock1LayerNorm，只关闭 cfg2
+
                     current_ln.set_block2_cfg(None)
                 else:
-                    # Block 1 没装：把原 LN 还原回去
+
                     if i in self.original_block1_layernorm:
                         layer.output.LayerNorm = self.original_block1_layernorm[i]
                         del self.original_block1_layernorm[i]
                     else:
-                        # 异常状态，至少把 cfg2 关掉
+
                         current_ln.set_block2_cfg(None)
 
             self.block2_cfg_per_layer.pop(i, None)
 
-    # ------------------------------------------------------------------
-    # BLB Block 3：softmax exp 多项式近似 (1 + x/2^n)^(2^n)
-    # ------------------------------------------------------------------
+
     def replace_layer_block3_noise(
             self,
             layer_indices=None,
@@ -4456,10 +3886,6 @@ class ReversibleLayerHandler:
         前置条件：每层 attention.self 必须已是 ``BertSelfAttentionWithAproximation``
         （需先调用 ``replace_layer_softmax`` 安装 softmax 近似）。
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB Block 3 噪声目前仅支持 BERT 家族（依赖 BertSelfAttentionWithAproximation.approximation_exponential）。"
-            )
         if cfg is not None and cfg_per_layer is not None:
             raise ValueError("cfg 与 cfg_per_layer 互斥，二选一。")
 
@@ -4471,7 +3897,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # BLB / legacy 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="blb")
 
         installed_summary = []
@@ -4501,7 +3927,7 @@ class ReversibleLayerHandler:
                     f"但 Block3NoiseConfig.degree={this_cfg.degree} 不匹配"
                 )
 
-            # 用实例属性覆盖 class method approximation_exponential
+
             attn_self.approximation_exponential = _make_block3_approximation_exponential(this_cfg)
             self.block3_installed_layers.add(i)
             self.block3_cfg_per_layer[i] = this_cfg
@@ -4542,15 +3968,13 @@ class ReversibleLayerHandler:
                 continue
             if i in self.block3_installed_layers:
                 attn_self = layer.attention.self
-                # 删掉实例属性，让 class method 重新可见
+
                 if "approximation_exponential" in attn_self.__dict__:
                     del attn_self.__dict__["approximation_exponential"]
                 self.block3_installed_layers.discard(i)
             self.block3_cfg_per_layer.pop(i, None)
 
-    # ------------------------------------------------------------------
-    # BLB Block 4：softmax 输出 → softmax×V → Wo → post-attn LN head
-    # ------------------------------------------------------------------
+
     def replace_layer_block4_noise(
             self,
             layer_indices=None,
@@ -4581,10 +4005,6 @@ class ReversibleLayerHandler:
           * Block 4 的 Wo wrap 是 legacy wo wrap 的严格扩展（多了 result rescale）。
             install Block 4 时会**覆盖**之前的 wo wrap；restore 时回到原始 forward。
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB Block 4 噪声目前仅支持 BERT 家族。"
-            )
         if cfg is None:
             cfg = make_block4_default_config()
 
@@ -4596,7 +4016,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # BLB / legacy 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
@@ -4610,7 +4030,7 @@ class ReversibleLayerHandler:
                     f"无法安装 Block 4 hook。请先 replace_layer_softmax 安装 softmax 近似。"
                 )
 
-            # ---- 1. softmax 输出 / V / softmax×V hooks ----
+
             attn_self._block4_softmax_out_hook = _make_block4_input_mask_hook(
                 cfg.softmax_out_fresh, cfg.softmax_out_mask_encode, cfg.softmax_out_mask_rescale,
                 rotation_after_mask_rescale=_rotation_repeat_count(
@@ -4633,7 +4053,7 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 2. Wo 投影包装：encode on W_o + 可选 rescale on Att ----
+
             wo_module = layer.attention.output.dense
             stored_forward = self.original_block4_wo.get(i)
             if stored_forward is None or getattr(stored_forward, "__self__", None) is not wo_module:
@@ -4645,10 +4065,10 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 3. post-attn LN：替换为 NoisyBlock4LayerNorm ----
+
             current_ln = layer.attention.output.LayerNorm
             if isinstance(current_ln, NoisyBlock4LayerNorm):
-                # 已经是 NoisyBlock4LayerNorm（重复装 / Block 5 已先装）：仅更新 cfg4
+
                 current_ln.set_block4_cfg(cfg)
             else:
                 if i not in self.original_block4_post_attn_ln:
@@ -4707,7 +4127,7 @@ class ReversibleLayerHandler:
             if i not in selected:
                 continue
 
-            # ---- 1. 清除 attention.self 上的 hooks ----
+
             attn_self = layer.attention.self
             for hook_attr in (
                     "_block4_softmax_out_hook",
@@ -4720,7 +4140,7 @@ class ReversibleLayerHandler:
                     except AttributeError:
                         setattr(attn_self, hook_attr, None)
 
-            # ---- 2. 还原 Wo forward ----
+
             if i in self.original_block4_wo:
                 wo_module = layer.attention.output.dense
                 original_forward = self.original_block4_wo[i]
@@ -4728,14 +4148,14 @@ class ReversibleLayerHandler:
                     wo_module.forward = original_forward
                 del self.original_block4_wo[i]
 
-            # ---- 3. post-attn LN：清 cfg4 / 还原 ----
+
             current_ln = layer.attention.output.LayerNorm
             if isinstance(current_ln, NoisyBlock4LayerNorm):
                 if current_ln.cfg5 is not None:
-                    # Block 5 仍激活：保留 NoisyBlock4LayerNorm，只关 cfg4
+
                     current_ln.set_block4_cfg(None)
                 else:
-                    # Block 5 没装：把原 LN 还原回去
+
                     if i in self.original_block4_post_attn_ln:
                         layer.attention.output.LayerNorm = self.original_block4_post_attn_ln[i]
                         del self.original_block4_post_attn_ln[i]
@@ -4744,9 +4164,7 @@ class ReversibleLayerHandler:
 
             self.block4_cfg_per_layer.pop(i, None)
 
-    # ------------------------------------------------------------------
-    # BLB Block 5：post-attn LN tail + Wffn1 + GELU 多项式近似
-    # ------------------------------------------------------------------
+
     def replace_layer_block5_noise(
             self,
             layer_indices=None,
@@ -4781,10 +4199,6 @@ class ReversibleLayerHandler:
             cfg_per_layer: ``{layer_idx: Block5NoiseConfig}``；与 cfg 互斥
             （都不传 → 用 ``make_block5_default_config(gelu_degree=PolynomialGELU.degree)``）
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB Block 5 噪声目前仅支持 BERT 家族。"
-            )
         if cfg is not None and cfg_per_layer is not None:
             raise ValueError("cfg 与 cfg_per_layer 互斥，二选一。")
 
@@ -4796,7 +4210,7 @@ class ReversibleLayerHandler:
             if not selected:
                 return
 
-        # BLB / legacy 互斥校验
+
         self._check_blb_legacy_conflict(selected, installing="blb")
 
         installed_summary = []
@@ -4805,19 +4219,13 @@ class ReversibleLayerHandler:
                 continue
 
             gelu_module = layer.intermediate.intermediate_act_fn
-            # degree 0 = ReLU（replace_layer_gelu 装的是 nn.ReLU）：block5_n0 graph
-            # 没有多项式 GELU 节点，只装 LN tail + Wffn1 噪声，GELU forward 不包裹。
-            is_relu_layer = isinstance(gelu_module, nn.ReLU)
-            if is_relu_layer:
-                layer_degree = 0
-            elif isinstance(gelu_module, PolynomialGELU):
-                layer_degree = int(gelu_module.degree)
-            else:
+
+
+            if not isinstance(gelu_module, PolynomialGELU):
                 raise RuntimeError(
-                    f"layer {i} 的 intermediate.intermediate_act_fn 既不是 PolynomialGELU "
-                    f"也不是 nn.ReLU(degree 0)，无法安装 Block 5 噪声。"
-                    f"请先 replace_layer_gelu 安装多项式 GELU 或 ReLU。"
+                    f"layer {i} requires PolynomialGELU before Block 5 install"
                 )
+            layer_degree = int(gelu_module.degree)
 
             if cfg_per_layer is not None:
                 if i not in cfg_per_layer:
@@ -4834,7 +4242,7 @@ class ReversibleLayerHandler:
                     f"但 Block5NoiseConfig.gelu_degree={this_cfg.gelu_degree} 不匹配"
                 )
 
-            # ---- 1. post-attn LN tail：把 cfg5 设到 NoisyBlock4LayerNorm 上 ----
+
             current_ln = layer.attention.output.LayerNorm
             if isinstance(current_ln, NoisyBlock4LayerNorm):
                 current_ln.set_block5_cfg(this_cfg)
@@ -4851,7 +4259,7 @@ class ReversibleLayerHandler:
                     pass
                 layer.attention.output.LayerNorm = new_ln
 
-            # ---- 2. Wffn1 投影包装 ----
+
             wffn1_module = layer.intermediate.dense
             stored_forward = self.original_block5_wffn1.get(i)
             if stored_forward is None or getattr(stored_forward, "__self__", None) is not wffn1_module:
@@ -4863,14 +4271,11 @@ class ReversibleLayerHandler:
                 ),
             )
 
-            # ---- 3. GELU 多项式：替换 forward ----
-            # ReLU 层 (degree 0) 跳过 —— block5_n0 graph 无 GELU 多项式噪声节点，
-            # 不包裹 GELU forward（restore 时 original_block5_gelu 没该 key 也安全）。
-            if not is_relu_layer:
-                stored_gelu_forward = self.original_block5_gelu.get(i)
-                if stored_gelu_forward is None or getattr(stored_gelu_forward, "__self__", None) is not gelu_module:
-                    self.original_block5_gelu[i] = gelu_module.forward
-                gelu_module.forward = _make_block5_gelu_forward(gelu_module, this_cfg)
+
+            stored_gelu_forward = self.original_block5_gelu.get(i)
+            if stored_gelu_forward is None or getattr(stored_gelu_forward, "__self__", None) is not gelu_module:
+                self.original_block5_gelu[i] = gelu_module.forward
+            gelu_module.forward = _make_block5_gelu_forward(gelu_module, this_cfg)
 
             self.block5_cfg_per_layer[i] = this_cfg
             installed_summary.append((i, layer_degree))
@@ -4923,7 +4328,7 @@ class ReversibleLayerHandler:
             if i not in selected:
                 continue
 
-            # ---- 1. 还原 GELU forward ----
+
             if i in self.original_block5_gelu:
                 gelu_module = layer.intermediate.intermediate_act_fn
                 original_forward = self.original_block5_gelu[i]
@@ -4931,7 +4336,7 @@ class ReversibleLayerHandler:
                     gelu_module.forward = original_forward
                 del self.original_block5_gelu[i]
 
-            # ---- 2. 还原 Wffn1 forward ----
+
             if i in self.original_block5_wffn1:
                 wffn1_module = layer.intermediate.dense
                 original_forward = self.original_block5_wffn1[i]
@@ -4939,14 +4344,14 @@ class ReversibleLayerHandler:
                     wffn1_module.forward = original_forward
                 del self.original_block5_wffn1[i]
 
-            # ---- 3. post-attn LN：清 cfg5 / 还原 ----
+
             current_ln = layer.attention.output.LayerNorm
             if isinstance(current_ln, NoisyBlock4LayerNorm):
                 if current_ln.cfg4 is not None:
-                    # Block 4 仍激活：保留 NoisyBlock4LayerNorm，只关 cfg5
+
                     current_ln.set_block5_cfg(None)
                 else:
-                    # Block 4 没装：把原 LN 还原回去
+
                     if i in self.original_block4_post_attn_ln:
                         layer.attention.output.LayerNorm = self.original_block4_post_attn_ln[i]
                         del self.original_block4_post_attn_ln[i]
@@ -4955,13 +4360,7 @@ class ReversibleLayerHandler:
 
             self.block5_cfg_per_layer.pop(i, None)
 
-    # ------------------------------------------------------------------
-    # BLB 首次输入 X 的 fresh 噪声安装 / 还原（**DEPRECATED**）
-    # ------------------------------------------------------------------
-    # 语义更新：BLB Stage-2 现在认为"第一个 HE 配置是无损的"——即 layer-0
-    # input 端**不**注入 fresh 噪声。``BLBNoiseRLBridge.apply()`` 已经不再
-    # 调用本方法；保留实现仅用于（1）旧 checkpoint resume 时清理残留 hook，
-    # （2）实验性手工干预。新代码不要调用。
+
     def replace_blb_first_input_noise(
             self,
             scaling_factor: int,
@@ -4986,19 +4385,15 @@ class ReversibleLayerHandler:
             BLB 这边用 ``NOISE_VARIANCE_TABLE_BY_N`` 多 N 表。
           * 同时安装时本方法会报错（参见 ``_check_blb_legacy_conflict``）。
         """
-        if self._arch != "bert":
-            raise NotImplementedError(
-                "BLB first-input fresh 噪声目前仅支持 BERT 家族。"
-            )
         layers = list(eval("self." + layer_name))
         if layer_indices is None:
-            selected = {0}  # 默认只装 layer 0
+            selected = {0}
         else:
             selected = set(layer_indices)
             if not selected:
                 return
 
-        # 冲突检查：legacy input noise 与 BLB first-input 不可同时装
+
         for i in selected:
             if i in self.original_input_noise:
                 raise RuntimeError(
@@ -5049,9 +4444,7 @@ class ReversibleLayerHandler:
                     layer.forward = original_forward
                 del self.blb_first_input_noise_state[i]
 
-    # ------------------------------------------------------------------
-    # BLB / legacy 噪声冲突检查
-    # ------------------------------------------------------------------
+
     def get_active_legacy_noise_layers(self) -> dict:
         """返回每种 legacy 噪声类型当前安装到了哪些层。
 
@@ -5138,28 +4531,25 @@ class ReversibleLayerHandler:
             "wffn2": {},
         }
         self.original_softmax_value_noise = {}
-        self._gpt2_qkv_state = {}
-        self._gpt2_qkv_wrapped = {}
-        # Block 1 状态：deepcopy 已经把改动覆盖回原模型，这里只清状态字典
         self.original_block1_ffn2 = {}
         self.original_block1_layernorm = {}
         self.block1_cfg_per_layer = {}
-        # Block 2 状态：同上
+
         self.original_block2_qproj = {}
         self.original_block2_kproj = {}
         self.original_block2_vproj = {}
         self.block2_cfg_per_layer = {}
-        # Block 3 状态：同上
+
         self.block3_installed_layers = set()
         self.block3_cfg_per_layer = {}
-        # Block 4 状态：同上
+
         self.original_block4_wo = {}
         self.original_block4_post_attn_ln = {}
         self.block4_cfg_per_layer = {}
-        # Block 5 状态：同上
+
         self.original_block5_wffn1 = {}
         self.original_block5_gelu = {}
         self.block5_cfg_per_layer = {}
-        # BLB first-input fresh 噪声状态：同上
+
         self.blb_first_input_noise_state = {}
         print("已完全恢复原始模型状态")

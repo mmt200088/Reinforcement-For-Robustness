@@ -38,8 +38,7 @@ except Exception as _exc:  # pragma: no cover
 _AVAILABLE = _IMPORT_ERROR is None
 _SKIP = "" if _AVAILABLE else f"skeleton_stage_map / rescale_optimizer not importable: {_IMPORT_ERROR!r}"
 
-# The CORRECT cfg-field sequence per graph (block2/4/5_n1 are the FIXED values
-# the regen should produce; the rest reproduce the previously-correct maps).
+
 _EXPECTED_T_NEW_CFG_FIELDS = {
     "block1_mrpc": ["gelu_out_fresh", "mean_result_rescale", "var_result_rescale"],
     "block2_mrpc": ["inv_std_fresh", "gamma_result_rescale",
@@ -47,7 +46,6 @@ _EXPECTED_T_NEW_CFG_FIELDS = {
     "block3_exp_n2": ["x_fresh", "square_rescales", "square_rescales"],
     "block4": ["softmax_out_fresh", "softmax_v_matmul_rescale",
                "ln_mean_result_rescale", "ln_square_result_rescale"],
-    "block5_n0": ["x_centered_fresh", "normalize_result_rescale", "wffn1_result_rescale"],
     "block5_n1": ["x_centered_fresh", "normalize_result_rescale", "gelu_coeff_mul_rescales"],
     "block5_n2": ["x_centered_fresh", "normalize_result_rescale",
                   "wffn1_result_rescale", "gelu_coeff_mul_rescales"],
@@ -65,7 +63,7 @@ class SkeletonStageMapTest(unittest.TestCase):
         cls.plans = ssm.build_stage_plans(arch)
 
     def test_t_new_length_matches_replan_session(self):
-        # Derived stage count must equal RO's own baseline t length for every graph.
+
         for gk, plan in self.plans.items():
             tb = list(self.session.baselines[gk].t_baseline)
             self.assertEqual(
@@ -88,13 +86,13 @@ class SkeletonStageMapTest(unittest.TestCase):
             self.assertEqual(got, expected, f"{gk}: derived cfg fields {got} != expected {expected}")
 
     def test_block2_active_rescales_follow_new_skeleton(self):
-        # The 2026 regen: block2 rescales are gama1 / rotKT_mask1 / preprocess_qkt.
+
         active = set(self.plans["block2_mrpc"].active_rescale_rl_fields)
         self.assertEqual(
             active,
             {"gamma_rescale_sf", "kt_mask1_rescale_sf", "q_mask1_rescale_sf", "qkt_matmul_rescale_sf"},
         )
-        # The pre-regen active slots must no longer be active.
+
         self.assertNotIn("kt_mask2_rescale_sf", active)
         self.assertNotIn("qkt_merge_mask_rescale_sf", active)
 
@@ -112,9 +110,8 @@ class SkeletonStageMapTest(unittest.TestCase):
         self.assertNotIn("gamma_rescale_sf", active)
 
     def test_complete_chain_is_fully_mapped(self):
-        # The SSOT must cover EVERY cut-point of every COMPLETE chain (not just
-        # the nodes the current skeleton selects), so any skeleton subset — and
-        # any future RO regen — maps without gaps. A new RO node fails here loudly.
+
+
         cfgs = ssm.load_profile_configs(str(_RO_ROOT), "mrpc")
         self.assertTrue(cfgs, "no per-graph configs found under configs/mrpc/")
         for graph_key, cfg in cfgs.items():
@@ -143,14 +140,6 @@ class LoadProfileConfigsTest(unittest.TestCase):
         self.assertEqual(cfgs, {"block1_toy": {"graph": "block1"}})
 
 
-# ---------------------------------------------------------------------------
-# Proof that the BRIDGE actually DERIVES its t_new map from the live skeleton
-# (skeleton_stage_map), not the static DEFAULT_CFG_TO_T_NEW_MAP fallback. Needs
-# torch + the RO package, so it skips in the torch-free lane and runs on the
-# server. This is the decisive auto-adapt check: it asserts the *derivation*
-# output directly, independent of whether the static fallback also happens to be
-# correct, so a future skeleton regen is provably handled automatically.
-# ---------------------------------------------------------------------------
 try:
     from rescale_optimizer_bridge import (  # type: ignore
         InProcessInvoker as _InProcessInvoker,

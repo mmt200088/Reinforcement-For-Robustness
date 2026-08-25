@@ -1,28 +1,4 @@
-"""BLB Stage 2 RL 训练侧的持久化辅助：状态板 / 训练曲线 / 报告 / 崩溃记录。
-
-旧版 stage 2 RL（``noise_rl_module_v2``）在 ``rl_results/persistent/...`` 下
-做了若干"训练之外"的小事：进度条、curve PNG、checkpoint 元数据、错误归档。
-BLB Stage 2 RL 是最终版本，需要把这些项目操作类的输出补齐到新的持久化目录
-``Parting Chapter/<run_basename>/stage2_noise/progress/``。
-
-本模块提供四件事：
-
-  1. ``BLBStatusBoard``      ── 训练期间持续刷新 ``blb_stage2_status.json`` 和
-                                 ``blb_stage2_live_summary.md``，同时累积
-                                 episode_returns / 训练曲线数据。
-  2. ``write_training_curves`` ── 训练结束（或周期性）把曲线写成 PNG。matplotlib
-                                  缺失时安全降级为只写 numpy/CSV。
-  3. ``write_blb_final_report`` ── 训练结束时写一份中文 markdown 报告，
-                                   汇总最优动作、reward 拆解、baseline 对比。
-  4. ``dump_crash_report``       ── 异常崩溃时把 traceback + 最后状态写到
-                                    ``blb_stage2_error.txt``。
-
-设计要求：
-  * 不引入硬依赖（matplotlib / pandas 缺失时不报错）。
-  * 全部写盘动作 try/except 包住，失败只写日志，不打断训练。
-  * 状态板 JSON 用原子写（先写到 ``*.tmp``，再 ``os.replace``），
-    避免 live tail 读到一半被覆盖时拿到半截 JSON。
-"""
+"""Atomic Stage-2 status, diagnostics, curve, and checkpoint artifacts."""
 from __future__ import annotations
 
 import datetime as _dt
@@ -414,7 +390,7 @@ def _slots_by_layer_grouped(slots: Sequence[Mapping[str, Any]]) -> Dict[str, Any
             first_input_value = row.get("scaling_factor")
             continue
         label = str(row.get("label") or "")
-        # short field: everything after L<n>.B<n>.<kind>.
+
         parts = label.split(".", 3)
         short = parts[-1] if len(parts) >= 4 else ""
         layer_key = f"L{layer_idx:02d}"
@@ -478,12 +454,12 @@ def write_action_description_files(
         "profile": description.get("profile", ""),
         "num_layers": description.get("num_layers"),
         "action_length": description.get("action_length"),
-        "slots": slots_view,                # human-readable primary view
-        "slots_by_layer": grouped,          # compact grouped view
-        "records": records,                 # legacy verbose records
+        "slots": slots_view,
+        "slots_by_layer": grouped,
+        "records": records,
         "summary": summary,
     }
-    # Pass through any other top-level fields the caller set (e.g. action_vec).
+
     for k, v in (description or {}).items():
         if k not in enriched:
             enriched[k] = v
@@ -522,7 +498,7 @@ def write_action_description_files(
             "",
         ])
 
-        # 1) Compact grouped view (the eye-friendly summary).
+
         lines.append("## 1. Per-layer / per-block 选择概览")
         lines.append("")
         if not grouped:
@@ -551,7 +527,7 @@ def write_action_description_files(
                     lines.append(f"| {layer_key} | {block_key} | {cell} |")
         lines.append("")
 
-        # 2) Full per-slot detail table — lead with SF / K, keep action_idx as a side column.
+
         lines.append("## 2. 全槽位明细（按 global_index）")
         lines.append("")
         lines.append("| idx | slot | location | operation | dist | **value** | kind | action_idx | effective | N | max_sf | level_values | note |")
@@ -591,9 +567,6 @@ def write_action_description_files(
     return out
 
 
-# ---------------------------------------------------------------------------
-# 状态板：训练中持续刷新，让用户能 live tail
-# ---------------------------------------------------------------------------
 class BLBStatusBoard:
     """训练状态板。
 
@@ -640,7 +613,7 @@ class BLBStatusBoard:
             "phase": "初始化",
             "elapsed_sec": 0.0,
             "last_update": _dt.datetime.now().isoformat(),
-            "recent_returns": [],            # 最近 N 步 reward
+            "recent_returns": [],
             "best": {
                 "reward": None,
                 "episode": None,
@@ -660,9 +633,7 @@ class BLBStatusBoard:
             "extra": dict(extra_meta or {}),
         }
 
-    # ------------------------------------------------------------------
-    # 设置 / 更新
-    # ------------------------------------------------------------------
+
     def set_phase(self, phase: str) -> None:
         self._state["phase"] = str(phase)
         self.flush()
@@ -691,7 +662,7 @@ class BLBStatusBoard:
         if isinstance(last_breakdown, Mapping):
             self._state["last_priority"] = last_breakdown.get("priority")
             self._state["last_invalid"] = bool(last_breakdown.get("invalid", False))
-        # 不每步都 flush（频繁 IO 浪费），只在 PPO update 时 flush；这里只在内存更新
+
 
     def update_after_ppo_update(
             self,
@@ -749,9 +720,7 @@ class BLBStatusBoard:
         self._state["stopped_at"] = _dt.datetime.now().isoformat()
         self.flush()
 
-    # ------------------------------------------------------------------
-    # 落盘
-    # ------------------------------------------------------------------
+
     def flush(self) -> None:
         try:
             self._state["elapsed_sec"] = round(time.time() - self._t0, 3)
@@ -787,9 +756,6 @@ class BLBStatusBoard:
         return self._path
 
 
-# ---------------------------------------------------------------------------
-# 训练曲线
-# ---------------------------------------------------------------------------
 def _float_array(values):
     """Materialize numeric curve values, preserving ndarray fast paths."""
     import numpy as _np
@@ -891,10 +857,8 @@ def write_training_curves(
         episode_returns: Sequence[float],
         best_reward_curve: Optional[Sequence[float]] = None,
         ppo_loss_curve: Optional[Sequence[float]] = None,
-        # Stage-1-parity per-episode series (all optional -> back-compat). When
-        # provided, the main PNG mirrors Stage-1's Reward/Loss/metric1/metric2
-        # panels exactly (raw + Moving Avg + Baseline). Stage-2-specific cost
-        # diagnostics stay out of the main training curve.
+
+
         episode_losses: Optional[Sequence[float]] = None,
         episode_metric1s: Optional[Sequence[float]] = None,
         episode_metric2s: Optional[Sequence[float]] = None,
@@ -903,7 +867,7 @@ def write_training_curves(
         baselines: Optional[Mapping[str, float]] = None,
         metric1_name: str = "metric1",
         metric2_name: str = "metric2",
-        # Entropy curve (separate PNG, mirrors Stage-1 ppo_entropy_curve.png).
+
         entropy_series: Optional[Sequence[float]] = None,
         entropy_episodes: Optional[Sequence[float]] = None,
         ma_window: Optional[int] = None,
@@ -952,7 +916,7 @@ def write_training_curves(
     if ma_window is None:
         ma_window = max(10, n_ep // 200) if n_ep else 10
 
-    # NPZ 总是写（最稳）
+
     try:
         import numpy as _np
 
@@ -984,9 +948,7 @@ def write_training_curves(
         log("  [BLB曲线][信息] PNG/PDF 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。")
         return out
 
-    # ---- 主训练曲线（Stage-1 风格：Reward / Loss / metric1 / metric2）----
-    # 标题/坐标统一用 ASCII：matplotlib 默认 DejaVu Sans 不含 CJK 字形，写中文会
-    # 触发一堆 UserWarning 且 PNG 上变成方框。中文说明在 markdown 报告里给。
+
     try:
         png_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_PNG)
         if _has(episode_returns):
@@ -1018,7 +980,7 @@ def write_training_curves(
     except Exception as exc:
         log(f"  [BLB曲线][信息] 跳过多联 PNG（matplotlib 不可用 / 渲染失败）：{exc}")
 
-    # ---- 独立熵曲线（镜像 Stage-1 ppo_entropy_curve.png）----
+
     try:
         if _has(entropy_series):
             import matplotlib
@@ -1054,10 +1016,7 @@ def write_training_curves(
     except Exception as exc:
         log(f"  [BLB曲线][信息] 跳过熵曲线 PNG：{exc}")
 
-    # Paper-style single-panel plot. Convention: gray raw trace alpha=0.3,
-    # bold EMA-smoothed foreground, optional best-so-far dashed line, and
-    # vertical guides at sub-stage boundaries. Intended for direct inclusion
-    # in publications; separate from the multi-panel diagnostic above.
+
     try:
         if episode_returns:
             import matplotlib
@@ -1118,9 +1077,6 @@ def write_training_curves(
     return out
 
 
-# ---------------------------------------------------------------------------
-# 崩溃诊断曲线（ADR-014）：reward 分解 / fusion-vs-feasibility / 噪声 vs 余量
-# ---------------------------------------------------------------------------
 def write_diagnostic_curves(
         persistence_dir: str,
         *,
@@ -1194,9 +1150,9 @@ def write_diagnostic_curves(
         if ma_window is None:
             ma_window = max(10, n // 200)
 
-        panels = []  # list of (draw_fn, title)
+        panels = []
 
-        # Panel 1: priority mix (rolling fractions)
+
         if pri is not None:
             def _p1(ax):
                 for val, color, lbl in ((3, "tab:green", "P3 (cost)"),
@@ -1210,7 +1166,7 @@ def write_diagnostic_curves(
                 ax.set_ylabel("fraction")
             panels.append((_p1, f"Priority mix (rolling {rolling_window}) — P3->0 = collapse"))
 
-        # Panel 2: fusion total + per-block (rolling)
+
         if _arr(fusion_count) is not None:
             def _p2(ax):
                 for seq, color, lbl in ((fusion_count, "black", "fusion total"),
@@ -1224,7 +1180,7 @@ def write_diagnostic_curves(
                 ax.set_ylabel("fused blocks")
             panels.append((_p2, f"Fusion (rolling {rolling_window}) — runaway if monotone to cap"))
 
-        # Panel 3: accuracy margin mu (raw + MA + zero line)
+
         if _arr(worst_signed_margin) is not None:
             def _p3(ax):
                 a = _arr(worst_signed_margin)
@@ -1237,7 +1193,7 @@ def write_diagnostic_curves(
                 ax.set_ylabel("worst signed margin")
             panels.append((_p3, "Accuracy margin mu (|baseline-thr| units) — mu<0 = P1"))
 
-        # Panel 4: reward components (MA)
+
         if any(_arr(s) is not None for s in (acc_barrier_sat, acc_barrier_vio, cost_score, p3_metric_margin)):
             def _p4(ax):
                 for seq, color, lbl in ((acc_barrier_sat, "tab:purple", "barrier_sat"),
@@ -1253,7 +1209,7 @@ def write_diagnostic_curves(
                 ax.set_ylabel("reward component")
             panels.append((_p4, f"Reward components (MA {ma_window})"))
 
-        # Panel 5: probe noise vs margin
+
         if _arr(metric1_std) is not None and _arr(worst_signed_margin) is not None:
             def _p5(ax):
                 s = _arr(metric1_std)
@@ -1288,9 +1244,6 @@ def write_diagnostic_curves(
     return out
 
 
-# ---------------------------------------------------------------------------
-# 最终训练报告（中文 markdown）
-# ---------------------------------------------------------------------------
 def write_blb_final_report(
         persistence_dir: str,
         *,
@@ -1384,7 +1337,7 @@ def write_blb_final_report(
             "（可直接喂给 `Paean/run_final_eval.sh --action-config`）。下面只列出与 baseline 不同的槽位。"
         )
         lines.append("")
-        # 5.a Per-block summary using best_slots if available.
+
         if best_slots:
             grouped = _slots_by_layer_grouped(best_slots)
             if grouped:
@@ -1411,7 +1364,7 @@ def write_blb_final_report(
                                 cell_parts.append(f"{slot_short}={disp}")
                         lines.append(f"| {layer_key} | {block_key} | {', '.join(cell_parts)} |")
                 lines.append("")
-        # 5.b Diff against baseline — the actionable view.
+
         if slot_diff_vs_baseline:
             sf_diffs = [d for d in slot_diff_vs_baseline if d.get("kind") != "K"]
             k_diffs = [d for d in slot_diff_vs_baseline if d.get("kind") == "K"]
@@ -1463,7 +1416,7 @@ def write_blb_final_report(
                 "请打开 `diagnostics/best_action_vec.json` 的 `diff_vs_baseline` 字段。）_"
             )
             lines.append("")
-        # 5.c Original flat int vector hidden in a collapsible block (debugging only).
+
         lines.append("<details>")
         lines.append("<summary>调试用：原始 action_vec（整数索引）</summary>")
         lines.append("")
@@ -1503,9 +1456,6 @@ def write_blb_final_report(
     return path
 
 
-# ---------------------------------------------------------------------------
-# 崩溃归档
-# ---------------------------------------------------------------------------
 def dump_crash_report(
         persistence_dir: str,
         *,
@@ -1551,10 +1501,6 @@ def dump_crash_report(
     return path
 
 
-# ---------------------------------------------------------------------------
-# Step-detail rollover writer + reward-crash watcher
-# (legacy noise_rl_module_v2 parity: stage2_noise/details/*.txt + warning.txt)
-# ---------------------------------------------------------------------------
 BLB_DETAILS_DIRNAME = "details"
 BLB_DETAILS_FILENAME_FMT = "noise_ppo_step_info_{start}-{end}.txt"
 BLB_WARNING_FILENAME = "warning.txt"
@@ -1664,7 +1610,7 @@ class BLBStepDetailsWriter:
             self._buffer.clear()
             return None
         self._buffer.clear()
-        # Roll batch window forward to the next interval
+
         self._batch_start = int(self._batch_end or 0) + 1
         self._batch_end = self._batch_start + self._batch_size - 1
         return path

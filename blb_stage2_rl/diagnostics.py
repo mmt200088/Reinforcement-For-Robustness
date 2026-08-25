@@ -100,9 +100,9 @@ from rl_data_points import _strict_jsonable
 from jsonl_utils import iter_jsonl, recover_jsonl_file
 from stats_utils import mean_or_default
 
-try:  # Package import path.
+try:
     from .candidate_store import action_hash
-except Exception:  # Standalone test/script loading via spec_from_file_location.
+except Exception:
     _HERE = os.path.dirname(os.path.abspath(__file__))
     if _HERE not in sys.path:
         sys.path.insert(0, _HERE)
@@ -116,7 +116,7 @@ class EpisodeStats:
     Kept narrow on purpose — additional per-step detail goes to other files
     (e.g. ``top_candidates.jsonl`` carries the action_vec).
     """
-    episode: int                           # global episode index (post-resume offset already applied)
+    episode: int
     total_reward: float
     terminal_reward: float
     per_step_sum: float
@@ -129,13 +129,12 @@ class EpisodeStats:
     first_invalid_block: Optional[int]
     first_invalid_layer: Optional[int]
     early_terminated: bool
-    # 2026-06-13: per-block-TYPE fusion split (b2/b4/b5) so a runaway block
-    # type (e.g. the accuracy-toxic block4 in the 3rd-60k hot collapse) is a
-    # one-glance read instead of a re-derivation from the slot vector.
+
+
     fusion_count_b2: int = 0
     fusion_count_b4: int = 0
     fusion_count_b5: int = 0
-    # Exact post-replan configuration evidence for this terminal evaluation.
+
     terminal_final_config_fingerprint: str = ""
     terminal_materialization_failure_reason: str = ""
     terminal_model_uses_replan_config: bool = False
@@ -155,11 +154,8 @@ class EpisodeStats:
     terminal_fusion_gain: float = 0.0
     terminal_cost_score: float = 0.0
     terminal_p3_metric_margin_reward: float = 0.0
-    # ADR-014 (2026-06-14) DEBUG: ADR-013 barrier/margin, now persisted (was a
-    # black box). worst_signed_margin=mu (barrier input); acc_barrier_sat/vio
-    # (outputs); margin_m1/m2 (per-channel); fusion_norm_raw vs _saturated shows
-    # the anti-runaway saturation. These make a collapse diagnosable from
-    # episodes.jsonl alone.
+
+
     terminal_worst_signed_margin: float = 0.0
     terminal_acc_barrier_sat: float = 0.0
     terminal_acc_barrier_vio: float = 0.0
@@ -228,7 +224,7 @@ class EpisodeStats:
 class PPOUpdateStats:
     """Per-PPO-update payload persisted to ``ppo_updates.jsonl``."""
     update: int
-    completed_episodes: int                # cumulative episodes finished
+    completed_episodes: int
     policy_loss: float
     value_loss: float
     entropy: float
@@ -240,10 +236,8 @@ class PPOUpdateStats:
     window_mean_invalid: float
     best_reward_so_far: float
     elapsed_sec: float
-    # 2026-05-18: effective ent_coef for this update (per the anchor → ramp →
-    # steady schedule in sequential_runner._resolve_ent_coef_schedule).
-    # Surfaced in diagnostics_summary.md "PPO 学习动态" table so operators
-    # can verify the schedule is firing as expected.
+
+
     ent_coef: float = 0.0
     approx_kl: float = 0.0
     kl_early_stop: bool = False
@@ -295,9 +289,8 @@ class PPOUpdateStats:
 
 
 _RESTORED_EPISODE_NULL_SENTINELS = {
-    # Strict JSON represents non-finite runtime sentinels as null. Rehydrate
-    # them to conservative numeric values so an invalid episode remains
-    # reportable and cannot become a competitive candidate after resume.
+
+
     "terminal_loss_mean": float("inf"),
     "terminal_loss_std": float("inf"),
     "terminal_metric1_mean": 0.0,
@@ -408,21 +401,18 @@ class RLDiagnosticsRecorder:
         self.first_inv_path = os.path.join(self.output_dir, "first_invalid_counts.json")
         self.action_hist_path = os.path.join(self.output_dir, "action_histogram.npz")
         self.summary_md_path = os.path.join(self.output_dir, "diagnostics_summary.md")
-        # ADR-014 (2026-06-14): in-repo rolling-health log. The 4th-60k collapse
-        # trajectory (rolling600 P1/P2/P3 + fusion + margin) was only computed by
-        # a server-side bash script (long60k_health.log) — invisible in the repo.
-        # This makes it a reproducible artifact in the run dir.
+
+
         self.health_log_path = os.path.join(self.output_dir, "blb_stage2_health.log")
         self.best_json_path = os.path.join(self.output_dir, "best_action_vec.json")
         self.baseline_slots_path = os.path.join(self.output_dir, "baseline_action_vec.json")
 
-        # Exact cumulative state plus optional bounded rolling views. Resume
-        # rebuilds both from the authoritative append-only JSONL streams.
+
         self._first_invalid_counts: Counter = Counter()
         self._action_hist: np.ndarray = np.zeros(
             (self.num_slots, self.max_levels), dtype=np.int64,
         )
-        # heap entries: (rank_key, tiebreaker, payload_dict). min-heap by rank.
+
         self._top_candidates: List = []
         self._pareto_candidates: List[Dict[str, Any]] = []
         self._pareto_seen_hashes: set = set()
@@ -431,7 +421,7 @@ class RLDiagnosticsRecorder:
         self._all_episode_returns: List[float] = []
         self._all_invalid_counts: List[int] = []
         self._all_terminal: List[float] = []
-        # ADR-014: rolling-health accumulators (priority / fusion / margin).
+
         self._all_priority: List[int] = []
         self._all_fusion: List[int] = []
         self._all_fusion_b2: List[int] = []
@@ -649,7 +639,7 @@ class RLDiagnosticsRecorder:
         if self._baseline_action_vec is not None and self._slots_view_builder is not None:
             try:
                 self._baseline_slots = list(self._slots_view_builder(self._baseline_action_vec))
-                # eagerly dump a copy so it lives even if the run crashes early
+
                 _atomic_json_dump(self.baseline_slots_path, {
                     "schema_version": self.schema_version,
                     "num_layers": int(self.num_layers),
@@ -662,9 +652,6 @@ class RLDiagnosticsRecorder:
                 self.log(f"  [diag][warning] baseline_action_vec.json write failed: {exc}")
                 self._baseline_slots = None
 
-    # ------------------------------------------------------------------
-    # Recording APIs
-    # ------------------------------------------------------------------
 
     def restore_existing(self) -> Dict[str, int]:
         """Rebuild in-memory diagnostics from append-only primary JSONL files."""
@@ -963,7 +950,7 @@ class RLDiagnosticsRecorder:
             persist: bool = True,
             ) -> None:
         """Append episode JSONL row and update in-memory accumulators."""
-        # 1) append JSONL row
+
         if persist:
             try:
                 primary_payload = dict(episode_stats.__dict__)
@@ -987,7 +974,7 @@ class RLDiagnosticsRecorder:
                 except Exception as exc:
                     self._mandatory_write_failure("structured episodes.jsonl", exc)
 
-        # 2) accumulate stats
+
         episode_return = float(episode_stats.total_reward)
         self._episode_count += 1
         self._episode_high_water = max(
@@ -1018,7 +1005,7 @@ class RLDiagnosticsRecorder:
             float(episode_stats.terminal_reward),
             self._history_window,
         )
-        # ADR-014 rolling-health accumulators.
+
         _append_bounded(
             self._all_priority,
             int(episode_stats.terminal_priority),
@@ -1049,7 +1036,7 @@ class RLDiagnosticsRecorder:
         )
         self._last_episode_stats = episode_stats
 
-        # 3) first-invalid counter
+
         if (
             episode_stats.first_invalid_layer is not None
             and episode_stats.first_invalid_block is not None
@@ -1060,7 +1047,7 @@ class RLDiagnosticsRecorder:
             )
             self._first_invalid_counts[key] += 1
 
-        # 4) action histogram (per-slot index counts)
+
         if full_action_vec is not None:
             arr = np.asarray(full_action_vec, dtype=int).reshape(-1)
             n = min(arr.size, self.num_slots)
@@ -1069,7 +1056,7 @@ class RLDiagnosticsRecorder:
                 if 0 <= a < self.max_levels:
                     self._action_hist[slot_idx, a] += 1
 
-        # 5) top-K candidates
+
         if full_action_vec is not None:
             payload = {
                 "episode": int(episode_stats.episode),
@@ -1131,8 +1118,7 @@ class RLDiagnosticsRecorder:
             elif entry[0] > self._top_candidates[0][0]:
                 heapq.heapreplace(self._top_candidates, entry)
 
-        # 6) Persist the per-episode winner immediately. PPO-update reconciliation
-        # may later rewrite this file when the strict promoted winner retracts.
+
         if persist and is_new_best and full_action_vec is not None:
             self.write_best_action_snapshot(
                 episode_stats=episode_stats,
@@ -1176,7 +1162,7 @@ class RLDiagnosticsRecorder:
             else:
                 a = row.get("scaling_factor")
                 b = base.get("scaling_factor")
-                # treat None as "off" — comparing None vs int counts as a change.
+
                 if (a is None) != (b is None) or (
                     a is not None and b is not None and int(a) != int(b)
                 ):
@@ -1247,7 +1233,7 @@ class RLDiagnosticsRecorder:
             with open(tmp, "w", encoding="utf-8") as f:
                 for rank, entry in enumerate(sorted_top, start=1):
                     out_row = dict(entry[2])
-                    # Augment top-K rows with a human slots view (best-effort).
+
                     if self._slots_view_builder is not None and "action_vec" in out_row:
                         try:
                             slots_view = list(self._slots_view_builder(np.asarray(
@@ -1338,9 +1324,6 @@ class RLDiagnosticsRecorder:
         except Exception as exc:
             self._mandatory_write_failure("primary JSONL close", exc)
 
-    # ------------------------------------------------------------------
-    # Summary.md writer
-    # ------------------------------------------------------------------
 
     def _consider_pareto_candidate(self, payload: Mapping[str, Any]) -> None:
         candidate = dict(payload)
@@ -1506,7 +1489,7 @@ class RLDiagnosticsRecorder:
                 lines.append(f"- `{k}` = `{v}`")
         lines.append("")
 
-        # 1. 训练进度
+
         lines.append("## 1. 训练进度（training progress）")
         lines.append("")
         n_ep = self.episode_count
@@ -1528,7 +1511,7 @@ class RLDiagnosticsRecorder:
             f"- 最近 50 回合 mean terminal reward: **{np.mean(last50_term):+.4f}**"
         )
         lines.append(
-            # horizon = 3 + (L-1)*4 (C 2026-05-30: block 3 removed from schedule)
+
             f"- 最近 50 回合 mean invalid 子步数: **{np.mean(last50_inv):.2f}** / "
             f"{3 + (self.num_layers - 1) * 4}"
         )
@@ -1539,7 +1522,7 @@ class RLDiagnosticsRecorder:
             lines.append(f"- baseline avg_k (per-block 加权): **{self._baseline_avg_k:.3f}**")
         lines.append("")
 
-        # 2. Top-K candidates
+
         lines.append(f"## 2. 训练期 Top-{self.top_k} candidates")
         lines.append("")
         lines.append(
@@ -1567,7 +1550,7 @@ class RLDiagnosticsRecorder:
             )
         lines.append("")
 
-        # 2.1 Best vs baseline — slot-level diff (the actionable view)
+
         best_entry = topk_sorted[0] if topk_sorted else None
         if (
             best_entry is not None
@@ -1585,7 +1568,7 @@ class RLDiagnosticsRecorder:
                 if not diff:
                     lines.append("_best action 与 baseline 完全相同（warmstart 还没动）。_")
                 else:
-                    # Separate SF diffs from K diffs for readability.
+
                     sf_diffs = [d for d in diff if d.get("kind") != "K"]
                     k_diffs = [d for d in diff if d.get("kind") == "K"]
                     lines.append(
@@ -1631,7 +1614,7 @@ class RLDiagnosticsRecorder:
             except Exception as exc:
                 self.log(f"  [diag][warning] best/baseline diff section failed: {exc}")
 
-        # 3. first-invalid heatmap
+
         lines.append("## 3. First-invalid 频次（哪些 (layer, block) 最先翻车）")
         lines.append("")
         if not self._first_invalid_counts:
@@ -1654,7 +1637,7 @@ class RLDiagnosticsRecorder:
                 )
         lines.append("")
 
-        # 4. PPO learning dynamics
+
         lines.append("## 4. PPO 学习动态（最近 10 次更新）")
         lines.append("")
         if self._ppo_history:
@@ -1689,7 +1672,7 @@ class RLDiagnosticsRecorder:
             lines.append("_暂无 PPO 更新（episode 数 < rollout_size）_")
         lines.append("")
 
-        # 5. Action histogram quick overview
+
         lines.append("## 5. 动作分布概览（哪些 slot 已经在按 baseline 取最大档）")
         lines.append("")
         hist = self._action_hist
@@ -1705,7 +1688,7 @@ class RLDiagnosticsRecorder:
             if max_share > 0.85:
                 collapsed_slots.append((slot_idx, max_idx, max_share, total))
             else:
-                # entropy proxy
+
                 p = row[row > 0].astype(np.float64) / total
                 ent = float(-(p * np.log(p + 1e-12)).sum())
                 spread_slots.append((slot_idx, ent, total))
@@ -1736,7 +1719,7 @@ class RLDiagnosticsRecorder:
                 )
         lines.append("")
 
-        # 6. auto-flags
+
         lines.append("## 6. 自动诊断（auto-flags）")
         lines.append("")
         flags: List[str] = []
@@ -1771,7 +1754,7 @@ class RLDiagnosticsRecorder:
             total = sum(self._first_invalid_counts.values())
             if top1[1] > total * 0.3 and total > 30:
                 key = top1[0]
-                # extract LL and B
+
                 try:
                     layer = int(key[1:3])
                     block = int(key[-1])
@@ -1798,7 +1781,7 @@ class RLDiagnosticsRecorder:
                     f"{recent_clip:.2f}（>0.40）。lr 可能过大，"
                     "建议降低 lr 一档。"
                 )
-        # uniform-collapse check
+
         if n_ep > 200 and self._action_hist.sum() > 0:
             collapsed_pct = len(collapsed_slots) / max(self.num_slots, 1)
             if collapsed_pct > 0.95 and best_so_far < 0:
@@ -1813,7 +1796,7 @@ class RLDiagnosticsRecorder:
             lines.append(f"- {fl}")
         lines.append("")
 
-        # 7. file index
+
         lines.append("## 7. 原始数据文件（machine-readable）")
         lines.append("")
         lines.append("| 文件 | 内容 |")

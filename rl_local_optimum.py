@@ -75,7 +75,7 @@ def detect_rl_local_optimum(
     w = int(min(window, n))
     recent_returns = returns[-w:]
 
-    # ---- A. entropy collapse ----
+
     entropy_collapsed = False
     recent_entropy_mean = None
     ent_arr = None
@@ -90,7 +90,7 @@ def detect_rl_local_optimum(
     out["metrics"]["recent_entropy_mean"] = recent_entropy_mean
     out["signals"]["entropy_collapsed"] = bool(entropy_collapsed)
 
-    # ---- B. reward plateau ----
+
     mean_r = float(np.mean(recent_returns))
     std_r = float(np.std(recent_returns))
     cv = std_r / (abs(mean_r) + 1e-8)
@@ -100,7 +100,7 @@ def detect_rl_local_optimum(
     out["metrics"]["recent_reward_cv"] = cv
     out["signals"]["reward_plateau"] = bool(reward_plateau)
 
-    # ---- C. best stuck ----
+
     if best_score_history is None:
         best_curve = np.maximum.accumulate(returns)
     else:
@@ -117,7 +117,7 @@ def detect_rl_local_optimum(
     out["metrics"]["episodes_since_last_best_improve"] = last_improve_gap
     out["signals"]["best_stuck"] = bool(best_stuck)
 
-    # ---- D. action diversity collapse (optional) ----
+
     diversity_collapsed = False
     action_kl = None
     if action_history is not None:
@@ -144,7 +144,7 @@ def detect_rl_local_optimum(
     out["metrics"]["action_kl_recent_vs_early"] = action_kl
     out["signals"]["action_diversity_collapsed"] = bool(diversity_collapsed)
 
-    # ---- 综合判定：A/B/C 中 ≥2 条成立 ----
+
     score = int(entropy_collapsed) + int(reward_plateau) + int(best_stuck)
     out["likely_local_optimum"] = score >= 2 or diversity_collapsed
     flags = []
@@ -220,8 +220,8 @@ def attribute_collapse(
     if n < 80:
         lines.append(f"  样本不足（n={n}），无法归因。")
         return lines
-    # Real 60k runs use the full ``window`` (600); short runs scale down so a
-    # mid-run collapse is still detectable (n//4 keeps several windows in view).
+
+
     w = int(min(window, max(20, n // 4)))
     p3 = np.array([1.0 if p == 3 else 0.0 for p in pri], dtype=float)
     onset = None

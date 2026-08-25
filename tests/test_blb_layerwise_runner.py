@@ -2199,12 +2199,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertEqual(active, ["r0", "r1", "new-2", "new-3"])
         self.assertEqual(registry, active)
 
-    def test_legacy_cuda_rng_checkpoint_rejects_changed_gpu_count(self):
+    def test_checkpoint_without_cuda_rng_registry_requires_fresh_run(self):
         from blb_stage2_rl.sequential_runner import (
             resolve_cuda_rng_role_registry,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "legacy.*GPU count"):
+        with self.assertRaisesRegex(RuntimeError, "fresh run"):
             resolve_cuda_rng_role_registry(
                 {"cuda_rng_state_all": ["r0", "r1", "r2", "r3", "r4"]},
                 active_role_count=4,

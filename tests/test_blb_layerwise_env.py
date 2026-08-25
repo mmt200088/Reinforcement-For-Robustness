@@ -327,7 +327,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(info["pending_full_vector"], terminal_vector.tolist())
         json.dumps(info)
 
-        # Block3 keeps the exact RO-baseline SF indices but carries policy K.
+
         np.testing.assert_array_equal(terminal_vector[32:39], np.arange(1, 8))
         self.assertEqual(terminal_vector[39], self.layerwise.K_LEVELS.index(10))
 

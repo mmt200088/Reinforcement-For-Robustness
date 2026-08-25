@@ -73,7 +73,7 @@ class _CJKSafeStreamHandler(logging.StreamHandler):
                 self.stream.write(safe + self.terminator)
                 self.flush()
             except Exception:
-                # Last resort: give up silently rather than killing training.
+
                 pass
 
 
@@ -109,10 +109,10 @@ def _configure_root_once() -> None:
 
     root = logging.getLogger("blb_stage2_rl")
     root.setLevel(_resolve_level())
-    # Prevent propagation to the system root logger (which third-party libs
-    # may have wired with their own handlers).
+
+
     root.propagate = False
-    # Clear any handlers that were attached pre-init (defensive).
+
     for h in list(root.handlers):
         root.removeHandler(h)
 
@@ -124,12 +124,12 @@ def _configure_root_once() -> None:
             datefmt="%H:%M:%S",
         )
 
-    # Console handler.
+
     stream_handler = _CJKSafeStreamHandler(stream=sys.stderr)
     stream_handler.setFormatter(formatter)
     root.addHandler(stream_handler)
 
-    # Optional file handler.
+
     log_file = os.environ.get(_ENV_FILE, "").strip()
     if log_file:
         try:
@@ -155,8 +155,8 @@ def get_logger(name: str = "blb_stage2_rl") -> logging.Logger:
     Logger instance (Python's logging keeps a global cache).
     """
     _configure_root_once()
-    # Always prefix under the BLB tree so a stray "transformers" logger
-    # doesn't accidentally inherit our config.
+
+
     if not name.startswith("blb_stage2_rl"):
         if name == "__main__":
             name = "blb_stage2_rl.main"

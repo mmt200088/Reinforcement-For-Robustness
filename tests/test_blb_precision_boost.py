@@ -9,7 +9,6 @@ Two lanes:
     with fusion_count preserved, and the boosted option's chain is 60/60.
     Skipped where rescale_optimizer can't be imported.
 
-See docs/superpowers/specs/2026-06-19-stage2-precision-boost-design.md.
 """
 
 import pathlib
@@ -17,13 +16,13 @@ import sys
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
+for p in (str(_REPO), str(_REPO / "Rescale_optimizer")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import precision_boost as pb  # noqa: E402
+from blb_stage2_rl import precision_boost as pb  # noqa: E402
 
-# block2 mrpc fc=1 option (the committed fusion map's option 1).
+
 BASE2 = {
     "inv_std_fresh_sf": 21,
     "gamma_sf": 15,
@@ -38,7 +37,7 @@ BASE2 = {
 
 
 def _block2_fc1_probe() -> pb.ReplanProbe:
-    # q_initial [29,31,58], fuse stage 1 into next -> q_final [60,58].
+
     return pb.ReplanProbe(
         valid=True, fusion_count=1,
         q_initial=(29, 31, 58), q_final=(60, 58),
@@ -48,7 +47,7 @@ def _block2_fc1_probe() -> pb.ReplanProbe:
 
 class CandidateGenTest(unittest.TestCase):
     def test_short_prime_detection(self):
-        # the 58 is post-fusion stage 1 == pre-fusion rescale idx 2, deficit 2.
+
         self.assertEqual(pb.find_short_primes(_block2_fc1_probe(), 60), [(2, 2)])
 
     def test_no_short_prime_when_all_qmax(self):
@@ -56,29 +55,28 @@ class CandidateGenTest(unittest.TestCase):
         self.assertEqual(pb.find_short_primes(probe, 60), [])
 
     def test_exactly_four_candidates(self):
-        # block2 fc=1: deficit 2, c=1 → budget S=1 → 1 SF placed on one of the
-        # four addable encodes (cascade-compensating every rescale strictly
-        # upstream of that encode by +1).
+
+
         short = pb.find_short_primes(_block2_fc1_probe(), 60)
         cands = pb.generate_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2, short)
         got = sorted(tuple(sorted(c.edits.items())) for c in cands)
         expect = sorted([
-            # (a) kt_mask2 — between R_pre (kt_mask1_rescale) and the qkt ×2: no
-            #     rescale upstream of it → no compensation.
+
+
             (("kt_mask2_sf", 16),),
-            # (b) gamma — cascade compensates BOTH rescales after it (gamma_rescale
-            #     + kt_mask1_rescale) so every intermediate prime stays constant.
+
+
             (("gamma_rescale_sf", 29), ("gamma_sf", 16), ("kt_mask1_rescale_sf", 29)),
-            # (c) wk — only kt_mask1_rescale is upstream-after it.
+
             (("kt_mask1_rescale_sf", 29), ("wk_sf", 17)),
-            # (d) kt_mask1 — only kt_mask1_rescale is upstream-after it.
+
             (("kt_mask1_rescale_sf", 29), ("kt_mask1_sf", 16)),
         ])
         self.assertEqual(got, expect)
 
     def test_qkt_merge_is_not_a_candidate(self):
-        # qkt_merge feeds the fixed q_tail (after the last rescale) — never fills a
-        # short prime, so it must never appear in any candidate edit.
+
+
         cands = pb.generate_candidates(
             pb.BLOCK2_MRPC_TOPOLOGY, BASE2, pb.find_short_primes(_block2_fc1_probe(), 60),
         )
@@ -140,15 +138,13 @@ class BoostReplanTest(unittest.TestCase):
         self.assertIsNotNone(res)
         self.assertEqual(res.base_q_final, (60, 58))
         self.assertTrue(all(q == 60 for q in res.boosted_q_final))
-        # all 4 cascade-compensated placements pass replan-verify.
+
         self.assertEqual(res.candidates_valid, 4)
-        # the boosted option preserves fusion_count and raises >= 1 SF above base.
+
         self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
         self.assertTrue(any(res.boosted_slots[k] > BASE2[k] for k in BASE2))
 
 
-# block4 mrpc fc=1 option (the committed block4.json option 1). v_mask is bound
-# to softmax_out_mask (NOT a separate slot).
 BASE4 = {
     "softmax_out_fresh_sf": 21,
     "v_fresh_sf": 17,
@@ -171,7 +167,7 @@ class Block4CandidateGenTest(unittest.TestCase):
 
     @staticmethod
     def _probe():
-        # q_initial [27,33,31], fuse stage 1 into next -> q_final [60,31].
+
         return pb.ReplanProbe(
             valid=True, fusion_count=1,
             q_initial=(27, 33, 31), q_final=(60, 31),
@@ -181,24 +177,24 @@ class Block4CandidateGenTest(unittest.TestCase):
     def test_short_prime_and_fill(self):
         sp = pb.find_short_primes(self._probe(), 60)
         self.assertEqual(sp, [(2, 29)])
-        # fill=28 → prime 31 -> 59 (NOT 60: all addable encodes are before the ×2
-        # → even bit-weights only → an odd 29-bit fill is unreachable).
+
+
         self.assertEqual(pb.short_prime_fill(pb.BLOCK4_MRPC_TOPOLOGY, sp[0]), 28)
 
     def test_budget_double_counts_softmax_out_mask(self):
         cands = pb.generate_candidates(pb.BLOCK4_MRPC_TOPOLOGY, BASE4, [(2, 29)])
-        # the all-on-softmax_out_mask candidate: x=7 (2*7=14) → som 10->17.
+
         all_soft = [c for c in cands if c.edits.get("softmax_out_mask_sf") == 17]
         self.assertTrue(all_soft, "expected an all-softmax_out_mask (x=7) candidate")
         c = all_soft[0]
-        # only softmax_out_mask raised among encodes; cascade compensates the two
-        # rescales upstream of the short prime by 14.
+
+
         self.assertEqual(c.edits.get("ln_mean_rescale_sf"), 45)
         for enc in ("softmax_v_mask_sf", "wo_sf", "ln_mean_inv_d_sf"):
             self.assertNotIn(enc, c.edits)
 
     def test_ln_var_is_not_a_candidate(self):
-        # ln_var feeds the q_tail (after the short prime's rescale) — never fills.
+
         cands = pb.generate_candidates(pb.BLOCK4_MRPC_TOPOLOGY, BASE4, [(2, 29)])
         self.assertTrue(all("ln_var_inv_d_sf" not in c.edits for c in cands))
 
@@ -218,8 +214,8 @@ class Block4BoostReplanTest(unittest.TestCase):
             slots["softmax_out_fresh_sf"], slots["softmax_v_matmul_rescale_sf"],
             slots["ln_mean_rescale_sf"], slots["ln_square_rescale_sf"],
         ]
-        # ctct_rot_softmax_mul_v delta = v_fresh + v_mask, and v_mask is bound to
-        # softmax_out_mask (the mask2 binding).
+
+
         deltas = {
             "ctpt_mask2": slots["softmax_out_mask_sf"],
             "ctct_rot_softmax_mul_v": slots["v_fresh_sf"] + slots["softmax_out_mask_sf"],
@@ -243,7 +239,7 @@ class Block4BoostReplanTest(unittest.TestCase):
         v = (
             noise_tables.variance(16384, slots["softmax_out_fresh_sf"], "fresh")
             + noise_tables.variance(16384, slots["v_fresh_sf"], "fresh")
-            # softmax_out_mask is installed twice (mask2 + the bound v_mask).
+
             + 2 * noise_tables.variance(16384, slots["softmax_out_mask_sf"], "encoding")
         )
         for k in ("softmax_v_mask_sf", "wo_sf", "ln_mean_inv_d_sf", "ln_var_inv_d_sf"):
@@ -263,15 +259,15 @@ class Block4BoostReplanTest(unittest.TestCase):
         )
         self.assertIsNotNone(res)
         self.assertEqual(res.base_q_final, (60, 31))
-        # the short prime fills to 59 (its max), the fused modulus stays 60.
+
         self.assertEqual(res.boosted_q_final, (60, 59))
         self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
-        # every distribution of the 14-SF budget is a valid all-q_max-fused chain.
+
         self.assertEqual(res.candidates_valid, res.candidates_tried)
         self.assertGreater(res.candidates_tried, 1)
 
     def test_all_softmax_distribution_is_valid(self):
-        # the user's worked example: put the whole budget on softmax_out_mask.
+
         slots = dict(BASE4)
         slots.update({
             "softmax_out_mask_sf": 17, "softmax_v_matmul_rescale_sf": 45,
@@ -282,7 +278,6 @@ class Block4BoostReplanTest(unittest.TestCase):
         self.assertEqual(probe.fusion_count, 1)
 
 
-# block5 n=2 mrpc fc=1 option (the committed block5_n2.json option 1).
 BASE5 = {
     "x_centered_fresh_sf": 26,
     "gamma_sf": 19,
@@ -301,7 +296,7 @@ class Block5N2CandidateGenTest(unittest.TestCase):
 
     @staticmethod
     def _probe():
-        # q_initial [21,39,51], fuse stage 1 into next -> q_final [60,51].
+
         return pb.ReplanProbe(
             valid=True, fusion_count=1,
             q_initial=(21, 39, 51), q_final=(60, 51),
@@ -311,19 +306,19 @@ class Block5N2CandidateGenTest(unittest.TestCase):
     def test_short_prime_fills_to_60(self):
         sp = pb.find_short_primes(self._probe(), 60)
         self.assertEqual(sp, [(2, 9)])
-        # max_fill == deficit (9) because the c=0 gelu_coeff encode (weight 1)
-        # makes every integer fill reachable.
+
+
         self.assertEqual(pb.short_prime_fill(pb.BLOCK5_N2_MRPC_TOPOLOGY, sp[0]), 9)
 
     def test_candidate_count_and_mixed_channels(self):
         cands = pb.generate_candidates(pb.BLOCK5_N2_MRPC_TOPOLOGY, BASE5, [(2, 9)])
-        # Σ (2·a_gamma + 2·a_wffn1 + 1·a_coeff) == 9 → a_coeff odd; 15 solutions.
+
         self.assertEqual(len(cands), 15)
-        # the all-after candidate (gelu_coeff +9, no rescale comp).
+
         all_after = [c for c in cands if c.edits.get("gelu_coeff_sf") == 29]
         self.assertEqual(len(all_after), 1)
         self.assertEqual(set(all_after[0].edits), {"gelu_coeff_sf"})
-        # an encode before the wffn1 ×2 cascade-compensates wffn1_rescale.
+
         comp = [c for c in cands if c.edits.get("gamma_sf", 19) > 19]
         self.assertTrue(comp and all("wffn1_rescale_sf" in c.edits for c in comp))
 
@@ -378,12 +373,12 @@ class Block5N2BoostReplanTest(unittest.TestCase):
         )
         self.assertIsNotNone(res)
         self.assertEqual(res.base_q_final, (60, 51))
-        self.assertEqual(res.boosted_q_final, (60, 60))  # reaches q_max exactly
+        self.assertEqual(res.boosted_q_final, (60, 60))
         self.assertEqual(res.candidates_valid, res.candidates_tried)
         self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
 
     def test_user_worked_examples_valid(self):
-        # case1 (all on gelu_coeff +9) and case3 (6+3) both reach 60.
+
         for slots in (
             {**BASE5, "gelu_coeff_sf": 29},
             {**BASE5, "gamma_sf": 21, "wffn1_sf": 21, "gelu_coeff_sf": 23, "wffn1_rescale_sf": 34},
@@ -393,7 +388,6 @@ class Block5N2BoostReplanTest(unittest.TestCase):
             self.assertEqual(probe.fusion_count, 1)
 
 
-# block5 n=4 mrpc fc=1 option (the committed block5_n4.json option 1).
 BASE5N4 = {
     "x_centered_fresh_sf": 26,
     "gamma_sf": 19,
@@ -413,7 +407,7 @@ class Block5N4CandidateGenTest(unittest.TestCase):
 
     @staticmethod
     def _probe():
-        # q_initial [21,39,31,51], fuse 1&2 -> q_final [60,31,51].
+
         return pb.ReplanProbe(
             valid=True, fusion_count=1,
             q_initial=(21, 39, 31, 51), q_final=(60, 31, 51),
@@ -421,19 +415,19 @@ class Block5N4CandidateGenTest(unittest.TestCase):
         )
 
     def test_two_short_primes_detected(self):
-        # both the middle 31 (pre-idx 2) and the trailing 51 (pre-idx 3) are short.
+
         self.assertEqual(pb.find_short_primes(self._probe(), 60), [(2, 29), (3, 9)])
 
     def test_last_prime_fills_to_60(self):
-        # the trailing 51 reaches 60 (the c=0 gelu_coeff gives the odd bit).
+
         self.assertEqual(pb.short_prime_fill(pb.BLOCK5_N4_MRPC_TOPOLOGY, (3, 9)), 9)
 
     def test_six_candidates_double_x2(self):
         cands = pb.generate_candidates(pb.BLOCK5_N4_MRPC_TOPOLOGY, BASE5N4, [(3, 9)])
-        # 4·(a_gamma+a_wffn1) + a_coeff == 9 → a_g+a_w ∈ {0,1,2}: 1+2+3 = 6.
+
         self.assertEqual(len(cands), 6)
-        # a before-encode (c=2) cascade-compensates BOTH wffn1_rescale and
-        # gelu_power_rescale through the two doublings.
+
+
         comp = [c for c in cands if c.edits.get("gamma_sf", 19) > 19]
         self.assertTrue(comp)
         for c in comp:
@@ -493,13 +487,13 @@ class Block5N4BoostReplanTest(unittest.TestCase):
         )
         self.assertIsNotNone(res)
         self.assertEqual(res.base_q_final, (60, 31, 51))
-        # the LAST prime (51) -> 60; the middle 31 is intentionally left.
+
         self.assertEqual(res.boosted_q_final, (60, 31, 60))
         self.assertEqual(res.candidates_valid, res.candidates_tried)
         self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
 
     def test_user_worked_examples_valid(self):
-        # case1 (all-after +9), case3 8+1, case3 4+5 — all reach (60,31,60).
+
         for slots in (
             {**BASE5N4, "gelu_coeff_sf": 29},
             {**BASE5N4, "gamma_sf": 21, "gelu_coeff_sf": 21,
@@ -537,12 +531,12 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     boosted option. torch + rescale_optimizer required (skipped locally)."""
 
     def _assert_sf_direct_matches(self, graph_key, block_idx, gelu_degree=4):
-        from action_space import (
+        from blb_stage2_rl.action_space import (
             _decode_block_field_values,
             action_vector_to_cfgs,
             build_block_cfg_from_field_values,
         )
-        import fusion_enum
+        from blb_stage2_rl import fusion_enum
         import numpy as np
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
@@ -573,7 +567,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         self._assert_sf_direct_matches("block2_mrpc", 2)
 
     def test_sf_direct_matches_index_path_block4(self):
-        # also exercises the softmax_out_mask → v_mask binding through both paths.
+
         self._assert_sf_direct_matches("block4", 4)
 
     def test_sf_direct_matches_index_path_block5_n2(self):
@@ -583,16 +577,12 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         self._assert_sf_direct_matches("block5_n4", 5, gelu_degree=4)
 
     def test_boosted_overrides_reach_the_installed_cfg(self):
-        # THE end-to-end guarantee the user asked for: when RL picks a boosted
-        # fusion option, the cfg that the model installs noise from (the one
-        # evaluate_action_for_cost feeds to replan + bridge.apply) must carry the
-        # BOOSTED SFs, not the index-decoded pre-boost ones. Here we drive
-        # evaluate_action_for_cost with a boosted_override and assert the returned
-        # cfg reflects it (above-baseline kt_mask2 SF that has NO action index).
-        from action_space import _decode_block_field_values
-        import fusion_enum
+
+
+        from blb_stage2_rl.action_space import _decode_block_field_values
+        from blb_stage2_rl import fusion_enum
         import numpy as np
-        from optimizer_cost import evaluate_action_for_cost
+        from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost
         ctx = fusion_enum.prepare_block_type_context(
             graph_key="block2_mrpc", block_idx=2, gelu_degree=4, attn_degree=2,
             profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
@@ -606,7 +596,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         )
         fv = {k: int(v) for k, v in fv.items() if v is not None}
         base_kt2 = int(fv["kt_mask2_sf"])
-        boosted_kt2 = base_kt2 + 1  # above-baseline → no action index exists for it
+        boosted_kt2 = base_kt2 + 1
         fv["kt_mask2_sf"] = boosted_kt2
 
         ev = evaluate_action_for_cost(
@@ -616,9 +606,9 @@ class SFDirectEquivalenceTest(unittest.TestCase):
             boosted_overrides={(2, li): fv},
         )
         installed_cfg = ev.cfgs_dict["block2"][li]
-        # the cfg that feeds replan + the model noise install carries the boost.
+
         self.assertEqual(int(installed_cfg.kt_mask2_encode.scaling_factor), boosted_kt2)
-        # without the override the same slot would be the pre-boost baseline SF.
+
         ev0 = evaluate_action_for_cost(
             ctx.baseline_full, profile="mrpc", num_layers=ctx.num_layers,
             max_sfs=ctx.max_sfs, rescale_bridge=ctx.bridge,
@@ -644,7 +634,7 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
     def _ctx_and_options(self, graph_key, block_idx, gelu_degree):
         import json
 
-        import fusion_enum
+        from blb_stage2_rl import fusion_enum
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
             profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
@@ -655,24 +645,24 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         return ctx, options
 
     def _assert_phase2(self, graph_key, block_idx, gelu_degree, expected_target, prior_prime):
-        import fusion_enum
-        import precision_boost as pbm
+        from blb_stage2_rl import fusion_enum
+        from blb_stage2_rl import precision_boost as pbm
         ctx, options = self._ctx_and_options(graph_key, block_idx, gelu_degree)
         boosted = fusion_enum.boost_options_for_block(ctx, options)
         nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]
         self.assertTrue(nz, f"{graph_key} must have a non-zero-fusion option to boost")
         for o in nz:
             self.assertTrue(o.get("boosted") and o.get("explicit_field_values"))
-            # phase 2 reached the config-derived output ceiling.
+
             self.assertEqual(int(o["output_sf"]), expected_target)
             fv = o["explicit_field_values"]
             final = fusion_enum._eval_block_from_field_values(ctx, fv)
             self.assertTrue(final.get("valid"))
             qf = tuple(int(q) for q in final["q_final"])
             self.assertEqual(qf[:-1], prior_prime, f"{graph_key}: prior primes changed")
-            self.assertGreaterEqual(qf[-1], 59)  # last prime kept high (q_max or q_max-1)
-            # every installed encode/rescale SF stays within the modulus limit q_max
-            # (points in (46, q_max] install no noise; >q_max would be a modulus violation).
+            self.assertGreaterEqual(qf[-1], 59)
+
+
             topo = pbm.TOPOLOGIES[graph_key]
             for n in topo.nodes:
                 if n.cfg_field and n.kind in ("fresh", "encode", "rescale") and n.cfg_field in fv:
@@ -682,20 +672,19 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         self._assert_phase2("block2_mrpc", 2, 4, expected_target=46, prior_prime=(60,))
 
     def test_block4_phase2_reaches_53(self):
-        # block4's short prime maxes at 59; phase 2 may lift the last prime to 60.
+
         self._assert_phase2("block4", 4, 4, expected_target=53, prior_prime=(60,))
 
     def test_block5_n2_phase2_reaches_43(self):
         self._assert_phase2("block5_n2", 5, 2, expected_target=43, prior_prime=(60,))
 
     def test_block5_n4_phase2_reaches_43(self):
-        # block5_n4 keeps its middle prime (31) from phase 1.
+
         self._assert_phase2("block5_n4", 5, 4, expected_target=43, prior_prime=(60, 31))
 
     def test_block5_n1_phase2_reaches_48(self):
-        # block5_n1 has NO phase-1 boost; phase-2's config ceiling is 48. Under the ADR
-        # (SF>46 = no noise) its single output rescale reaches the full 48 (was clamped
-        # to 46 under the old <=46 install cap). q_final is a single prime → no prior prime.
+
+
         self._assert_phase2("block5_n1", 5, 1, expected_target=48, prior_prime=())
 
 

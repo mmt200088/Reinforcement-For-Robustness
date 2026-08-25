@@ -1,27 +1,7 @@
-"""Torch-free seed derivation for the Stage-2 episode-parallel rollout.
+"""Deterministic, disjoint seed domains for Stage-2 policy and probe work.
 
-GPU-count-independence contract (mirrors ``stage1_rl/seed_utils.py``): every
-random draw in the episode-parallel path is keyed by the *global* episode
-index (plus step / trial / attempt), never by ``(worker_idx, local_idx)`` or
-by wall clock, so the same ``(base_seed, global_episode)`` produces the same
-stream no matter how many workers/GPUs split the window.
-
-Three independent streams are salted apart so policy sampling, probe noise,
-and the PPO-update shuffle can never alias each other:
-
-* policy  — per ``(global_episode, step, attempt)``; seeds the worker
-  device's CUDA Philox generator right before ``policy.sample_action``.
-* probe   — per ``global_episode``; the per-trial offset is the same
-  ``seed XOR trial_idx * KNUTH`` mix as ``probe_runner._trial_seed`` and
-  reseeds the worker-local scoped noise generator
-  (``function_handler.noise_rng_scope`` +
-  ``function_handler.reseed_noise_rng_for_device``).
-* update  — per PPO update index; reseeds the global numpy / torch RNGs
-  before ``sequential_ppo_update`` (its minibatch shuffle uses
-  ``np.random.shuffle``).
-
-``PREFLIGHT_EPISODE = -1`` reserves a probe stream for the noisy baseline
-preflight so threshold calibration is reproducible too.
+Every draw is keyed by its global episode or evaluation index, so changing the
+number of healthy GPUs changes assignment only, never the random stream.
 """
 
 from __future__ import annotations
@@ -31,20 +11,16 @@ from typing import List
 
 import numpy as np
 
-# Knuth multiplicative-hash constant — same as stage1_rl/seed_utils.py and
-# probe_runner._TRIAL_SEED_MULTIPLIER, so the trial mix stays consistent.
+
 _KNUTH = 2654435761
 _MASK = 0x7FFFFFFFFFFFFFFF
 
-# Stream salts (arbitrary fixed constants; only need to be distinct).
+
 _POLICY_SALT = 0x515AC0DE
 _PROBE_SALT = 0x09E3779B9
 _UPDATE_SALT = 0x2545F4914F6CDD1D
 
-# Layerwise robust evidence reserves the low 40 bits for the existing trial
-# mixer. For the supported 256-trial maximum, ``trial_idx * KNUTH`` never
-# reaches bit 40, so the domain and episode bits cannot be changed by trial
-# derivation. This gives a proof of disjointness across adjacent episodes.
+
 _LAYERWISE_TRIAL_BITS = 40
 _LAYERWISE_TRIAL_MASK = (1 << _LAYERWISE_TRIAL_BITS) - 1
 _LAYERWISE_EPISODE_BITS = 21
@@ -55,7 +31,7 @@ _LAYERWISE_PROMOTION_DOMAIN = 2
 _LAYERWISE_DOMAIN_SHIFT = _LAYERWISE_TRIAL_BITS + _LAYERWISE_EPISODE_BITS
 _LAYERWISE_LOW_SALT = 0x6C6179657277697365
 
-#: Reserved pseudo-episode index for the noisy baseline preflight probe.
+
 PREFLIGHT_EPISODE = -1
 
 

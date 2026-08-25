@@ -1,6 +1,4 @@
-from contextlib import redirect_stdout
 import importlib.util
-import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,10 +21,6 @@ class RescaleConfigDiscoveryTest(unittest.TestCase):
         cls.batch_run_configs = _load_script_module(
             "batch_run_configs_for_test",
             "Rescale_optimizer/scripts/batch_run_configs.py",
-        )
-        cls.check_compress_headroom = _load_script_module(
-            "check_compress_headroom_for_test",
-            "Rescale_optimizer/scripts/check_compress_headroom.py",
         )
 
     def test_batch_discovery_scans_directory_without_path_glob(self):
@@ -56,36 +50,6 @@ class RescaleConfigDiscoveryTest(unittest.TestCase):
         self.assertIn('out_path.open("w", encoding="utf-8")', main_region)
         self.assertNotIn("_format_doc(entries", main_region)
         self.assertNotIn("write_text(out_text", main_region)
-
-    def test_headroom_main_scans_directory_without_path_glob(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "zeta.json").write_text("{}", encoding="utf-8")
-            (root / "alpha.json").write_text("{}", encoding="utf-8")
-            (root / "static_skeletons.json").write_text("{}", encoding="utf-8")
-            (root / "notes.txt").write_text("ignored", encoding="utf-8")
-            (root / "nested.json").mkdir()
-
-            seen = []
-
-            def fake_diagnose(path):
-                seen.append(Path(path).name)
-                return {"config": Path(path).stem, "rows": []}
-
-            with mock.patch.object(
-                Path,
-                "glob",
-                side_effect=AssertionError("config discovery should not use Path.glob"),
-            ), mock.patch.object(
-                self.check_compress_headroom,
-                "diagnose",
-                side_effect=fake_diagnose,
-            ), redirect_stdout(io.StringIO()):
-                rc = self.check_compress_headroom.main(["--configs-dir", str(root)])
-
-        self.assertEqual(rc, 0)
-        self.assertEqual(seen, ["alpha.json", "zeta.json"])
-
 
 if __name__ == "__main__":
     unittest.main()

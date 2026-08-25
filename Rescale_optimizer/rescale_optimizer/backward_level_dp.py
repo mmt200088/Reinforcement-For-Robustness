@@ -52,10 +52,6 @@ logger = logging.getLogger("rescale_optimizer")
 INF = float("inf")
 
 
-# ---------------------------------------------------------------------------
-# Result object
-# ---------------------------------------------------------------------------
-
 @dataclass
 class DPResult:
     """
@@ -92,10 +88,6 @@ class DPResult:
                 f"skeleton={self.skeleton})")
 
 
-# ---------------------------------------------------------------------------
-# Cost helpers
-# ---------------------------------------------------------------------------
-
 def stage_edge_cost(edge: StageEdge, l: int, p: CostParams) -> float:
     """~C(i,j,l) for a stage edge."""
     return (p.lambda_0
@@ -108,10 +100,6 @@ def tail_edge_cost(edge: TailEdge, p: CostParams) -> float:
     """~C(i, M+1, 0) for a tail edge."""
     return p.lambda_0 + p.alpha * edge.E()
 
-
-# ---------------------------------------------------------------------------
-# DP table construction
-# ---------------------------------------------------------------------------
 
 def build_dp_table(
     graph: RescaleGraph,
@@ -143,13 +131,13 @@ def build_dp_table(
     for (ii, j), edge in graph.stage_edges.items():
         stage_successor_edges.setdefault(ii, []).append((j, edge))
 
-    # Process cut points in reverse topological order for every l.
+
     for i in range(M, -1, -1):
         for l in sorted(reach.bwd_steps.get(i, set())):
             best = INF
             best_tr: Optional[Tuple[str, int, int]] = None
 
-            # stage edges
+
             if l >= 1:
                 for j, edge in stage_successor_edges.get(i, ()):
                     if not reach.feas_stage(i, j, l):
@@ -164,14 +152,14 @@ def build_dp_table(
                         best = total
                         best_tr = ("stage", j, l - 1)
 
-            # tail edge
+
             if l == 0 and i in graph.tail_edges:
                 not_forbidden = (forbidden_edge_at_state is None or
                                  forbidden_edge_at_state != (i, 0, sink, "tail"))
                 if not_forbidden:
                     edge_t = graph.tail_edges[i]
                     c_edge = tail_edge_cost(edge_t, cost)
-                    total = c_edge  # DP[(sink, 0)] == 0
+                    total = c_edge
                     if total < best:
                         best = total
                         best_tr = ("tail", sink, 0)
@@ -183,10 +171,6 @@ def build_dp_table(
 
     return DP, NEXT
 
-
-# ---------------------------------------------------------------------------
-# Back-tracking
-# ---------------------------------------------------------------------------
 
 def backtrack_from(
     DP: Dict[Tuple[int, int], float],
@@ -235,10 +219,6 @@ def backtrack_from(
     )
 
 
-# ---------------------------------------------------------------------------
-# Main entry
-# ---------------------------------------------------------------------------
-
 def run_backward_dp(graph: RescaleGraph,
                     reach: Reachability,
                     cost: CostParams) -> DPResult:
@@ -266,10 +246,6 @@ def run_backward_dp(graph: RescaleGraph,
     return result
 
 
-# ---------------------------------------------------------------------------
-# Deviation (used by Alg 6 BestFirstRepairableSkeleton)
-# ---------------------------------------------------------------------------
-
 def deviate_at(graph: RescaleGraph,
                reach: Reachability,
                cost: CostParams,
@@ -289,7 +265,7 @@ def deviate_at(graph: RescaleGraph,
 
     sink = graph.dummy_sink_index
 
-    # ---------------- walk the forced prefix -------------------------
+
     i, l = 0, source.L_star
     prefix_skel: List[int] = [0]
     prefix_edges: List[Tuple[str, int, int]] = []
@@ -309,8 +285,8 @@ def deviate_at(graph: RescaleGraph,
             prefix_drops.append(edge.drop_bits)
             i, l = ej, l - 1
         else:
-            # A tail edge in the middle of the prefix is impossible
-            # because tail edges immediately terminate at the sink.
+
+
             return DPResult()
 
         prefix_cost += c
@@ -318,7 +294,7 @@ def deviate_at(graph: RescaleGraph,
         prefix_edges.append((kind, ei, ej))
         prefix_skel.append(ej)
 
-    # ---------------- forbid e_t at state (i, l) ---------------------
+
     fk, fi, fj = source.edges[t - 1]
     if fi != i:
         return DPResult()

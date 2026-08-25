@@ -671,7 +671,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         action_module = ModuleType("blb_stage2_rl.layerwise_action")
         action_module.describe_layerwise_action_matrix = lambda value: list(value)
         runner_module = ModuleType("blb_stage2_rl.training")
-        runner_module._build_legacy_compatible_best_noise_config = lambda _value: {}
+        runner_module._build_best_noise_config = lambda _value: {}
 
         with mock.patch.dict(
             sys.modules,

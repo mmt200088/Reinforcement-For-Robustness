@@ -13,9 +13,7 @@ from unittest import mock
 
 import numpy as np
 
-# Load the two torch-free modules without executing stage1_rl/__init__.py, whose
-# existing multi-GPU exports intentionally import torch.  This focused test must
-# remain runnable in the lightweight CPU test environment.
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PACKAGE_NAME = "_stage1_search_testpkg"
 _package = ModuleType(_PACKAGE_NAME)

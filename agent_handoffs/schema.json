@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/mmt200088/Reinforcement-For-Robustness/agent_handoffs/schema.json",
+  "$id": "urn:rfr:agent-handoff-schema",
   "title": "RFR multi-agent Git protocol records",
   "oneOf": [
     {

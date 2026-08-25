@@ -7,12 +7,9 @@ drop is ``< q_max``). The enum cannot fix this — its SF grid only sweeps *down
 from each slot's baseline, while filling the short prime needs *above-baseline*
 SF at the segment feeding it.
 
-This module raises those short primes as high as possible (≤ ``q_max``) for a
-single block-type, deterministically (route 2 — structural per-block topology +
-ONE generic algorithm; NOT a search), then verifies every candidate via REAL
-replan and keeps the minimum-installed-noise one. The result carries
-above-baseline SFs → stored as an explicit-SF "boosted" option (see
-``docs/superpowers/specs/2026-06-19-stage2-precision-boost-design.md``).
+This module raises short primes as high as possible (≤ ``q_max``) for one
+block type, verifies every candidate through real replan, and keeps the
+minimum-installed-noise option. Above-baseline SFs are stored explicitly.
 
 Mechanism (generic; confirmed against real replan for block2 fc=1 and block4
 fc=1). A short prime sits at a rescale ``R_target``, fed through ``c`` ``ctct``
@@ -47,19 +44,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 DEFAULT_Q_MAX = 60
-# Safety cap on the distribution enumeration (block4 fc=1 = 372; this guards a
-# pathological large-S block-type from exploding the build).
+
+
 MAX_DISTRIBUTIONS = 200_000
-# Encodes are never raised above the noise table's max representable SF.
+
 MAX_ENCODE_SF = 46
 
 
-# ---------------------------------------------------------------------------
-# Phase 2 ("二阶段加大精度") — raise the final OUTPUT scale to its ceiling
-# ---------------------------------------------------------------------------
-# The final mask encode (the one feeding q_tail) may be LOWERED to shift its
-# precision onto the last rescale's sf_post, but never below this floor (user
-# spec: "20最多减少到15...这个约束是写死的").
 FINAL_ENCODE_MIN = 15
 
 
@@ -100,9 +91,6 @@ def target_output_sf(graph_key: str, profile: str, root: str) -> int:
     return q_tail - amp_last - h_sf
 
 
-# ---------------------------------------------------------------------------
-# Per-block chain topology (hardcoded per block, NOT per SF/position)
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ChainNode:
     """One node in a block's scale-accumulation chain, in chain order.
@@ -143,109 +131,86 @@ class ChainTopology:
         return [i for i, n in enumerate(self.nodes) if n.kind == "rescale"]
 
 
-# block2 (mrpc) — validated against the committed map SFs, the user's worked
-# chains, and real replan (q_initial [29,31,58] → fuse 1&2 → q_final [60,58]).
 BLOCK2_MRPC_TOPOLOGY = ChainTopology(
     graph_key="block2_mrpc",
     nodes=(
         ChainNode("fresh", "inv_std_fresh_sf"),
-        ChainNode("x2"),  # ctct_x_mean_over_std (input ×2, off-limits)
+        ChainNode("x2"),
         ChainNode("encode", "gamma_sf", addable=True),
         ChainNode("rescale", "gamma_rescale_sf"),
         ChainNode("encode", "wk_sf", addable=True),
         ChainNode("encode", "kt_mask1_sf", addable=True),
-        ChainNode("rescale", "kt_mask1_rescale_sf"),  # R_pre for the qkt short prime
+        ChainNode("rescale", "kt_mask1_rescale_sf"),
         ChainNode("encode", "kt_mask2_sf", addable=True),
-        ChainNode("x2"),  # ctct_preprocess_qkt (QK ×2, off-limits)
-        ChainNode("rescale", "qkt_matmul_rescale_sf"),  # R_target (short prime)
-        ChainNode("encode", "qkt_merge_mask_sf", addable=False),  # feeds q_tail
+        ChainNode("x2"),
+        ChainNode("rescale", "qkt_matmul_rescale_sf"),
+        ChainNode("encode", "qkt_merge_mask_sf", addable=False),
     ),
 )
 
-# block4 (mrpc) — validated against block4.json fc=1 and real replan
-# (q_initial [27,33,31] → fuse 1&2 → q_final [60,31]; the 31 fills only to 59).
-# ctct_rot_softmax_mul_v is an ADDITIVE ctct (scale += v_fresh + v_mask), NOT a
-# doubling; softmax_out_mask is bound to v_mask (binding_multiplier=2).
+
 BLOCK4_MRPC_TOPOLOGY = ChainTopology(
     graph_key="block4",
     nodes=(
         ChainNode("fresh", "softmax_out_fresh_sf"),
         ChainNode("encode", "softmax_out_mask_sf", addable=True, binding_multiplier=2),
-        ChainNode("additive_ctct"),  # ctct_rot_softmax_mul_v (+= v_fresh + v_mask)
-        ChainNode("rescale", "softmax_v_matmul_rescale_sf"),  # fuses away
+        ChainNode("additive_ctct"),
+        ChainNode("rescale", "softmax_v_matmul_rescale_sf"),
         ChainNode("encode", "softmax_v_mask_sf", addable=True),
         ChainNode("encode", "wo_sf", addable=True),
         ChainNode("encode", "ln_mean_inv_d_sf", addable=True),
-        ChainNode("rescale", "ln_mean_rescale_sf"),  # R_pre for the ln_square short prime
-        ChainNode("x2"),  # ctct_square (LN (X−μ)², off-limits)
-        ChainNode("rescale", "ln_square_rescale_sf"),  # R_target (short prime)
-        ChainNode("encode", "ln_var_inv_d_sf", addable=False),  # feeds q_tail
+        ChainNode("rescale", "ln_mean_rescale_sf"),
+        ChainNode("x2"),
+        ChainNode("rescale", "ln_square_rescale_sf"),
+        ChainNode("encode", "ln_var_inv_d_sf", addable=False),
     ),
 )
 
-# block5 n=2 (mrpc) — validated against block5_n2.json fc=1 and real replan
-# (q_initial [21,39,51] → fuse 1&2 → q_final [60,51]). The short prime (51) has an
-# encode (gelu_coeff) AFTER the ctct_gelu_x2 ×2 (c=0, weight 1), so an ODD deficit
-# (9) can be filled exactly → 60 (unlike block4). x_centered_fresh is the bound
-# initial ×2 operand (off-limits, like block2's). n=1 needs no boost (its fused
-# chain is already 60/60/60), so it has no topology and the builder leaves it.
+
 BLOCK5_N2_MRPC_TOPOLOGY = ChainTopology(
     graph_key="block5_n2",
     nodes=(
         ChainNode("fresh", "x_centered_fresh_sf"),
-        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
-        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("x2"),
+        ChainNode("rescale", "normalize_rescale_sf"),
         ChainNode("encode", "gamma_sf", addable=True),
         ChainNode("encode", "wffn1_sf", addable=True),
-        ChainNode("rescale", "wffn1_rescale_sf"),  # R_pre (fused prime)
-        ChainNode("x2"),  # ctct_gelu_x2 (off-limits)
-        ChainNode("encode", "gelu_coeff_sf", addable=True),  # after the ×2 → c=0
-        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (short prime)
+        ChainNode("rescale", "wffn1_rescale_sf"),
+        ChainNode("x2"),
+        ChainNode("encode", "gelu_coeff_sf", addable=True),
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),
     ),
 )
 
-# block5 n=4 (mrpc) — validated against block5_n4.json fc=1 and real replan
-# (q_initial [21,39,31,51] → fuse 1&2 → q_final [60,31,51]). TWO ×2 (ctct_gelu_x2,
-# ctct_gelu_x4) sit between the before-encodes and the short prime, so gamma/wffn1
-# have c=2 (bit-weight 4 — 4 bits/SF) and the compensation must propagate through
-# both doublings (forward-simulated). The short prime is the LAST one (51 → 60);
-# the intermediate 31 (gelu_power) is left as-is (user spec). gelu_coeff (after
-# both ×2) has c=0 (weight 1) → makes the odd deficit 9 reach 60.
+
 BLOCK5_N4_MRPC_TOPOLOGY = ChainTopology(
     graph_key="block5_n4",
     nodes=(
         ChainNode("fresh", "x_centered_fresh_sf"),
-        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
-        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("x2"),
+        ChainNode("rescale", "normalize_rescale_sf"),
         ChainNode("encode", "gamma_sf", addable=True),
         ChainNode("encode", "wffn1_sf", addable=True),
-        ChainNode("rescale", "wffn1_rescale_sf"),  # fused prime
-        ChainNode("x2"),  # ctct_gelu_x2 (off-limits)
-        ChainNode("rescale", "gelu_power_rescale_sf_0"),  # prime 3 (31) — kept, compensated
-        ChainNode("x2"),  # ctct_gelu_x4 (off-limits)
-        ChainNode("encode", "gelu_coeff_sf", addable=True),  # after both ×2 → c=0
-        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (short prime 4)
+        ChainNode("rescale", "wffn1_rescale_sf"),
+        ChainNode("x2"),
+        ChainNode("rescale", "gelu_power_rescale_sf_0"),
+        ChainNode("x2"),
+        ChainNode("encode", "gelu_coeff_sf", addable=True),
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),
     ),
 )
 
-# block5 n=1 (mrpc) — NO phase-1 boost (its fused chain is already all-q_max, no short
-# prime), but it DOES get phase-2: raise the output scale (the last rescale's sf_post —
-# no final encode) toward the ceiling. Degree-1 GELU is linear (c_0 + c_1·x), so there is
-# NO gelu ×2 after the normalize ×2 → gamma/wffn1/gelu_coeff are all c=0 (weight 1) with no
-# intermediate rescale between them and the last rescale (distribution needs no
-# compensation). x_centered_fresh stays off-limits (its bound aux fresh would cost 2 noise
-# points for the same chain bit a weight-1 encode supplies with 1 → never min-noise).
-# Validated against real replan (q_initial [16,44] → fuse → q_final [60]).
+
 BLOCK5_N1_MRPC_TOPOLOGY = ChainTopology(
     graph_key="block5_n1",
     nodes=(
         ChainNode("fresh", "x_centered_fresh_sf"),
-        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
-        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("x2"),
+        ChainNode("rescale", "normalize_rescale_sf"),
         ChainNode("encode", "gamma_sf", addable=True),
         ChainNode("encode", "wffn1_sf", addable=True),
         ChainNode("encode", "gelu_coeff_sf", addable=True),
-        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (last / output)
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),
     ),
 )
 
@@ -272,7 +237,7 @@ def topology_for_graph_key(graph_key: str) -> Optional[ChainTopology]:
     ``ctx.graph_key``, so reusing the block2 structure across profiles is safe.
 
     Returns ``None`` for keys with no topology (block1 — fusion-degenerate, never
-    boosted; block3 — frozen; block5_n0 — degree-0 disabled), so the boost leaves
+    boosted and block3 is frozen, so the boost leaves
     those options untouched.
     """
     gk = str(graph_key)
@@ -333,27 +298,23 @@ def canonicalize_noise_irrelevant_rescales(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Replan probe (injected) + candidate model
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ReplanProbe:
     """Result of replanning one candidate's named SFs (injected by the caller)."""
 
     valid: bool
     fusion_count: int
-    q_initial: Tuple[int, ...]  # per pre-fusion stage (one per rescale)
-    q_final: Tuple[int, ...]  # per post-fusion stage
+    q_initial: Tuple[int, ...]
+    q_final: Tuple[int, ...]
     fusions: Tuple[dict, ...] = ()
-    extra: Any = None  # opaque payload for noise_fn (e.g. installed points) — lets
-    #                    replan_fn and noise_fn share one evaluation (no double replan).
-    t_final: Tuple[int, ...] = ()  # achieved per-rescale sf_post (phase 2 reads
-    #                    t_final[-1] = the last rescale's sf_post to check the output scale).
+    extra: Any = None
+
+    t_final: Tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
 class Candidate:
-    edits: Dict[str, int]  # slot field -> new SF (above-baseline allowed)
+    edits: Dict[str, int]
     description: str
 
 
@@ -368,16 +329,13 @@ class BoostResult:
     candidates_valid: int
 
 
-# ---------------------------------------------------------------------------
-# Short-prime detection (map post-fusion q_final back to pre-fusion stages)
-# ---------------------------------------------------------------------------
 def _qfinal_to_pre_stage(probe: ReplanProbe) -> List[List[int]]:
     """Map each post-fusion ``q_final`` index to the pre-fusion stage indices it
     covers, by replaying the fusion events on the identity grouping."""
     n_pre = len(probe.q_initial)
     groups: List[List[int]] = [[i] for i in range(n_pre)]
     for ev in probe.fusions:
-        p = int(ev.get("fused_position", 0)) - 1  # to 0-indexed pre-stage
+        p = int(ev.get("fused_position", 0)) - 1
         gi = next((k for k, g in enumerate(groups) if p in g), None)
         if gi is None:
             continue
@@ -400,23 +358,20 @@ def find_short_primes(probe: ReplanProbe, q_max: int) -> List[Tuple[int, int]]:
             continue
         grp = groups[post_idx]
         if len(grp) != 1:
-            # a fused-yet-short stage is unexpected; skip (replan-verify guards).
+
             continue
         out.append((int(grp[0]), int(q_max) - int(qf)))
     return out
 
 
-# ---------------------------------------------------------------------------
-# Chain geometry + candidate generation (structural, per the topology)
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class _Geometry:
     target_pos: int
     r_pre_pos: Optional[int]
-    c: int  # ×2 doublings between R_pre and R_target
-    # addable encodes: (cfg_field, binding_multiplier, c_i, position)
+    c: int
+
     addable: Tuple[Tuple[str, int, int, int], ...]
-    # rescales strictly before R_target: (cfg_field, position)
+
     rescales_before: Tuple[Tuple[str, int], ...]
 
 
@@ -558,7 +513,7 @@ def _simulate_rescale_edits(
                 delta += int(node.binding_multiplier) * a
         elif node.kind == "rescale" and node.cfg_field and delta:
             edits[node.cfg_field] = int(base_slots[node.cfg_field]) + delta
-        # fresh / additive_ctct / non-addable encode: delta unchanged
+
     return edits, delta
 
 
@@ -597,7 +552,7 @@ def _candidates_for_short_prime(
             continue
         rescale_edits, fill = _simulate_rescale_edits(topology, base_slots, dist, geo.target_pos)
         if fill != max_fill:
-            continue  # sanity: the bit-weighted budget must match the chain sim
+            continue
         edits.update(rescale_edits)
         if not edits:
             continue
@@ -641,9 +596,6 @@ def generate_candidates(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Phase 2 candidate generation (raise the final OUTPUT scale to the ceiling)
-# ---------------------------------------------------------------------------
 def _last_rescale_and_final_encode(topology: ChainTopology) -> Tuple[int, str, Optional[str]]:
     """``(last_rescale_idx, last_rescale_field, final_encode_field_or_None)``.
 
@@ -729,9 +681,7 @@ def generate_phase2_candidates(
     weighted = [(f, w) for f, w, _pos in _addable_bit_weights(geo)]
     weights = [w for _f, w in weighted]
 
-    # final_encode range: down to the floor, up to base+delta (so sf_post >= base
-    # → the pre-scale only ever rises, sourced from upstream). No final encode →
-    # the single value 0 (whole target on sf_post).
+
     if final_field is None:
         fe_values: Sequence[int] = (0,)
     else:
@@ -747,7 +697,7 @@ def generate_phase2_candidates(
         if final_field is not None and int(fe) > max_installed_sf:
             continue
         sf_post_rise = sf_post_target - base_sf_post
-        # bits of pre-scale needed to hold sf_post_rise AND lift the prime to q_max.
+
         budget = sf_post_rise + (int(q_max) - int(base_last_prime))
         max_fill = _max_reachable_fill(weights, budget) if (weights and budget > 0) else 0
         dists = _enumerate_distributions(weighted, max_fill) if (weighted and max_fill > 0) else [{}]
@@ -762,9 +712,8 @@ def generate_phase2_candidates(
             edits[last_field] = sf_post_target
             if final_field is not None:
                 edits[final_field] = int(fe)
-            # Install limit: every installed SF must be <= max_installed_sf (q_max).
-            # Points in (46, q_max] install no noise (negligible); only > q_max is a
-            # modulus violation (also rejected by replan). No lower-prime fallback.
+
+
             if any(int(v) > int(max_installed_sf) for v in edits.values()):
                 continue
             key = tuple(sorted(edits.items()))
@@ -777,9 +726,6 @@ def generate_phase2_candidates(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Boost driver
-# ---------------------------------------------------------------------------
 def boost_option(
         *,
         topology: ChainTopology,
@@ -803,7 +749,7 @@ def boost_option(
         return None
     base_fc = int(base.fusion_count)
     base_sum = sum(int(x) for x in base.q_final)
-    # the last rescale is the highest pre-fusion rescale index in the topology.
+
     last_rescale_idx = len(topology.rescale_positions()) - 1
     shorts = find_short_primes(base, q_max)
     fillable = [
@@ -822,9 +768,8 @@ def boost_option(
         probe = replan_fn(slots)
         if not probe.valid or int(probe.fusion_count) != base_fc:
             continue
-        # every valid distribution must reach the SAME boosted chain (each short
-        # prime raised by its fill; other stages preserved) → total prime bits up
-        # by exactly total_fill. This is the replan-verified success criterion.
+
+
         if sum(int(x) for x in probe.q_final) != base_sum + total_fill:
             continue
         n_valid += 1
@@ -844,9 +789,6 @@ def boost_option(
     return best
 
 
-# ---------------------------------------------------------------------------
-# Phase 2 boost driver
-# ---------------------------------------------------------------------------
 @dataclass
 class Phase2Result:
     boosted_slots: Dict[str, int]
@@ -887,8 +829,8 @@ def boost_option_phase2(
     base_last_prime = base_qf[-1]
     base_prior = base_qf[:-1]
     _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
-    # clamp the requested target to the install limit q_max (block5_n1 now reaches 48;
-    # only a config beyond q_max would clamp). Points in (46, q_max] install no noise.
+
+
     target = effective_output_target(topology, int(target_output_sf), int(q_max))
 
     candidates = generate_phase2_candidates(
@@ -905,11 +847,11 @@ def boost_option_phase2(
             continue
         qf = tuple(int(x) for x in probe.q_final)
         if qf[:-1] != base_prior:
-            continue  # a prior prime moved — phase 2 must not disturb earlier stages
+            continue
         fe = int(slots[final_field]) if final_field else 0
         out_sf = int(probe.t_final[-1]) + fe
         if out_sf != target:
-            continue  # replan snapped the sf_post — output missed the (clamped) target
+            continue
         n_valid += 1
         var = float(noise_fn(slots, probe))
         if best is None or var < best.total_variance:

@@ -42,13 +42,7 @@ for p in (
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# apply_optimizer_output_to_cfg lives in rescale_optimizer_bridge, which imports the
-# NoiseConfig classes from function_handler -> torch. So this whole file is gated on
-# the bridge being importable (torch host = the server, where the real noise-install
-# path actually runs). A torch-free host skips the file cleanly WITHOUT mutating the
-# shared discover process's sys.path / sys.modules (a global stub here leaked into
-# and broke other test modules). The fix is also locked by the replan lane in
-# tests/test_blb_precision_boost.py.
+
 try:
     from rescale_optimizer_bridge import (
         DEFAULT_CFG_TO_T_NEW_MAP,
@@ -57,7 +51,7 @@ try:
         default_rotation_name_map,
     )
     _BRIDGE_OK = True
-except Exception:  # torch / function_handler unavailable (torch-free CI / local)
+except Exception:
     _BRIDGE_OK = False
 
 
@@ -79,8 +73,8 @@ class SyntheticTest(unittest.TestCase):
     """Lock the detection on a hand-built optimizer output (no replan needed)."""
 
     def test_passthrough_and_absent_are_both_nulled(self):
-        # 5-position chain: fresh source, a REAL rescale, a FUSED passthrough
-        # (sf set, no sf_post), a fully-ABSENT fused node, and a REAL tuple rescale.
+
+
         table = {
             "g": (
                 _SkelEntry("src_fresh"),
@@ -97,8 +91,8 @@ class SyntheticTest(unittest.TestCase):
                 "cut_point_sf": [
                     {"i": 0, "name": "src", "sf": 20, "type": "source"},
                     {"i": 1, "name": "a", "sf_pre": 40, "sf_post": 18, "drop": 22, "type": "rescale"},
-                    {"i": 2, "name": "b", "sf": 50, "type": "mul"},          # FUSED passthrough (no sf_post)
-                    # i=3 omitted entirely                                    # FUSED, absent node
+                    {"i": 2, "name": "b", "sf": 50, "type": "mul"},
+
                     {"i": 4, "name": "c", "sf_pre": 60, "sf_post": 30, "drop": 30, "type": "rescale"},
                 ],
             },
@@ -118,8 +112,8 @@ class SyntheticTest(unittest.TestCase):
         self.assertEqual(cfg.sq_rescales[0].scaling_factor, 30, "real tuple rescale set from sf_post")
 
     def test_no_fusion_keeps_every_rescale(self):
-        # Every position carries a real sf_post -> nothing is nulled (the baseline,
-        # no-fusion case must be unaffected by the fix).
+
+
         table = {"g": (_SkelEntry("src_fresh"), _SkelEntry("r1"), _SkelEntry("r2"))}
         raw = {
             "result": {"valid": True},
@@ -138,9 +132,6 @@ class SyntheticTest(unittest.TestCase):
         self.assertEqual(cfg.r2.scaling_factor, 19)
 
 
-# Per-block-type replan wiring for the committed boosted fc=1 options. Each entry:
-# (map_file, block_idx, graph_key, t_new field keys, delta_overrides spec).
-# A delta value is "x2" (doubling), a slot key (int SF), or a (k1,k2) sum.
 _BUILD = {
     "block2_mrpc": (
         "block2_mrpc.json", 2,
@@ -198,9 +189,8 @@ class RealReplanTest(unittest.TestCase):
 
     @staticmethod
     def _mock_cfg(graph_key, block_idx):
-        # Tuple-typed rescale fields use indices like [0] and [-1] (deepest coeff),
-        # so size them generously — every referenced (pos or neg) index resolves;
-        # untouched slots stay non-None and are never asserted on.
+
+
         entries = DEFAULT_CFG_TO_T_NEW_MAP[graph_key]
         cfg = types.SimpleNamespace()
         for se in entries:
@@ -235,8 +225,7 @@ class RealReplanTest(unittest.TestCase):
                 bsk = list(self.inv.baselines[graph_key][0])
                 entries = DEFAULT_CFG_TO_T_NEW_MAP[graph_key]
 
-                # ground truth straight from the optimizer output: a t_new rescale
-                # (r>=1) is fused iff its node has no real sf_post.
+
                 expect_fused, expect_real = [], []
                 for r, se in enumerate(entries):
                     if r == 0 or r >= len(bsk):
@@ -265,8 +254,8 @@ class RealReplanTest(unittest.TestCase):
                                      f"{graph_key}: real rescale {field} not set to optimizer sf_post")
 
     def test_block4_users_reported_case(self):
-        # The exact scenario the user reported: block4 fc=1 fuses softmax_v_matmul
-        # (the 27-prime) into ln_mean; only ln_mean + ln_square install rescale noise.
+
+
         s = self._boosted_slots("block4.json")
         _, block_idx, t_keys, _delta_spec = _BUILD["block4"]
         t_new = [s[k] for k in t_keys]

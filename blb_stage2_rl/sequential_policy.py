@@ -29,32 +29,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-try:
-    from .policy_network import (
-        POLICY_ARCHITECTURE,
-        POLICY_NETWORK_ID,
-    )
-except ImportError:  # Standalone SourceFileLoader compatibility.
-    from blb_stage2_rl.policy_network import (
-        POLICY_ARCHITECTURE,
-        POLICY_NETWORK_ID,
-    )
+from .policy_network import POLICY_ARCHITECTURE, POLICY_NETWORK_ID
 
-# ---------------------------------------------------------------------------
-# Policy
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class _SlotHeadView:
-    """Read-only compatibility view for legacy tests/introspection.
-
-    The real actor head is vectorized in ``slot_head_weight`` /
-    ``slot_head_bias``; exposing lightweight ``weight`` and ``bias`` slices
-    keeps old initialization checks meaningful without putting a Python
-    ``ModuleList`` back on the hot path.
-    """
-    weight: torch.Tensor
-    bias: torch.Tensor
 
 @dataclass
 class SequentialPolicyConfig:
@@ -67,12 +43,12 @@ class SequentialPolicyConfig:
     """
     state_dim: int
     max_step_dim: int
-    max_num_levels: int = 6      # generic default; production derives schedule width
+    max_num_levels: int = 6
     d_hidden: int = 256
-    d_step_embed: int = 32       # embedding for step_idx (0..horizon-1)
+    d_step_embed: int = 32
     horizon: int = 59
-    block_count: int = 5         # block one-hot dim (1..5)
-    num_layers: int = 12         # for layer one-hot if needed by the trunk
+    block_count: int = 5
+    num_layers: int = 12
     d_model: int = 128
     n_heads: int = 4
     n_layers: int = 2
@@ -266,9 +242,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
         self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
         self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
-        # One table with slot-specific index offsets is equivalent to one
-        # embedding per slot, but avoids launching many tiny embedding kernels
-        # during the 59-step rollout loop.
+
+
         self.prev_action_embedding = nn.Embedding(
             cfg.max_step_dim * cfg.max_num_levels,
             cfg.prev_action_embed_dim,
@@ -287,8 +262,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             (cfg.max_step_dim,), 8.0, dtype=torch.float32,
         )
         if cfg.metadata_width == 0 and cfg.signal_width == 4:
-            # Canonical layerwise observations encode fusion by /1 and K by
-            # the largest categorical index (7 for the K6-K13 domain).
+
+
             action_decode_scales.fill_(float(max(1, cfg.max_num_levels - 1)))
             action_decode_scales[0] = 1.0
         self.register_buffer(
@@ -331,9 +306,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             nn.Linear(cfg.d_model, cfg.actor_dim),
             nn.Tanh(),
         )
-        # Per-slot actor heads, vectorized as one parameter tensor. This keeps
-        # the architecture's independent slot heads while replacing many small
-        # Linear calls with one batched contraction.
+
+
         self.slot_head_weight = nn.Parameter(torch.empty(
             cfg.max_step_dim,
             cfg.max_num_levels,
@@ -362,13 +336,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.zeros(cfg.max_step_dim, cfg.max_num_levels, dtype=torch.float32),
             persistent=False,
         )
-        # ADR-012 per-slot exploration floor (fusion mode). Mixture sampling
-        # pi' = (1-eps)*pi + eps*Uniform(masked support) is the TRUE policy
-        # for those slots — sample_action AND evaluate_action (PPO replay) use
-        # the same mixture, so log-prob ratios stay consistent. Guarantees the
-        # policy can never become deterministic on the fusion option choice
-        # (the 2nd 60k ended at entropy 0.000 / clip 0.000 — frozen for the
-        # last 18k episodes). Zeros (default) = exact pre-ADR-012 behavior.
+
+
         self.register_buffer(
             "_slot_exploration_epsilon",
             torch.zeros(cfg.max_step_dim, dtype=torch.float32),
@@ -377,13 +346,6 @@ class BLBStage2SequentialPolicy(nn.Module):
         self._slot_exploration_enabled = False
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
-
-    @property
-    def slot_heads(self) -> Tuple[_SlotHeadView, ...]:
-        return tuple(
-            _SlotHeadView(self.slot_head_weight[idx], self.slot_head_bias[idx])
-            for idx in range(int(self.cfg.max_step_dim))
-        )
 
     def _init_weights(self) -> None:
         def init_fast_linear(layer: nn.Linear, gain: float = 1.0) -> None:
@@ -409,8 +371,8 @@ class BLBStage2SequentialPolicy(nn.Module):
                 if isinstance(layer, nn.Linear):
                     init_fast_linear(layer, gain=float(np.sqrt(2)))
         nn.init.normal_(self.prev_action_embedding.weight, mean=0.0, std=0.02)
-        # v2 trick: keep actor logits near zero, so the external warmstart prior
-        # is the dominant early signal even with a large GTrXL trunk.
+
+
         for slot_idx in range(int(self.cfg.max_step_dim)):
             nn.init.orthogonal_(self.slot_head_weight[slot_idx], gain=0.01)
         nn.init.constant_(self.slot_head_bias, 0.0)
@@ -468,7 +430,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             "critic_only": int(critic_only),
         }
 
-    # ------------------------------------------------------------------
+
     @staticmethod
     def _make_step_layer_block_indices(
             cfg: SequentialPolicyConfig,
@@ -689,7 +651,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         value = self._critic_value(h)
         return logits, value
 
-    # ------------------------------------------------------------------
+
     @staticmethod
     def _build_logit_mask(
             slot_mask: torch.Tensor,
@@ -717,9 +679,9 @@ class BLBStage2SequentialPolicy(nn.Module):
         else:
             level_indices = level_indices.to(device=slot_mask.device, dtype=torch.long)
         levels_idx = level_indices[:, :, :max_num_levels].expand(B, S, -1)
-        # padding-slot rows are entirely -inf
+
         slot_alive = slot_mask_bool.unsqueeze(-1).expand(-1, -1, max_num_levels)
-        # within an active slot, levels >= num_levels[slot] get -inf
+
         level_valid = levels_idx < per_slot_num_levels.unsqueeze(-1)
         valid = slot_alive & level_valid
         if action_level_mask is not None:
@@ -745,7 +707,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         mask = mask.masked_fill(~valid, float("-inf"))
         return mask
 
-    # ------------------------------------------------------------------
+
     def sample_action(
             self,
             state: torch.Tensor,
@@ -783,9 +745,8 @@ class BLBStage2SequentialPolicy(nn.Module):
                 level_indices=self._level_indices,
             )
         logits = logits + logit_mask
-        # collapse padding rows by setting them to a single dummy distribution
-        # so torch.distributions doesn't NaN. We then mask-out their log_prob
-        # contribution at the end.
+
+
         safe_logits = torch.where(
             torch.isfinite(logits).any(dim=-1, keepdim=True),
             logits,
@@ -810,8 +771,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             actions,
             torch.zeros_like(actions),
         )
-        log_prob_per_slot = dist.log_prob(actions)            # [B, max_step_dim]
-        # zero out log_prob for padding rows
+        log_prob_per_slot = dist.log_prob(actions)
+
         log_prob_per_slot = log_prob_per_slot * slot_mask.float()
         log_prob = log_prob_per_slot.sum(dim=-1)
         if return_per_slot_log_prob:
@@ -897,8 +858,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         probs = torch.softmax(safe_logits, dim=-1)
         allowed = torch.isfinite(logits).float()
         denom = allowed.sum(dim=-1, keepdim=True)
-        # padding rows (no allowed level) fall back to all-uniform; their
-        # log-prob contribution is masked out by slot_mask downstream.
+
+
         uniform = torch.where(
             denom > 0, allowed / denom.clamp(min=1.0),
             torch.full_like(allowed, 1.0 / float(allowed.shape[-1])),
@@ -929,10 +890,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             for slot_idx, lvl in enumerate(preferred_per_slot_idx):
                 lvl = int(lvl)
                 if lvl == -1:
-                    # -1 == no prior on this slot (the internal sentinel).
-                    # ADR-011: fusion mode uses this for the option slot so the
-                    # decayed-but-permanent baseline prior stops pulling the
-                    # 2-way fusion choice back to option 0 after the anchor.
+
+
                     continue
                 if lvl < 0 or lvl >= self.cfg.max_num_levels:
                     raise ValueError(
@@ -1042,22 +1001,18 @@ class BLBStage2SequentialPolicy(nn.Module):
                 self._refresh_preferred_prior_template()
 
 
-# ---------------------------------------------------------------------------
-# Rollout buffer + GAE
-# ---------------------------------------------------------------------------
-
 @dataclass
 class SequentialTransition:
-    state: np.ndarray             # [state_dim]
-    action: np.ndarray            # [max_step_dim]
-    slot_mask: np.ndarray         # [max_step_dim] bool
-    per_slot_num_levels: np.ndarray  # [max_step_dim] int
+    state: np.ndarray
+    action: np.ndarray
+    slot_mask: np.ndarray
+    per_slot_num_levels: np.ndarray
     log_prob: Any
     value: Any
     reward: float
     done: bool
     log_prob_per_slot: Optional[Any] = None
-    # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
+
     action_level_mask: Optional[np.ndarray] = None
     baseline_prior_scale: float = 0.0
     actor_cost_per_slot: Optional[np.ndarray] = None
@@ -1455,10 +1410,6 @@ class SequentialRolloutBuffer:
             prior_scales,
         )
 
-
-# ---------------------------------------------------------------------------
-# PPO update
-# ---------------------------------------------------------------------------
 
 @dataclass
 class SequentialPPOConfig:
@@ -2234,10 +2185,6 @@ def sequential_ppo_update(
     }
 
 
-# ---------------------------------------------------------------------------
-# Convenience: derive (slot_mask, per_slot_num_levels) for one BlockStepSpec
-# ---------------------------------------------------------------------------
-
 def _spec_slot_num_levels(spec) -> list:
     """Per-slot legal level counts for one step, for either spec type.
 
@@ -2250,7 +2197,7 @@ def _spec_slot_num_levels(spec) -> list:
 
 
 def step_to_mask_and_levels(
-        spec,        # BlockStepSpec or FusionStepSpec from action_space
+        spec,
         max_step_dim: int,
         max_num_levels: int,
         ) -> Tuple[np.ndarray, np.ndarray]:

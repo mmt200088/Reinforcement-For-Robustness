@@ -37,7 +37,7 @@ PAEAN_CONFIG_REL = "Paean/config.py"
 
 
 _FLAG_LINE_RE = re.compile(
-    # match "--foo|--foo-bar) ..." or just "--foo) ..."
+
     r"""^\s*((?:--[a-zA-Z0-9_-]+)(?:\s*\|\s*--[a-zA-Z0-9_-]+)*)\)\s*"""
 )
 
@@ -131,18 +131,17 @@ def _extract_preset_flags_from_lines(lines: Iterable[str]) -> List[Tuple[int, st
         s = raw.strip()
         if not s or s.startswith("#"):
             continue
-        # Tokenize the line. Preset .conf files are simple: flag + value
-        # may be on the same line ("--foo bar") or split across two lines
-        # ("--foo\nbar"). We support both.
+
+
         parts = s.split(None, 1)
         flag = parts[0]
         if not flag.startswith("--"):
-            # Stray token / value line; just record as a value with no flag.
+
             out.append((line_num, "", flag))
             continue
         value = parts[1] if len(parts) > 1 else ""
         if not value:
-            # Look-ahead one line for the value without materializing the file.
+
             try:
                 next_line_num, next_raw = next(numbered)
             except StopIteration:
@@ -171,10 +170,10 @@ def extract_preset_flags(preset_path: str) -> List[Tuple[int, str, str]]:
 def _classify_value(flag: str, value: str) -> str:
     """Return '' if value is acceptable, else a short error message."""
     if value in ("", None):
-        # The launcher tolerates flag-only (treated as boolean true) for
-        # things like --skip-stage1-search.
+
+
         return ""
-    # Numeric-looking flags should have numeric values
+
     numeric_hints = (
         "episodes", "trials", "size", "interval", "samples", "seed",
         "lr", "tolerance", "anchor", "stability", "limit", "probe",
@@ -203,8 +202,8 @@ def validate_preset(
             problems.append((line_num, f"orphan value {value!r} with no preceding flag"))
             continue
         if flag not in launcher_flags:
-            # Don't warn on flags that are in the OTHER launcher (e.g. some
-            # Paean-only flags may not be in the BLB launcher).
+
+
             problems.append((
                 line_num,
                 f"unknown flag {flag!r} (not accepted by either launcher; "
@@ -243,10 +242,7 @@ def main(argv: List[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    # Union: a preset under presets/ may use BLB launcher flags;
-    # one under Paean/presets/ may use Paean flags. Paean's shell entrypoint is
-    # intentionally a thin Python wrapper, so its argparse declarations are
-    # also authoritative.
+
     flags = (
         extract_launcher_flags(args.launcher)
         | extract_launcher_flags(args.paean_launcher)

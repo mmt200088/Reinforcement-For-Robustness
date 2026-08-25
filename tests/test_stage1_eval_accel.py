@@ -6,8 +6,8 @@ Three accelerations are covered:
    module-level stacked-powers reference ``function_handler.polynomial`` to
    fp32 rounding (the polynomial is mathematically identical; only the
    evaluation order changes).
-2. ``approximation_exponential`` repeated-squaring rewrite (BERT + GPT-2
-   helpers) — must match the old ``torch.pow(1 + x/2^d, 2^d)`` form, and
+2. ``approximation_exponential`` repeated-squaring rewrite — must match the
+   old ``torch.pow(1 + x/2^d, 2^d)`` form, and
    ``approximation_softmax`` must stay invariant to additive -10000 padding
    columns (this is what makes dynamic padding / eval batch size safe).
 3. ``Stage1EvalCache`` — exact-value store; and ``_run_evaluation``'s
@@ -173,16 +173,8 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             "    def approximation_softmax(self, x: torch.Tensor) -> torch.Tensor:",
             "    # error construction",
         )
-        gpt2_region = _source_region(
-            source,
-            "def _approx_softmax(x: torch.Tensor, degree: int, lower_bound: float) -> torch.Tensor:",
-            "def _make_gpt2_approx_attn_forward",
-        )
-
         self.assertIn("torch.where(x < self.lower_bound, 0.0, exp_approx)", bert_region)
-        self.assertIn("torch.where(x < lower_bound, 0.0, exp_approx)", gpt2_region)
         self.assertNotIn("torch.zeros_like", bert_region)
-        self.assertNotIn("torch.zeros_like", gpt2_region)
 
     def test_scalar_encode_constants_sample_noise_without_full_shape_prefill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
@@ -333,7 +325,7 @@ class Stage1EvalCacheTest(unittest.TestCase):
         value = (0.123456789, 0.8672, 0.8651, 412.5)
         c.put(key, value)
         got = c.get(key)
-        self.assertIs(got, value)          # the exact object, not a re-derivation
+        self.assertIs(got, value)
         self.assertEqual(c.hits, 1)
         self.assertEqual(c.misses, 1)
         self.assertEqual(len(c), 1)
@@ -354,9 +346,8 @@ class Stage1EvalCacheTest(unittest.TestCase):
             t.start()
         for t in threads:
             t.join()
-        # All 15 distinct keys (seed%3 x i%5) end up present exactly once;
-        # misses counts computes (>= distinct under benign double-compute
-        # races), and the vast majority of the 1600 gets are hits.
+
+
         self.assertEqual(len(c), 3 * 5)
         self.assertGreaterEqual(c.misses, 3 * 5)
         self.assertGreater(c.hits, 1000)
@@ -464,7 +455,7 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         helper_region = _source_region(
             source,
             helper_marker,
-            "    def _update_curriculum_phase(self, episode):",
+            "    def get_current_entropy_coef(self):",
         )
         update_region = _source_region(
             source,
@@ -495,8 +486,6 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
     def _empty_split_registry(evaluator):
         evaluator.dataset_splits = {}
         evaluator.dataloaders = {}
-        evaluator.dataset_splits_mm = {}
-        evaluator.dataloaders_mm = {}
 
     def test_validation_full_batches_are_collated_once_for_repeated_evaluation(self):
         from layer_importance_evaluator import LayerImportanceEvaluator
@@ -906,7 +895,7 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_TORCH, "torch unavailable")
 class ExpSquaringEquivalenceTest(unittest.TestCase):
-    # (degree, lower_bound) pairs from the Stage-1 softmax install path
+
     _LB = {1: -2.0, 2: -4.0, 3: -10.0, 4: -13.0, 5: -13.0, 6: -13.0}
 
     @staticmethod
@@ -919,22 +908,18 @@ class ExpSquaringEquivalenceTest(unittest.TestCase):
         return obj.approximation_exponential
 
     def test_matches_torch_pow_in_band(self):
-        from function_handler import _approx_exponential
         torch.manual_seed(11)
         for degree in range(1, 7):
             x = torch.empty(2048).uniform_(self._LB[degree], 0.0)
             ref = torch.pow(1 + x / (2 ** degree), 2 ** degree)
-            for fn in (self._bert_exp(degree), lambda v, d=degree: _approx_exponential(v, d)):
-                got = fn(x)
-                torch.testing.assert_close(
-                    got, ref, rtol=1e-5, atol=1e-7, msg=f"degree={degree}",
-                )
+            got = self._bert_exp(degree)(x)
+            torch.testing.assert_close(
+                got, ref, rtol=1e-5, atol=1e-7, msg=f"degree={degree}",
+            )
 
     def test_below_band_values_match_including_saturation(self):
-        # Far-below-lower-bound inputs (additive -10000 attention mask) are
-        # where-discarded by the caller, but the raw values must still agree:
-        # both forms produce the same finite value or both saturate to +inf
-        # (2^d is even, so negative bases square to positive).
+
+
         for degree in (1, 4, 6):
             x = torch.tensor([-50.0, -1000.0, -10000.0])
             ref = torch.pow(1 + x / (2 ** degree), 2 ** degree)
@@ -1032,7 +1017,7 @@ class RunEvaluationDeferredSyncTest(unittest.TestCase):
         from layer_importance_evaluator import LayerImportanceEvaluator
         ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
         ev.dataset_key = "mrpc"
-        ev.model = object()        # != the model override -> no .to() branch
+        ev.model = object()
         ev.device = "cpu"
         ev._eval_infra_ready = True
         return ev
@@ -1064,8 +1049,8 @@ class RunEvaluationDeferredSyncTest(unittest.TestCase):
 
     def test_bit_identical_to_per_batch_sync_loop(self):
         ev = self._evaluator()
-        # Two fake models with identical RNG streams: one consumed by the
-        # reference loop, one by _run_evaluation (each forward draws randn).
+
+
         model_a = self._make_fake_model()
         model_b = self._make_fake_model()
         batches = self._batches()
@@ -1074,7 +1059,7 @@ class RunEvaluationDeferredSyncTest(unittest.TestCase):
             batches, use_train=False, split_name="validation_full",
             model=model_b, device="cpu",
         )
-        self.assertEqual(loss, ref_loss)   # exact: same fp32 values, same fp64 order
+        self.assertEqual(loss, ref_loss)
         self.assertEqual(m1, ref_m1)
         self.assertEqual(m2, ref_m2)
 

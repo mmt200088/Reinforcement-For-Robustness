@@ -73,7 +73,7 @@ def _selection_float(value: Any, default: float = 0.0) -> float:
     return result if math.isfinite(result) else float(default)
 
 
-def _build_legacy_compatible_best_noise_config(evaluator: Any) -> dict[str, np.ndarray]:
+def _build_best_noise_config(evaluator: Any) -> dict[str, np.ndarray]:
     """Keep the established all-max fields consumed by final evaluation."""
     return evaluator._get_max_noise_configuration()
 

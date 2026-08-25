@@ -1,46 +1,7 @@
-"""BLB 噪声与 RL 动作的桥接层。
+"""Install and clear materialized BLB block configurations on a BERT model.
 
-把 RL agent 输出的"动作（scaling factor 选择）"转成 BLB Block 1-5 + first-input
-的 ``Block*NoiseConfig``，并通过 ``ReversibleLayerHandler.replace_layer_block*_noise``
-完整安装到模型上；forward 完成后通过 ``clear()`` 一键还原。
-
-设计要点：
-  * 与现有 ``function_handler.py`` 的 BLB API 完全独立 —— 桥接层只是"调度器"，
-    不引入新的噪声机制。
-  * BLB 与 legacy 在 ``ReversibleLayerHandler`` 里已强制互斥（``apply()`` 触发
-    ``_check_blb_legacy_conflict``，残留 legacy 时抛 RuntimeError）。
-  * 所有 σ² 都通过 ``NOISE_VARIANCE_TABLE_BY_N`` 查表得到（不写死）。
-  * Block 3 / Block 5 是 degree-aware 的，桥接层的 ``apply()`` 要求传入
-    每层的 degree（softmax / GELU），保证 cfg.degree 与 attention.degree /
-    PolynomialGELU.degree 严格匹配。
-
-典型用法（RL stage 2 一个回合）：
-
-    bridge = BLBNoiseRLBridge(handler, layers_attribute="model.bert.encoder.layer")
-
-    # 1) RL agent 输出一个"动作"（每层每个 noise 点选一个 scaling factor）
-    action = agent.sample_action(state)
-
-    # 2) 把动作翻译成 cfg 字典（业务侧可自定义具体的翻译规则）
-    block1_cfgs = {
-        i: build_block1_cfg_from_action(action.block1[i], N=8192)
-        for i in range(num_layers)
-    }
-    # block2_cfgs / block3_cfgs / block4_cfgs / block5_cfgs 同理 ...
-
-    # 3) 一次性把所有噪声装上模型
-    bridge.apply(
-        first_input_sf=action.first_input_sf, first_input_N=8192,
-        block1_cfgs=block1_cfgs, block2_cfgs=block2_cfgs,
-        block3_cfgs=block3_cfgs, block4_cfgs=block4_cfgs, block5_cfgs=block5_cfgs,
-    )
-
-    # 4) forward → reward
-    logits = model(input_ids, attention_mask=mask).logits
-    reward = compute_reward(logits, labels)
-
-    # 5) 还原（必须！否则下一个回合会复合上去）
-    bridge.clear()
+All noise variances come from the registered N-specific tables. Degree-aware
+blocks are validated against the installed Stage-1 GELU and Softmax vectors.
 """
 from __future__ import annotations
 
@@ -63,18 +24,9 @@ from function_handler import (
 )
 
 
-# ---------------------------------------------------------------------------
-# RL 动作允许的 scaling factor 集合（每个 distribution 各一份默认）。
-# 业务侧可以自由覆盖；这里只给一个起点，与 N=8192 / N=16384 表的列保持一致。
-# ---------------------------------------------------------------------------
 def _default_allowed_sfs(distribution: str) -> Tuple[int, ...]:
-    """Return all scaling factors present in ``NOISE_VARIANCE_TABLE_BY_N``
-    that have a positive variance for the given distribution.
+    """Return the positive-variance scaling factors for one distribution."""
 
-    用作 RL 离散动作空间的默认候选集。RL agent 输出 [0, len(allowed_sfs)) 的
-    离散索引，桥接层将其映射到具体的 scaling_factor。
-    """
-    # 取 N=16384 表（覆盖更广），按 scale_bits 升序
     table = NOISE_VARIANCE_TABLE_BY_N[16384]
     sfs = [
         sf for sf in sorted(table.keys())
@@ -89,7 +41,7 @@ BLB_DEFAULT_ALLOWED_SFS_RESCALE = _default_allowed_sfs("rescale")
 
 
 def discrete_action_to_sf(action_idx: int, allowed_sfs: Sequence[int]) -> int:
-    """RL 离散动作索引 → scaling factor。"""
+    """Decode one discrete action index to a scaling factor."""
     idx = int(action_idx)
     if idx < 0 or idx >= len(allowed_sfs):
         raise ValueError(
@@ -112,16 +64,8 @@ def discrete_action_to_optional_sf(
     return discrete_action_to_sf(action_idx, allowed_sfs)
 
 
-# ===========================================================================
-# 桥接控制器
-# ===========================================================================
-
 class BLBNoiseRLBridge:
-    """RL 阶段把 BLB 噪声装上 / 卸下的统一入口。
-
-    不持有模型本身，只持有 ``ReversibleLayerHandler``；apply / clear 都是幂等的
-    操作（重复 apply 会覆盖；重复 clear 不会出错）。
-    """
+    """Install and restore materialized BLB configs through one handler."""
 
     def __init__(
             self,
@@ -130,13 +74,11 @@ class BLBNoiseRLBridge:
             ):
         self.handler = reversible_handler
         self.layers_attribute = str(layers_attribute)
-        # 跟踪当前装了哪些 (layer_idx, block_name)，clear() 时按需还原。
-        # block_name ∈ {"block1","block2","block3","block4","block5","first_input"}
+
+
         self._installed: Dict[int, set] = {}
 
-    # ------------------------------------------------------------------
-    # 安装：把所有 BLB 噪声一次性挂到模型
-    # ------------------------------------------------------------------
+
     def apply(
             self,
             *,
@@ -167,8 +109,8 @@ class BLBNoiseRLBridge:
         Block 3 / Block 5 走 ``cfg_per_layer`` 路径以支持每层不同 degree。
         BLB / legacy 互斥校验由 handler 内部完成（残留 legacy 噪声会抛 RuntimeError）。
         """
-        # ---------- 1) first-input fresh：deprecated，整体跳过 ----------
-        # 旧调用站点可能仍在传 first_input_sf；为不破坏接口，悄悄忽略并提示。
+
+
         if first_input_sf is not None:
             import warnings
             warnings.warn(
@@ -179,7 +121,7 @@ class BLBNoiseRLBridge:
                 stacklevel=2,
             )
 
-        # ---------- 2) Block 1 / 2 / 4：按 cfg 分组批量安装 ----------
+
         for block_name, cfgs, install_method in (
                 ("block1", block1_cfgs, self.handler.replace_layer_block1_noise),
                 ("block2", block2_cfgs, self.handler.replace_layer_block2_noise),
@@ -187,7 +129,7 @@ class BLBNoiseRLBridge:
                 ):
             if not cfgs:
                 continue
-            # 不同层的 cfg 不一定相同，按 id() 分组以减少 install 调用次数。
+
             buckets: Dict[int, Tuple[object, list]] = {}
             for layer_idx, cfg in cfgs.items():
                 key = id(cfg)
@@ -203,9 +145,7 @@ class BLBNoiseRLBridge:
                 for li in layer_indices:
                     self._installed.setdefault(int(li), set()).add(block_name)
 
-        # ---------- 3) Block 3 / 5：cfg_per_layer 路径（degree-aware） ----------
-        # Block3 SF/fusion stays fixed at the RO baseline. Its cfg is still
-        # installed because output_truncation_k is a real policy action.
+
         if block3_cfgs:
             self.handler.replace_layer_block3_noise(
                 layer_indices=list(block3_cfgs.keys()),
@@ -224,9 +164,7 @@ class BLBNoiseRLBridge:
             for li in block5_cfgs:
                 self._installed.setdefault(int(li), set()).add("block5")
 
-    # ------------------------------------------------------------------
-    # 还原：一次性把 apply() 装的 BLB 噪声全部脱掉
-    # ------------------------------------------------------------------
+
     def clear(self) -> None:
         """还原本次 RL 步骤装的所有 BLB 噪声，恢复到 apply 之前的状态。
 
@@ -237,7 +175,7 @@ class BLBNoiseRLBridge:
         if not self._installed:
             return
 
-        # 按 block 反向收集 layer 列表
+
         per_block: Dict[str, list] = {
             "block5": [], "block4": [], "block3": [],
             "block2": [], "block1": [], "first_input": [],
@@ -280,16 +218,12 @@ class BLBNoiseRLBridge:
 
         self._installed = {}
 
-    # ------------------------------------------------------------------
-    # 辅助：introspect
-    # ------------------------------------------------------------------
+
     def installed_layers(self) -> Dict[int, set]:
         """返回当前桥接器装上去的 (layer_idx → {block_name, ...}) 拷贝。"""
         return {li: set(blks) for li, blks in self._installed.items()}
 
-    # ------------------------------------------------------------------
-    # 与 Rescale_optimizer 桥接的 reward 侧便利方法
-    # ------------------------------------------------------------------
+
     def evaluate_with_rescale_optimizer(
             self,
             rescale_bridge,
@@ -297,34 +231,13 @@ class BLBNoiseRLBridge:
             *,
             extra_overrides=None,
             ):
-        """已 apply 完毕后，把同一份 cfg 喂给 ``Rescale_optimizer`` 取奖励原料。
-
-        本方法**不**调用 ``apply`` / ``clear``，纯粹是一个 reward 侧的语法糖：
-        用户在 RL 一回合里
-            ``bridge.apply(...)``  → forward → 通过本方法拿优化器原料 → ``bridge.clear()``。
-
-        Args:
-            rescale_bridge: ``RescaleOptimizerBridge`` 实例
-            requests: ``{config_name: (block_name, cfg)}``，结构同
-                      ``RescaleOptimizerBridge.evaluate_blocks``
-            extra_overrides: 可选；同 ``RescaleOptimizerBridge.evaluate_blocks``
-
-        Returns:
-            (outputs, signals)，``outputs`` 是 ``{config_name: RescaleOptimizerOutput}``，
-            ``signals`` 是 ``OptimizerRewardSignals``。
-        """
-        from rescale_optimizer_bridge import aggregate_optimizer_signals  # 局部导入避免循环
+        """Evaluate already-installed configs without changing model state."""
+        from rescale_optimizer_bridge import aggregate_optimizer_signals
 
         outputs = rescale_bridge.evaluate_blocks(requests, extra_overrides=extra_overrides)
         signals = aggregate_optimizer_signals(outputs)
         return outputs, signals
 
-
-# ===========================================================================
-# 动作 → cfg 的几个便捷构造函数
-#   * 这里只展示"per-noise-point 一个 scaling factor"的最直接映射；
-#     业务侧可以基于它再加抽象（如 per-layer 共享 SF、per-block 共享 SF 等）。
-# ===========================================================================
 
 @dataclass
 class Block1ActionSpec:
@@ -349,9 +262,8 @@ class Block1ActionSpec:
     var_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点（True ⇒ 在该位置加 rotation 噪声；SF 自动继承绑定源）
-    # 仅保留 fresh 上的 rotation（gelu_out_fresh 之后的 rotation）。被删的
-    # rescale 槽不再有对应 rotation flag。
+
+
     rotation_after_gelu_out_fresh: bool = False
 
 
@@ -369,7 +281,7 @@ def build_block1_cfg_from_action(
         mean_inv_d_sf=int(action.mean_inv_d_sf),
         var_inv_d_sf=int(action.var_inv_d_sf),
         noise_enabled=bool(noise_enabled),
-        # 被删的 wffn2_rescale_sf / square_rescale_sf 固定 None（不安装该处噪声）
+
         wffn2_rescale_sf=None,
         mean_rescale_sf=action.mean_rescale_sf,
         square_rescale_sf=None,
@@ -377,7 +289,7 @@ def build_block1_cfg_from_action(
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
         rotation_after_gelu_out_fresh=action.rotation_after_gelu_out_fresh,
-        # 被删的 rotation flag 固定 False（cfg.rotation_after_* 默认 False）
+
         rotation_after_wffn2_rescale_a=False,
         rotation_after_wffn2_rescale_b=False,
         rotation_after_square_rescale=False,
@@ -406,7 +318,7 @@ class Block2ActionSpec:
     wk_sf: int
     kt_mask1_sf: int
     kt_mask2_sf: int
-    # Q 侧三个 encode：由 K 侧绑定填入，不是独立 RL 动作。
+
     wq_sf: int = 0
     q_mask1_sf: int = 0
     q_mask2_sf: int = 0
@@ -415,8 +327,8 @@ class Block2ActionSpec:
     gamma_rescale_sf: Optional[int] = None
     kt_mask2_rescale_sf: Optional[int] = None
     qkt_merge_mask_rescale_sf: Optional[int] = None
-    # Skeleton-selected rescales (set by _build_block2_action iff on the current
-    # skeleton — the 2026 regen moved these onto the chain). None = off.
+
+
     normalize_rescale_sf: Optional[int] = None
     wk_rescale_sf: Optional[int] = None
     kt_mask1_rescale_sf: Optional[int] = None
@@ -425,7 +337,7 @@ class Block2ActionSpec:
     qkt_matmul_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点：仅保留与未删 rescale 绑定的两项。
+
     rotation_after_gamma_rescale: bool = False
     rotation_after_kt_mask2_rescale: bool = False
 
@@ -453,15 +365,14 @@ def build_block2_cfg_from_action(
         wk_sf=int(action.wk_sf),
         kt_mask1_sf=int(action.kt_mask1_sf),
         kt_mask2_sf=int(action.kt_mask2_sf),
-        # Q/K 绑定：Q 侧三个 encode 与 K 侧同值（由 _build_block2_action 填入）
+
         wq_sf=int(action.wq_sf),
         q_mask1_sf=int(action.q_mask1_sf),
         q_mask2_sf=int(action.q_mask2_sf),
         wv_sf=int(action.wv_sf),
         qkt_merge_mask_sf=int(action.qkt_merge_mask_sf),
-        # Rescales follow whatever the current skeleton selected (set on the
-        # action by _build_block2_action via skeleton_stage_map). q-side fields
-        # are already bound equal to their k-side counterparts there.
+
+
         normalize_rescale_sf=action.normalize_rescale_sf,
         gamma_rescale_sf=action.gamma_rescale_sf,
         wk_rescale_sf=action.wk_rescale_sf,
@@ -481,7 +392,7 @@ def build_block2_cfg_from_action(
         rotation_after_wv_rescale=False,
         rotation_after_q_mask1_rescale=False,
         rotation_after_kt_mask1_rescale=False,
-        # q_mask2_r 上的 rotation 跟随 kt_mask2_r（绑定对称）。
+
         rotation_after_q_mask2_rescale=action.rotation_after_kt_mask2_rescale,
         rotation_after_kt_mask2_rescale=action.rotation_after_kt_mask2_rescale,
         rotation_after_qkt_matmul_rescale=False,
@@ -499,7 +410,7 @@ class Block3ActionSpec:
     degree: int
     x_fresh_sf: int
     inv_2n_sf: int
-    # 长度必须 == degree
+
     square_rescale_sfs: Tuple[Optional[int], ...] = ()
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
@@ -547,11 +458,11 @@ class Block4ActionSpec:
     softmax_v_matmul_rescale_sf: Optional[int] = None
     ln_mean_rescale_sf: Optional[int] = None
     ln_var_rescale_sf: Optional[int] = None
-    # post-attn LN (X−μ)² rescale (on the current skeleton after the 2026 regen).
+
     ln_square_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点：仅保留 softmax_v_matmul_rescale 后的 rotation
+
     rotation_after_softmax_v_matmul_rescale: bool = False
 
 
@@ -613,13 +524,13 @@ class Block5ActionSpec:
     normalize_rescale_sf: Optional[int] = None
     gamma_rescale_sf: Optional[int] = None
     wffn1_rescale_sf: Optional[int] = None
-    # 长度 == gelu_degree-1；仅 idx=0 (x²) 由 RL 控制，其它为 None
+
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = ()
-    # 长度 == gelu_degree；全部 None（RL 不再控制 coeff_mul 链 rescale）
+
     gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点（共 2 个）
+
     rotation_after_gamma_rescale: bool = False
     rotation_after_wffn1_rescale: bool = False
 
@@ -648,10 +559,6 @@ def build_block5_cfg_from_action(
         rotation_after_wffn1_rescale=action.rotation_after_wffn1_rescale,
     )
 
-
-# ===========================================================================
-# Truncation reward 信号聚合
-# ===========================================================================
 
 @dataclass
 class TruncationRewardSignals:
@@ -724,13 +631,6 @@ def aggregate_truncation_signals(
         per_block_count_skip=per_block_count_skip,
     )
 
-
-# ===========================================================================
-# Rotation reward 信号聚合
-# ===========================================================================
-# Rotation 噪声已经在 cfg 里以 ``rotation_after_*: bool`` 的形式表达。reward
-# 侧通常关心：每个 (block, layer) 选了多少个 rotation 上线。这里把所有 cfg
-# 上以 ``rotation_after_*`` 开头的 bool 字段统计一下，给业务侧组合 reward。
 
 @dataclass
 class RotationRewardSignals:

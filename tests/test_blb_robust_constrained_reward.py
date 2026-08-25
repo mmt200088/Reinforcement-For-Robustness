@@ -11,12 +11,11 @@ from unittest import mock
 import numpy as np
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
-for _path in (str(_REPO_ROOT), str(_BLB_DIR)):
+for _path in (str(_REPO_ROOT),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from reward import (
+from blb_stage2_rl.reward import (
     BaselineCostStats,
     EpisodeMetrics,
     RewardBreakdown,
@@ -25,8 +24,8 @@ from reward import (
     compute_reward,
     robust_constrained_reward,
 )
-from statistical_constraints import ConstraintAssessment
-import layerwise_action
+from blb_stage2_rl.statistical_constraints import ConstraintAssessment
+from blb_stage2_rl import layerwise_action
 
 
 def _assessment(**overrides):

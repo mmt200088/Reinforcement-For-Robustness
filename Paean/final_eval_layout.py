@@ -22,14 +22,9 @@ import numpy as np
 from config import run_layout
 from config.constants import GELU_COST, SOFTMAX_COST
 
-# RL-selectable GELU degrees (incl. ReLU=0), per GELU_MAP. Softmax is fixed at 6
-# in the current gelu-only Stage-1, so it is held constant during cost matching.
+
 RL_GELU_CHOICES: Tuple[int, ...] = (0, 1, 2, 4)
 
-
-# ---------------------------------------------------------------------------
-# Run-dir layout / numbering  (Paean/stage{1,2}/{combo} {N} {YYYYMMDD})
-# ---------------------------------------------------------------------------
 
 def paean_stage_run_dir(
     stage, model_type: str, dataset: str, paean_root: str, *, n: int, timestamp=None
@@ -48,16 +43,12 @@ def next_final_eval_number(stage, model_type: str, dataset: str, paean_root: str
     return run_layout.next_run_number_in_root(os.path.join(paean_root, sub), combo)
 
 
-# ---------------------------------------------------------------------------
-# Sorted-bar plot data shaping (selected bar highlighted, rank read directly)
-# ---------------------------------------------------------------------------
-
 @dataclass
 class SortedBars:
     sorted_values: List[float]
     sorted_labels: List[str]
-    selected_position: int   # 0-based index of the selected config after sorting
-    rank: int                # 1-based rank (1 = best given the sort direction)
+    selected_position: int
+    rank: int
     total: int
 
 
@@ -101,10 +92,6 @@ def save_sorted_bar_plot(
     plt.close(fig)
     return out_path
 
-
-# ---------------------------------------------------------------------------
-# Stage-1 same-cost peer sampler (gelu-only; softmax held fixed)
-# ---------------------------------------------------------------------------
 
 def _cost_q(gelu: Sequence[int]) -> int:
     """Quantize total GELU cost to an int (costs are multiples of 0.5) so exact
@@ -163,7 +150,7 @@ def build_cost_matched_stage1_configs(
         return [], max(0, int(count))
 
     accepted: List[Tuple[List[int], List[int]]] = []
-    seen = {tuple(sel_gelu)}  # exclude the selected config
+    seen = {tuple(sel_gelu)}
     attempts = 0
     while len(accepted) < int(count) and attempts < int(max_attempts):
         attempts += 1

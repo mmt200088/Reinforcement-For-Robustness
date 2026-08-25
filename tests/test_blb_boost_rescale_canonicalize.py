@@ -28,11 +28,11 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import precision_boost as pb
+from blb_stage2_rl import precision_boost as pb
 
 
 def _topo():
-    # fresh + two rescales: R1 noise-irrelevant, R2 noise-relevant, R3 already baseline.
+
     return pb.ChainTopology(
         graph_key="mock",
         nodes=(
@@ -54,15 +54,14 @@ class CanonicalizeRescaleTest(unittest.TestCase):
     BASELINE = {"R1": 28, "R2": 30, "R3": 28}
 
     def _run(self, base_fv, *, sig_depends_on=("R2",), fc=1, valid=True):
-        # sig depends only on the listed (noise-relevant) rescale fields.
+
         def probe_fn(slots):
             return _Probe(valid, fc)
 
         def sig_fn_for(slots):
             return tuple((k, int(slots[k])) for k in sig_depends_on if k in slots)
 
-        # the canonicaliser calls probe_fn then sig_fn(probe); thread the slots via a
-        # closure that records the last slots probe_fn saw.
+
         last = {}
 
         def probe(slots):
@@ -77,26 +76,26 @@ class CanonicalizeRescaleTest(unittest.TestCase):
         )
 
     def test_noise_irrelevant_rescale_reset_to_baseline(self):
-        # R1 below baseline, noise-irrelevant -> reset to 28.
+
         out = self._run({"R1": 15, "R2": 30, "R3": 28}, sig_depends_on=("R2",))
         self.assertEqual(out["R1"], 28)
 
     def test_noise_relevant_rescale_left_untouched(self):
-        # R2 below baseline but noise-relevant (sig depends on it) -> unchanged.
+
         out = self._run({"R1": 28, "R2": 20, "R3": 28}, sig_depends_on=("R2",))
         self.assertEqual(out["R2"], 20)
 
     def test_mixed_only_irrelevant_canonicalised(self):
         out = self._run({"R1": 15, "R2": 20, "R3": 28}, sig_depends_on=("R2",))
-        self.assertEqual(out["R1"], 28)  # irrelevant -> baseline
-        self.assertEqual(out["R2"], 20)  # relevant   -> kept
+        self.assertEqual(out["R1"], 28)
+        self.assertEqual(out["R2"], 20)
 
     def test_already_at_or_above_baseline_skipped(self):
         out = self._run({"R1": 28, "R2": 30, "R3": 28}, sig_depends_on=())
         self.assertEqual(out, {"R1": 28, "R2": 30, "R3": 28})
 
     def test_fusion_count_change_blocks_canonicalisation(self):
-        # if resetting R1 to baseline changes fusion_count, keep the original.
+
         def probe(slots):
             return _Probe(True, 1 if int(slots["R1"]) == 15 else 0)
 

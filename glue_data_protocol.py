@@ -255,6 +255,7 @@ def build_train_probe(raw_train: Any, *, dataset: str):
     if len(set(normalized_ids)) != source_size:
         raise GlueDataProtocolError("training split contains duplicate idx values")
 
+    # One ordered, stratified identity is shared by every search-stage evaluator.
     shuffled = raw_train.shuffle(seed=TRAIN_PROBE_SEED)
     shuffled_labels = np.asarray(
         [int(value) for value in _required_column(shuffled, "label")],

@@ -60,7 +60,6 @@ from glue_data_protocol import (  # noqa: E402
 )
 from json_utils import write_json_file  # noqa: E402
 
-# ==================== Task Registry ====================
 
 TASK_REGISTRY = {
     'mrpc': {
@@ -101,7 +100,6 @@ TASK_REGISTRY = {
     },
 }
 
-# ==================== Probe Configuration ====================
 
 PROBE_POINTS = [
     'input_ids',
@@ -266,7 +264,6 @@ PROBE_COLORS = {
     'ln2_norm':     '#000075',
 }
 
-# ==================== Magnitude-histogram configuration ====================
 
 MAG_MIN_EXP = -8
 MAG_MAX_EXP = 5
@@ -278,9 +275,6 @@ MAG_NBINS = len(MAG_EDGES) - 1
 def _mag_bin_labels(edges=MAG_EDGES):
     return [f'({edges[i]:.0e},{edges[i+1]:.0e}]'
             for i in range(len(edges) - 1)]
-
-
-# ==================== Layer-wise Statistics Collector ====================
 
 
 class LayerWiseCollector:
@@ -389,9 +383,6 @@ class LayerWiseCollector:
         return centers, d['hist'][layer]
 
 
-# ==================== GPU Stats Computation ====================
-
-
 @torch.no_grad()
 def _gpu_stats(tensor, hmin, hmax, hbins):
     flat = tensor.reshape(-1).float()
@@ -440,25 +431,12 @@ def _enqueue(probe, layer, tensor, q, accum_ma=None):
     q.put((probe, layer, bs))
 
 
-# ==================== Shared Hook Helpers ====================
-
-
 @torch.no_grad()
 def _accum_max_linear(x, mod):
-    """Worst-case accumulation max for a linear layer: max(|X| @ |W| + |b|).
-
-    For nn.Linear  Y = X @ W^T + b  (weight shape [out, in]).
-    For Conv1D     Y = X @ W   + b  (weight shape [in, out]).
-
-    Uses _ORIG_MATMUL to avoid being intercepted by the attention wrapper's
-    global torch.matmul monkey-patch.
-    """
+    """Return max(|X| @ |W| + |b|) for a BERT linear layer."""
     w_abs = mod.weight.detach().abs()
     x_abs = x.abs()
-    if isinstance(mod, nn.Linear):
-        acc = _ORIG_MATMUL(x_abs, w_abs.t())
-    else:
-        acc = _ORIG_MATMUL(x_abs, w_abs)
+    acc = _ORIG_MATMUL(x_abs, w_abs.t())
     if mod.bias is not None:
         acc = acc + mod.bias.detach().abs()
     return acc.max().item()
@@ -471,7 +449,7 @@ def _make_hook(probe, layer, q):
 
 
 def _make_linear_hook(probe, layer, q):
-    """Forward hook for nn.Linear / Conv1D: regular stats + accum max."""
+    """Collect output statistics and the linear accumulation maximum."""
     def hook(mod, inp, out):
         x = inp[0].detach()
         _enqueue(probe, layer, out.detach(), q,
@@ -526,12 +504,12 @@ def _make_ln_internals_pre_hook(ln_prefix, layer, q):
         _enqueue(f'{ln_prefix}_mean_sum', layer, sum_x, q)
 
         mean = x.mean(dim=-1, keepdim=True)
-        # Per-row mean μ = Σxᵢ / D
+
         _enqueue(f'{ln_prefix}_mean', layer, mean.squeeze(-1), q)
 
         centered = x - mean
         diff_sq = centered.pow(2)
-        # Per-element squared deviation (xᵢ − μ)²; keeps the full hidden dim
+
         _enqueue(f'{ln_prefix}_diff_sq', layer, diff_sq, q)
 
         sum_var = diff_sq.sum(dim=-1)
@@ -614,21 +592,18 @@ def _make_attn_wrapper(fwd, li, q):
     return _wrapped
 
 
-# ==================== BERT Hook Installation ====================
-
-
 def _install_bert_hooks(model, q):
     handles = []
     restore = []
 
-    # Global: input_ids
+
     def _ids_hook(_mod, inp):
         if inp[0] is not None:
             _enqueue('input_ids', 0, inp[0].detach().float(), q)
     handles.append(
         model.bert.embeddings.word_embeddings.register_forward_pre_hook(_ids_hook))
 
-    # Global: after_embed
+
     handles.append(
         model.bert.embeddings.register_forward_hook(
             lambda _m, _i, o: _enqueue('after_embed', 0, o.detach(), q)))
@@ -636,7 +611,7 @@ def _install_bert_hooks(model, q):
     for i, layer in enumerate(model.bert.encoder.layer):
         sa = layer.attention.self
 
-        # Q / K / V  (linear projections → accum_max + pre-bias variant)
+
         for probe, mod in [
             ('query_proj', sa.query),
             ('key_proj',   sa.key),
@@ -647,12 +622,12 @@ def _install_bert_hooks(model, q):
             handles.append(mod.register_forward_hook(
                 _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
-        # Attention internals
+
         orig_fwd = sa.forward
         sa.forward = _make_attn_wrapper(orig_fwd, i, q)
         restore.append(('fwd', sa, orig_fwd))
 
-        # Linear projections → accum_max + pre-bias variant
+
         for probe, mod in [
             ('attn_output',  layer.attention.output.dense),
             ('gelu_input',   layer.intermediate.dense),
@@ -663,7 +638,7 @@ def _install_bert_hooks(model, q):
             handles.append(mod.register_forward_hook(
                 _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
-        # Non-linear probes (LayerNorm output, no accumulation) + pre-β variant
+
         for probe, mod in [
             ('post_attn_ln', layer.attention.output.LayerNorm),
             ('post_ffn_ln',  layer.output.LayerNorm),
@@ -672,21 +647,18 @@ def _install_bert_hooks(model, q):
             handles.append(mod.register_forward_hook(
                 _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
-        # LayerNorm internal intermediates (sum-for-mean, sum-for-var, var, 1/std)
+
         handles.append(layer.attention.output.LayerNorm.register_forward_pre_hook(
             _make_ln_internals_pre_hook('ln1', i, q)))
         handles.append(layer.output.LayerNorm.register_forward_pre_hook(
             _make_ln_internals_pre_hook('ln2', i, q)))
 
-        # GELU output
+
         orig_act = layer.intermediate.intermediate_act_fn
         layer.intermediate.intermediate_act_fn = _ActWrapper(orig_act, i, q)
         restore.append(('bert_act', layer.intermediate, orig_act))
 
     return handles, restore
-
-
-# ==================== BERT Hook Dispatch ====================
 
 
 def install_hooks(model, arch, q):
@@ -707,9 +679,6 @@ def remove_hooks(handles, restore):
             parent.intermediate_act_fn = orig
 
 
-# ==================== Stats Worker Thread ====================
-
-
 def _stats_worker(q, collector, lock):
     while True:
         item = q.get()
@@ -720,9 +689,6 @@ def _stats_worker(q, collector, lock):
         with lock:
             collector.merge(probe, layer, bs)
         q.task_done()
-
-
-# ==================== Data Preparation ====================
 
 
 _PROFILE_FIXTURE_PATH = os.path.join(
@@ -792,10 +758,6 @@ def _prepare_bert_data(cfg, tokenizer, max_length, batch_size, max_samples):
         ),
     )
     return dl, context.as_payload()
-
-
-
-# ==================== Plotting ====================
 
 
 def _layer_probes():
@@ -958,9 +920,6 @@ def plot_heatmap(collector, task_name, output_dir, num_layers):
     print(f'  Saved: {fp}')
 
 
-# ==================== Magnitude Plotting ====================
-
-
 def plot_probe_magnitude_bar(collector, probe, task_name, output_dir, num_layers):
     """Bar chart of |x| magnitude distribution for a single probe (all layers aggregated)."""
     is_global = probe in GLOBAL_PROBES
@@ -1117,9 +1076,6 @@ def plot_outlier_overview(collector, task_name, output_dir, num_layers):
     print(f'  Saved: {fp}')
 
 
-# ==================== Per-Task Processing ====================
-
-
 def process_task(task_name, cfg, output_dir, device,
                  max_length=128, batch_size=32, max_samples=0):
     arch = cfg['arch']
@@ -1128,7 +1084,7 @@ def process_task(task_name, cfg, output_dir, device,
     print(f'  Task: {task_name.upper()}  (arch={arch}, layers={num_layers})')
     print(f'{"=" * 70}')
 
-    # ---- Load model ----
+
     tokenizer = AutoTokenizer.from_pretrained(cfg['model_name'])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token or '[PAD]'
@@ -1143,13 +1099,13 @@ def process_task(task_name, cfg, output_dir, device,
     model.to(device).eval()
     print(f'  Model : {cfg["model_name"]}')
 
-    # ---- Prepare data ----
+
     dl, protocol_payload = _prepare_bert_data(
         cfg, tokenizer, max_length, batch_size, max_samples
     )
     write_profile_protocol(output_dir, task_name, protocol_payload)
 
-    # ---- Collect ----
+
     collector = LayerWiseCollector(num_layers=num_layers)
     stats_queue = queue.Queue(maxsize=4096)
     lock = threading.Lock()
@@ -1170,7 +1126,7 @@ def process_task(task_name, cfg, output_dir, device,
     worker.join()
     remove_hooks(handles, restore)
 
-    # ---- Console + text summary ----
+
     txt_path = os.path.join(output_dir, f'{task_name}_all_stats.txt')
     with open(txt_path, 'w') as fout:
         fout.write(f'Model: {cfg["model_name"]}  Arch: {arch}  Layers: {num_layers}\n')
@@ -1200,7 +1156,7 @@ def process_task(task_name, cfg, output_dir, device,
                     print(line)
     print(f'  Saved: {txt_path}')
 
-    # ---- CSV ----
+
     csv_path = os.path.join(output_dir, f'{task_name}_all_stats.csv')
     with open(csv_path, 'w', newline='') as fout:
         writer = csv.writer(fout)
@@ -1224,7 +1180,7 @@ def process_task(task_name, cfg, output_dir, device,
                     ])
     print(f'  Saved: {csv_path}')
 
-    # ---- Magnitude text summary ----
+
     mag_txt_path = os.path.join(output_dir, f'{task_name}_magnitude_stats.txt')
     mag_bin_labs = _mag_bin_labels()
     with open(mag_txt_path, 'w') as fout:
@@ -1270,7 +1226,7 @@ def process_task(task_name, cfg, output_dir, device,
                 print(line)
     print(f'  Saved: {mag_txt_path}')
 
-    # ---- Magnitude CSV ----
+
     mag_csv_path = os.path.join(output_dir, f'{task_name}_magnitude_stats.csv')
     with open(mag_csv_path, 'w', newline='') as fout:
         writer = csv.writer(fout)
@@ -1307,13 +1263,13 @@ def process_task(task_name, cfg, output_dir, device,
                     ] + [f'{v:.4f}' for v in agg['pct_bins']])
     print(f'  Saved: {mag_csv_path}')
 
-    # ---- Plots (existing) ----
+
     for probe in PROBE_POINTS:
         plot_probe_histograms(collector, probe, task_name, output_dir, num_layers)
     plot_overview(collector, task_name, output_dir, num_layers)
     plot_heatmap(collector, task_name, output_dir, num_layers)
 
-    # ---- Magnitude plots ----
+
     for probe in PROBE_POINTS:
         plot_probe_magnitude_bar(collector, probe, task_name, output_dir, num_layers)
         plot_magnitude_per_layer(collector, probe, task_name, output_dir, num_layers)
@@ -1323,9 +1279,6 @@ def process_task(task_name, cfg, output_dir, device,
     del model, collector
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-
-# ==================== Main ====================
 
 
 def main():

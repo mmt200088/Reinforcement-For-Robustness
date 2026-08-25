@@ -38,10 +38,6 @@ from .graph import RescaleGraph
 logger = logging.getLogger("rescale_optimizer")
 
 
-# ---------------------------------------------------------------------------
-# Reachability data object
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Reachability:
     """
@@ -58,7 +54,6 @@ class Reachability:
     fwd_steps: Dict[int, Set[int]] = field(default_factory=dict)
     bwd_steps: Dict[int, Set[int]] = field(default_factory=dict)
 
-    # ---- predicates ---------------------------------------------------
 
     def is_reachable_fwd(self, j: int, r: int) -> bool:
         return r in self.fwd_steps.get(j, ())
@@ -74,7 +69,7 @@ class Reachability:
         """
         if l < 1:
             return False
-        return (l in self.bwd_steps.get(i, ())) and \
+        return (l in self.bwd_steps.get(i, ())) and\
                ((l - 1) in self.bwd_steps.get(j, ()))
 
     def feas_tail(self, i: int, dummy_sink: int, l: int) -> bool:
@@ -92,10 +87,6 @@ class Reachability:
         ))
 
 
-# ---------------------------------------------------------------------------
-# Compute reachability
-# ---------------------------------------------------------------------------
-
 def compute_reachability(graph: RescaleGraph) -> Reachability:
     """
     Build Reachability object for a Feasibility-DAG.
@@ -111,38 +102,34 @@ def compute_reachability(graph: RescaleGraph) -> Reachability:
     for ii, v in graph.stage_edges:
         stage_successors.setdefault(ii, []).append(v)
 
-    # --------------------------------------------------------------
-    # Forward: FwdSteps
-    # --------------------------------------------------------------
+
     fwd: Dict[int, Set[int]] = {j: set() for j in range(M + 2)}
     fwd[0].add(0)
 
     for j in range(M + 2):
         if not fwd[j]:
             continue
-        # Try every outgoing edge (j -> v) — stage or tail
+
         if j <= M:
             for v in stage_successors.get(j, ()):
                 for r in fwd[j]:
                     fwd[v].add(r + 1)
             if j in graph.tail_edges:
                 for r in fwd[j]:
-                    fwd[sink].add(r)    # tail does not add a rescale
+                    fwd[sink].add(r)
 
-    # --------------------------------------------------------------
-    # Backward: BwdSteps
-    # --------------------------------------------------------------
+
     bwd: Dict[int, Set[int]] = {j: set() for j in range(M + 2)}
     bwd[sink].add(0)
 
     for j in range(M, -1, -1):
         out_sets = bwd[j]
-        # stage edges j -> v
+
         for v in stage_successors.get(j, ()):
             if bwd[v]:
                 for r in bwd[v]:
                     out_sets.add(r + 1)
-        # tail edges j -> sink
+
         if j in graph.tail_edges:
             out_sets.add(0)
 

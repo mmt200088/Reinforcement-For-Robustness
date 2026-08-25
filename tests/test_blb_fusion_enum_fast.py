@@ -15,11 +15,11 @@ from types import SimpleNamespace
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer"), str(_REPO)):
+for _p in (str(_REPO / "Rescale_optimizer"), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import fusion_enum_fast as fef  # noqa: E402
+from blb_stage2_rl import fusion_enum_fast as fef  # noqa: E402
 
 try:
     from rescale_optimizer import ReplanSession
@@ -42,7 +42,7 @@ class ComboRangeTest(unittest.TestCase):
         total = 60
         edges = [0, 13, 14, 40, 60]
         seen = []
-        for a, b in zip(edges, edges[1:]):  # pairwise; uneven lengths intended (py3.9-safe)
+        for a, b in zip(edges, edges[1:]):
             seen.extend(tuple(c) for c in fef.iter_combo_range(lens, a, b))
         self.assertEqual(seen, list(itertools.product(*[range(n) for n in lens])))
 
@@ -114,8 +114,8 @@ class LiveSessionFastEvalTest(unittest.TestCase):
             "ctct_preprocess_qkt": "x2",
             "ctpt_mask": 15,
         }
-        # 2 enum slots for the test: slot0 = source fresh (t_new[0]),
-        # slot1 = gamma encode (ctpt_gama1).
+
+
         return fef.FastEnumTemplate(
             graph_key="block2_mrpc",
             block_idx=2,
@@ -150,13 +150,13 @@ class LiveSessionFastEvalTest(unittest.TestCase):
         kinds = [p.distribution for p in res["points"]]
         self.assertIn("fresh", kinds)
         self.assertIn("encoding", kinds)
-        # deeper combo (lower SFs) — replan still runs; result is either valid
-        # with a (possibly fused) plan or cleanly invalid; never an exception.
+
+
         res2 = fef.eval_combo_fast(tpl, _SESSION, [2, 2])
         self.assertIn("valid", res2)
         if res2.get("valid"):
-            # fused-away rescale positions must contribute NO point: the count
-            # of rescale-distribution points is <= the number of rescale specs.
+
+
             n_rescale_pts = sum(1 for p in res2["points"] if p.distribution == "rescale")
             self.assertLessEqual(n_rescale_pts, 2)
 
@@ -176,13 +176,13 @@ class LiveSessionFastEvalTest(unittest.TestCase):
 
     def test_enumerate_range_fast_reduces_like_shards(self):
         tpl = self._template()
-        # full range vs two contiguous halves must reduce to supersets whose
-        # union regroup equals the full-range regroup (exactness of sharding).
+
+
         full_rows, full_valid = fef.enumerate_range_fast(tpl, _SESSION, start=0, stop=9)
         h1_rows, v1 = fef.enumerate_range_fast(tpl, _SESSION, start=0, stop=4)
         h2_rows, v2 = fef.enumerate_range_fast(tpl, _SESSION, start=4, stop=9)
         self.assertEqual(full_valid, v1 + v2)
-        import fusion_enum
+        from blb_stage2_rl import fusion_enum
         base = list(tpl.baseline_block_indices)
         opts_full = fusion_enum.group_min_noise_options(full_rows, base)
         opts_split = fusion_enum.group_min_noise_options(h1_rows + h2_rows, base)

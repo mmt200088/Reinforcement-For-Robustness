@@ -503,7 +503,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         )
         step = next(s for s in schedule if s.layer_idx == 0 and s.block_idx == 4)
         option_id = 1
-        k_index = 2  # K_LEVELS[2] == 11 under the legacy-compatible table.
+        k_index = 2
 
         action_vec = make_all_max_action_vector(num_layers)
         block_vec = fusion_map.expand(step.graph_key_suffix, option_id, k_index)
@@ -530,9 +530,8 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
 
         cfg = decoded.block4_cfgs[0]
         self.assertEqual(cfg.output_truncation_k, int(K_LEVELS[k_index]))
-        # A boosted option must replay its map-owned explicit values instead of
-        # the pre-boost action-index grid. Keep this assertion map-version aware:
-        # precision-boost rebuilds may legitimately change the explicit SFs.
+
+
         option = fusion_map.options(step.graph_key_suffix)[option_id]
         self.assertTrue(option.boosted)
         self.assertIsNotNone(option.explicit_field_values)

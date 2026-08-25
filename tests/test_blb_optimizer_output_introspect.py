@@ -32,8 +32,8 @@ import optimizer_output_introspect as ooi
 
 
 class FusedSkeletonPositionsTest(unittest.TestCase):
-    # block2 fc=1 skeleton: r0 source (i=0), r1 gama1 (i=2), r2 kt_mask1 (i=4),
-    # r3 qkt_matmul (i=6). Boosted-fc1 fusion makes gama1 a passthrough.
+
+
     SKEL = [("inv_std_fresh", None), ("gamma_result_rescale", None),
             ("kt_mask1_result_rescale", None), ("qkt_matmul_result_rescale", None)]
     BASELINE = [0, 2, 4, 6]
@@ -43,7 +43,7 @@ class FusedSkeletonPositionsTest(unittest.TestCase):
         return {"cut_point_sf": [dict(i=i, **e) for i, e in i_to_entry.items()]}
 
     def test_block2_fc1_gama1_passthrough_is_fused(self):
-        # gama1 (i=2) passthrough: sf set, NO sf_post -> fused. kt_mask1/qkt survive.
+
         compact = self._compact(
             {0: {"sf": 21}, 2: {"sf": 57}, 4: {"sf_post": 29}, 6: {"sf_post": 30}}
         )
@@ -51,7 +51,7 @@ class FusedSkeletonPositionsTest(unittest.TestCase):
         self.assertEqual(fused, [("gamma_result_rescale", None)])
 
     def test_absent_cut_point_is_fused(self):
-        # i=4 absent entirely -> fused.
+
         compact = self._compact({0: {"sf": 21}, 2: {"sf_post": 28}, 6: {"sf_post": 30}})
         fused = ooi.fused_skeleton_positions(compact, self.BASELINE, self.SKEL)
         self.assertIn(("kt_mask1_result_rescale", None), fused)
@@ -63,7 +63,7 @@ class FusedSkeletonPositionsTest(unittest.TestCase):
         self.assertEqual(ooi.fused_skeleton_positions(compact, self.BASELINE, self.SKEL), [])
 
     def test_source_position_never_fused(self):
-        # r0 (source) is never treated as a rescale even if absent.
+
         compact = self._compact({2: {"sf_post": 28}, 4: {"sf_post": 29}, 6: {"sf_post": 30}})
         fused = ooi.fused_skeleton_positions(compact, self.BASELINE, self.SKEL)
         self.assertNotIn(("inv_std_fresh", None), fused)

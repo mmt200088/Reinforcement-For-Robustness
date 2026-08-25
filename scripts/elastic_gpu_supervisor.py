@@ -492,8 +492,8 @@ class RecoveryMonitor:
             try:
                 self.poll_once()
             except Exception:
-                # Recovery is opportunistic. Query/canary failures keep the
-                # device quarantined and must not interrupt healthy training.
+
+
                 continue
 
     def start(self) -> None:

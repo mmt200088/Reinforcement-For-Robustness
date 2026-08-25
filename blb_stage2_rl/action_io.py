@@ -114,9 +114,6 @@ from .action_space import (
 
 SCHEMA_VERSION = "blb_v3_slots_human_v1"
 
-# ---------------------------------------------------------------------------
-# action_vec → human-readable slots list (output direction)
-# ---------------------------------------------------------------------------
 
 def action_vec_to_slots_list(
         action_vec: Sequence[int],
@@ -162,10 +159,10 @@ def action_vec_to_slots_list(
             "effective": bool(rec.get("effective", True)),
         }
         if kind == "K":
-            # PRIMARY value: truncation_bits
+
             entry["truncation_bits"] = rec.get("value")
         else:
-            # PRIMARY value: scaling_factor (or None for "rescale off")
+
             entry["scaling_factor"] = rec.get("value")
         if rec.get("note"):
             entry["note"] = str(rec.get("note"))
@@ -213,11 +210,11 @@ def group_slots_by_layer_block(
         layer_idx = int(row.get("layer", 0))
         block_idx = row.get("block")
         kind = str(row.get("kind", ""))
-        # First-input slot: stash separately
+
         if block_idx is None:
             first_input_value = row.get("scaling_factor")
             continue
-        label_key_short = row["label"].split(".", 2)[-1]  # everything after L00.B2.
+        label_key_short = row["label"].split(".", 2)[-1]
         layer_key = f"L{layer_idx:02d}"
         block_key = f"B{int(block_idx)}"
         per_layer = layers.setdefault(layer_key, {})
@@ -231,10 +228,6 @@ def group_slots_by_layer_block(
         out["first_input"] = first_input_value
     return out
 
-
-# ---------------------------------------------------------------------------
-# Human-readable slots list → action_vec (input direction)
-# ---------------------------------------------------------------------------
 
 @dataclass
 class SlotOverrideError(ValueError):
@@ -272,7 +265,7 @@ def _coerce_action_index_from_sf(
             raw_sf = sf_from(idx, int(max_sf), levels)
         candidate_sfs.append(int(_snap_to_table(raw_sf, int(N))))
     if sf_value is None:
-        # User asked for "any" but slot is not R kind — fall back to max idx.
+
         return levels - 1
     target = int(sf_value)
     best_idx = -1
@@ -281,12 +274,12 @@ def _coerce_action_index_from_sf(
         if sf is None:
             continue
         dist = abs(int(sf) - target)
-        # Tie-break toward larger SF (= larger idx for monotone SF tables).
+
         if dist < best_dist or (dist == best_dist and idx > best_idx):
             best_dist = dist
             best_idx = idx
     if best_idx < 0:
-        # All candidates None (shouldn't happen for non-R kinds).
+
         return levels - 1
     return best_idx
 
@@ -389,7 +382,7 @@ def _build_label_to_offset_map(num_layers: int) -> Dict[str, Tuple[int, int, str
             global_index = li * layer_dim + field_offset
             label = make_slot_label(li, int(block_idx), str(kind), str(field_name))
             out[label] = (int(global_index), int(li), str(kind), str(field_name))
-    # First-input slot at very end
+
     first_offset = int(num_layers) * layer_dim
     first_label = make_slot_label(0, None, "F", "first_input_sf")
     out[first_label] = (int(first_offset), 0, "F", "first_input_sf")
@@ -428,7 +421,7 @@ def slots_list_to_action_vec(
         table level (e.g. requested SF=13 → snapped to 14). Empty if all
         values matched exactly.
     """
-    # Build base
+
     if base_action_vec is not None:
         vec = validate_action_vector(base_action_vec, int(num_layers)).copy()
     else:
@@ -456,10 +449,10 @@ def slots_list_to_action_vec(
             )
         global_index, layer_idx, kind, field_name = label_map[label]
 
-        # Effective gelu/attn degree for this layer (for table N lookup).
+
         li_gelu = _degree_for_layer(gelu_degree, layer_idx, int(num_layers), default=4, name="gelu_degree")
         li_attn = _degree_for_layer(attn_degree, layer_idx, int(num_layers), default=4, name="attn_degree")
-        # Block index from label_map for non-first-input slots.
+
         block_idx = None
         if "first_input" not in label:
             block_idx = int(label.split(".")[1][1:])
@@ -567,12 +560,12 @@ def slots_payload_to_action_vec(
     if not isinstance(payload, Mapping):
         raise ValueError("slots payload must be a JSON object")
 
-    # Shape D (back-compat) — flat action_vec
+
     av = payload.get("action_vec") or payload.get("base_action_vec") or payload.get("base_action")
     if av is not None and isinstance(av, (list, tuple)):
         return validate_action_vector(av, int(num_layers)).copy(), []
 
-    # base / base_action_vec
+
     base_action_vec = None
     base_str = "max"
     base_field = payload.get("base")
@@ -594,10 +587,10 @@ def slots_payload_to_action_vec(
                 entry.setdefault("label", str(label))
                 slot_entries.append(entry)
             elif isinstance(value, (int, float, type(None))):
-                # Bare value: infer kind from the label (K vs SF).
+
                 lbl = str(label)
                 kind_part = lbl.split(".", 2)[-1].split(".")[0] if "." in lbl else ""
-                # heuristic: if label ends in ".K" or contains ".K" alone → K
+
                 if lbl.endswith(".K") or kind_part == "K":
                     slot_entries.append({"label": lbl, "truncation_bits": int(value)})
                 else:
