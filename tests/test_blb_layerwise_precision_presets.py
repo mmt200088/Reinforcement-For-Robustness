@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 
-from blb_stage2_rl.fusion_count_map import FusionCountMap
+from rfr.preparation.fusion.count_map import FusionCountMap
 from blb_stage2_rl.layerwise_action import (
     LAYERWISE_SLOT_NAMES,
     apply_layer_action,

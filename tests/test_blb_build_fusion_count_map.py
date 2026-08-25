@@ -5,7 +5,9 @@ from unittest import mock
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_BUILDER_PATH = _REPO_ROOT / "scripts" / "blb_build_fusion_count_map.py"
+_BUILDER_PATH = (
+    _REPO_ROOT / "src" / "rfr" / "preparation" / "fusion" / "build_map.py"
+)
 
 
 def _load_builder():

@@ -1,7 +1,7 @@
 """Fusion-count action map: pluggable NoiseOrder + runtime map data/lookup.
 
 torch-free. The fusion-count map (built offline by
-``scripts/blb_build_fusion_count_map.py``) replaces per-slot SF decisions with a
+``rfr.preparation.fusion.build_map``) replaces per-slot SF decisions with a
 per-block ``(fusion_option, K)`` choice: each ``fusion_option`` is the
 minimum-noise SF combination achieving a given ``fusion_count`` for a block-type.
 This module is (1) the pluggable noise partial order used to pick "minimum noise"
@@ -19,8 +19,16 @@ from typing import Dict, List, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
-from rfr.common.json_utils import read_json_file
 import noise_tables
+from rfr.common.json_utils import read_json_file
+
+
+FUSION_CONFIG_ROOT = (
+    pathlib.Path(__file__).resolve().parents[4]
+    / "configs"
+    / "preparation"
+    / "fusion"
+)
 
 
 @dataclass(frozen=True)
@@ -138,8 +146,11 @@ class FusionCountMap:
 
     @classmethod
     def load(cls, profile: str, root: str | None = None) -> FusionCountMap:
-        base = pathlib.Path(root) if root else pathlib.Path(__file__).resolve().parent
-        map_dir = base / "fusion_maps" / profile
+        map_dir = (
+            pathlib.Path(root) / "fusion_maps" / profile
+            if root
+            else FUSION_CONFIG_ROOT / "maps" / profile
+        )
         merged: dict = {"profile": profile, "graphs": {}, "max_num_options": 0}
         mx = 0
         for path in _iter_map_paths(map_dir):

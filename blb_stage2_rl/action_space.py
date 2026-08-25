@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from rfr.common.json_utils import read_json_file
+from rfr.preparation.fusion.count_map import FUSION_CONFIG_ROOT
 from blb_rl_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,
@@ -368,7 +369,7 @@ class MaxSFsTable:
 
 
 def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> MaxSFsTable:
-    """从 ``blb_stage2_rl/max_sfs/<profile>.json`` 加载 max SF 表。
+    """从 ``configs/preparation/fusion/max_sfs/<profile>.json`` 加载 max SF 表。
 
     JSON 结构（完全可选；缺字段或文件不存在都允许）：
 
@@ -386,12 +387,11 @@ def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> 
     profile = str(profile or "default")
     table = MaxSFsTable(by_block_node={})
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates: List[str] = []
     if search_paths:
         candidates.extend(search_paths)
-    candidates.append(os.path.join(base_dir, "max_sfs", f"{profile}.json"))
-    candidates.append(os.path.join(base_dir, "max_sfs", "default.json"))
+    candidates.append(str(FUSION_CONFIG_ROOT / "max_sfs" / f"{profile}.json"))
+    candidates.append(str(FUSION_CONFIG_ROOT / "max_sfs" / "default.json"))
 
     for path in candidates:
         if not path:
@@ -747,7 +747,7 @@ def fusion_step_schedule(
         ) -> List[FusionStepSpec]:
     """Build the fusion-count decision schedule by annotating ``step_schedule``
     with per-step fusion-map geometry. ``fusion_map`` is a
-    :class:`blb_stage2_rl.fusion_count_map.FusionCountMap` (duck-typed)."""
+    :class:`rfr.preparation.fusion.count_map.FusionCountMap` (duck-typed)."""
     base = step_schedule(
         int(num_layers), profile=str(profile),
         attn_degree_per_layer=attn_degree_per_layer,

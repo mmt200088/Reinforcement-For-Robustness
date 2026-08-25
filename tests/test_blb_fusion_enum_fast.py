@@ -19,7 +19,7 @@ for _p in (str(_REPO / "Rescale_optimizer"), str(_REPO)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from blb_stage2_rl import fusion_enum_fast as fef  # noqa: E402
+from rfr.preparation.fusion import enumeration_fast as fef  # noqa: E402
 
 try:
     from rescale_optimizer import ReplanSession
@@ -182,7 +182,7 @@ class LiveSessionFastEvalTest(unittest.TestCase):
         h1_rows, v1 = fef.enumerate_range_fast(tpl, _SESSION, start=0, stop=4)
         h2_rows, v2 = fef.enumerate_range_fast(tpl, _SESSION, start=4, stop=9)
         self.assertEqual(full_valid, v1 + v2)
-        from blb_stage2_rl import fusion_enum
+        from rfr.preparation.fusion import enumeration as fusion_enum
         base = list(tpl.baseline_block_indices)
         opts_full = fusion_enum.group_min_noise_options(full_rows, base)
         opts_split = fusion_enum.group_min_noise_options(h1_rows + h2_rows, base)

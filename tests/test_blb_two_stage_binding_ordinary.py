@@ -666,7 +666,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "strict_validation": None,
             "artifact_paths": {},
         }
-        fusion_module = ModuleType("blb_stage2_rl.fusion_fixed_action")
+        fusion_module = ModuleType("rfr.preparation.fusion.fixed_action")
         fusion_module.build_fusion_fixed_config = lambda *_args, **_kwargs: None
         action_module = ModuleType("blb_stage2_rl.layerwise_action")
         action_module.describe_layerwise_action_matrix = lambda value: list(value)
@@ -676,7 +676,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         with mock.patch.dict(
             sys.modules,
             {
-                "blb_stage2_rl.fusion_fixed_action": fusion_module,
+                "rfr.preparation.fusion.fixed_action": fusion_module,
                 "blb_stage2_rl.layerwise_action": action_module,
                 "blb_stage2_rl.training": runner_module,
             },

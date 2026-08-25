@@ -45,8 +45,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from . import fusion_count_map as fcm
-from . import fusion_enum
+from . import count_map as fcm
+from . import enumeration as fusion_enum
 
 import noise_tables
 
@@ -354,7 +354,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
     ``sync_block*`` functions. Raises on any wiring that does not behave as
     an exact identity map of the decoded SF.
     """
-    from .action_space import (
+    from blb_stage2_rl.action_space import (
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _BLOCK_SPECS,
         _field_level_values,

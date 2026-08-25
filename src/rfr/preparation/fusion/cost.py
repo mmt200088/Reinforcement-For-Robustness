@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 import math
 from typing import Any, Dict, List, Mapping, Sequence
 
-from .truncation_levels import K_MAX_BITS, K_MIN_BITS
+from blb_stage2_rl.truncation_levels import K_MAX_BITS, K_MIN_BITS
 
 
 @dataclass(frozen=True)

@@ -10,8 +10,8 @@ from unittest import mock
 
 import noise_tables
 from blb_stage2_rl import action_space as _aspace
-from blb_stage2_rl import fusion_count_map as fcm
-from blb_stage2_rl import fusion_enum
+from rfr.preparation.fusion import count_map as fcm
+from rfr.preparation.fusion import enumeration as fusion_enum
 from blb_stage2_rl import layerwise_action as layerwise
 
 

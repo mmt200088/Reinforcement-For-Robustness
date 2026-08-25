@@ -13,6 +13,8 @@ import unittest
 
 import numpy as np
 
+from rfr.preparation.fusion import count_map as fusion_count_map
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 BLB_DIR = REPO_ROOT / "blb_stage2_rl"
@@ -39,7 +41,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             loader.exec_module(module)
             return module
 
-        cls.fcm = load(f"{pkg_name}.fusion_count_map", BLB_DIR / "fusion_count_map.py")
+        cls.fcm = fusion_count_map
         cls.layerwise = load(f"{pkg_name}.layerwise_action", BLB_DIR / "layerwise_action.py")
 
         action_space = types.ModuleType(f"{pkg_name}.action_space")
@@ -82,7 +84,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         sys.modules[materialization.__name__] = materialization
 
         cls.mod = load(f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py")
-        cls.fusion_map = cls.fcm.FusionCountMap.load("mrpc", root=str(BLB_DIR))
+        cls.fusion_map = cls.fcm.FusionCountMap.load("mrpc")
 
     def setUp(self):
         self.base = self._FakeBase()
@@ -565,7 +567,7 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             loader.exec_module(module)
             return module
 
-        cls.fcm = load(f"{pkg_name}.fusion_count_map", BLB_DIR / "fusion_count_map.py")
+        cls.fcm = fusion_count_map
         cls.layerwise_action = load(
             f"{pkg_name}.layerwise_action", BLB_DIR / "layerwise_action.py",
         )

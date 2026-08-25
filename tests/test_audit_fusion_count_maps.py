@@ -30,7 +30,7 @@ def _write_complete_profile(root: Path, *, block2_counts=(0, 1)):
 
 class FusionCountMapAuditTest(unittest.TestCase):
     def test_complete_zero_one_profile_passes(self):
-        from scripts.audit_fusion_count_maps import audit_profile_dir
+        from rfr.preparation.fusion.audit_maps import audit_profile_dir
 
         with tempfile.TemporaryDirectory() as td:
             profile_dir = Path(td) / "rte"
@@ -43,7 +43,7 @@ class FusionCountMapAuditTest(unittest.TestCase):
         self.assertEqual(result["violations"], [])
 
     def test_fusion_count_above_one_reports_exact_option_and_slots(self):
-        from scripts.audit_fusion_count_maps import audit_profile_dir
+        from rfr.preparation.fusion.audit_maps import audit_profile_dir
 
         with tempfile.TemporaryDirectory() as td:
             profile_dir = Path(td) / "sst2"
@@ -60,7 +60,7 @@ class FusionCountMapAuditTest(unittest.TestCase):
         }])
 
     def test_missing_required_block_graphs_fail(self):
-        from scripts.audit_fusion_count_maps import audit_profile_dir
+        from rfr.preparation.fusion.audit_maps import audit_profile_dir
 
         with tempfile.TemporaryDirectory() as td:
             profile_dir = Path(td) / "mrpc_large"
@@ -78,7 +78,7 @@ class FusionCountMapAuditTest(unittest.TestCase):
         ])
 
     def test_cli_writes_combined_json_and_returns_nonzero_on_violation(self):
-        from scripts.audit_fusion_count_maps import main
+        from rfr.preparation.fusion.audit_maps import main
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

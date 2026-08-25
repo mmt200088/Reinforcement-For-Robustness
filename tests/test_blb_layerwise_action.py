@@ -15,7 +15,7 @@ for _path in (str(_REPO_ROOT),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from blb_stage2_rl import fusion_count_map as fcm
+from rfr.preparation.fusion import count_map as fcm
 from blb_stage2_rl import layerwise_action as layerwise
 
 try:

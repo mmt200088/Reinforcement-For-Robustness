@@ -32,8 +32,8 @@ from blb_stage2_rl.eval_metrics import (
     pack_repeat_evaluation,
     summarize_selected_vs_random_results,
 )
-from blb_stage2_rl.fusion_count_map import FusionCountMap
-from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
+from rfr.preparation.fusion.count_map import FusionCountMap
+from rfr.preparation.fusion.fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import materialize_decoded_action
 from final_evaluation_module import (
     UnifiedFinalEvaluationModule,
@@ -1177,7 +1177,7 @@ class BLBActionFinalEvaluationModule:
         try:
             fusion_map = getattr(self, "_stage2_fusion_map", None)
             if fusion_map is None:
-                from blb_stage2_rl.fusion_count_map import (
+                from rfr.preparation.fusion.count_map import (
                     FusionCountMap as RuntimeFusionCountMap,
                 )
 

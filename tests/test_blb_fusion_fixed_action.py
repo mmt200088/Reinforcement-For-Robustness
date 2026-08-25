@@ -34,8 +34,8 @@ for _p in (str(_REPO_ROOT), str(_REPO_ROOT / "Rescale_optimizer")):
 
 import numpy as np
 
-from blb_stage2_rl import fusion_count_map as fcm
-from blb_stage2_rl import fusion_fixed_action as ffa
+from rfr.preparation.fusion import count_map as fcm
+from rfr.preparation.fusion import fixed_action as ffa
 
 
 class MatchOptionIdTest(unittest.TestCase):

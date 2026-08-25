@@ -371,7 +371,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--action-space-version", default="current-code-v1")
     parser.add_argument("--decode-version", default="action_space_v1")
     parser.add_argument("--registry-path", default="reports/blb_opt/trust0_registry/current_code_action_registry.json")
-    parser.add_argument("--max-sfs-path", default="blb_stage2_rl/max_sfs/mrpc.json")
+    parser.add_argument(
+        "--max-sfs-path",
+        default="configs/preparation/fusion/max_sfs/mrpc.json",
+    )
     parser.add_argument("--stage1-source", default="")
     parser.add_argument("--stage1-config-path", default="")
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")

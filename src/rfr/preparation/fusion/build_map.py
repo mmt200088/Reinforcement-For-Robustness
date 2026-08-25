@@ -4,14 +4,14 @@
 For each production fusion block type, enumerate the
 effective chain slots, run real replan, group by realized fusion_count, keep the
 minimum-installed-noise set (option 0 == baseline by construction), and write a
-per-block-type JSON cache under ``blb_stage2_rl/fusion_maps/<profile>/``.
+per-block-type JSON cache under ``configs/preparation/fusion/maps/<profile>/``.
 
 The builder requires Torch and the in-process Rescale optimizer. Cartesian
 products are partitioned across worker processes.
 
 Usage:
-    python scripts/blb_build_fusion_count_map.py --profile mrpc \
-        --out-dir blb_stage2_rl/fusion_maps/mrpc --workers 16
+    python -m rfr.preparation.fusion.build_map --profile mrpc \
+        --out-dir configs/preparation/fusion/maps/mrpc --workers 16
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import sys
 import time
 from typing import Any, Dict, List, Tuple
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[4]
 for _p in (str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -68,8 +68,8 @@ def _enumerate_shard_worker(payload: Dict[str, Any]) -> Tuple[int, List[Tuple]]:
     classification is deterministic, so every worker enumerates the same product
     and the ``i % num_shards`` stride is consistent.
     """
-    from blb_stage2_rl import fusion_count_map as fcm
-    from blb_stage2_rl import fusion_enum
+    from rfr.preparation.fusion import count_map as fcm
+    from rfr.preparation.fusion import enumeration as fusion_enum
 
     ctx = fusion_enum.prepare_block_type_context(
         graph_key=payload["graph_key"],
@@ -101,7 +101,7 @@ def _iter_golden_shard_results(payloads: List[Dict[str, Any]], num_shards: int):
 
 
 def _merge_golden_shard_results(shard_results) -> Tuple[List[Any], int]:
-    from blb_stage2_rl import fusion_enum
+    from rfr.preparation.fusion import enumeration as fusion_enum
 
     reducer = fusion_enum._MinNoiseReducer()
     nv_g = 0
@@ -160,7 +160,7 @@ def build_one_block_type(
     fast_verify_random: int = 64,
     shards_per_worker: int = 8,
 ) -> Dict[str, Any]:
-    from blb_stage2_rl import fusion_enum
+    from rfr.preparation.fusion import enumeration as fusion_enum
 
 
     ctx = fusion_enum.prepare_block_type_context(
@@ -236,7 +236,7 @@ def build_one_block_type(
     effective_enum_path = enum_path
     fast_fallback_reason = ""
     if enum_path in ("fast", "both"):
-        from blb_stage2_rl import fusion_enum_fast
+        from rfr.preparation.fusion import enumeration_fast as fusion_enum_fast
         template = fusion_enum_fast.build_fast_template(ctx)
         try:
             vres = fusion_enum_fast.verify_template(
@@ -445,7 +445,10 @@ def build_one_block_type(
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build the Stage-2 fusion-count map")
     ap.add_argument("--profile", default="mrpc")
-    ap.add_argument("--out-dir", default=str(REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"))
+    ap.add_argument(
+        "--out-dir",
+        default=str(REPO_ROOT / "configs" / "preparation" / "fusion" / "maps" / "mrpc"),
+    )
     ap.add_argument("--rescale-optimizer-root", default=str(REPO_ROOT / "Rescale_optimizer"))
     ap.add_argument("--num-layers", type=int, default=12)
     ap.add_argument("--ref-layer", type=int, default=1)

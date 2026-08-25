@@ -22,7 +22,7 @@ def match_option_id(
     """Return the unique fusion ``option_id`` whose ``action_indices`` equal
     ``action_slice`` on every non-K slot.
 
-    ``graph`` is a :class:`blb_stage2_rl.fusion_count_map.BlockTypeFusionMap`
+    ``graph`` is a :class:`rfr.preparation.fusion.count_map.BlockTypeFusionMap`
     (duck-typed: needs ``.k_slot_index`` and ``.options[*].{action_indices,option_id}``).
     The K slot is ignored because K is decided independently of the option.
 
@@ -85,7 +85,7 @@ def reconstruct_fusion_group(
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    from .action_space import K_LEVELS, step_schedule
+    from blb_stage2_rl.action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     schedule = step_schedule(
@@ -181,7 +181,7 @@ def build_boosted_overrides_from_group(
     if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
         raise ValueError("fusion group requires option_by_step or option_by_graph")
 
-    from .action_space import K_LEVELS, step_schedule
+    from blb_stage2_rl.action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
@@ -309,7 +309,7 @@ def build_fusion_fixed_config(
     directly consumable by the GLUE / final-eval paths without separate Stage-1
     args, and ``group.option_by_step`` so the boost is replayed."""
     if fusion_map is None:
-        from .fusion_count_map import FusionCountMap
+        from .count_map import FusionCountMap
         fusion_map = FusionCountMap.load(str(profile))
 
     group = reconstruct_fusion_group(

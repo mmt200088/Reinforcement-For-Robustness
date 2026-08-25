@@ -24,7 +24,7 @@ from typing import Any, Dict, Hashable, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
-from . import fusion_count_map as fcm
+from . import count_map as fcm
 
 InstalledNoisePoint = fcm.InstalledNoisePoint
 NoiseOrder = fcm.NoiseOrder
@@ -381,7 +381,7 @@ def _installed_signature(points: Sequence[Any]) -> Tuple:
 def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dict[str, Any]:
     """Decode one block-slot vector exactly as the runtime env does, run real
     replan, and (if valid) return the post-override installed noise plan."""
-    from .action_space import action_vector_to_cfgs
+    from blb_stage2_rl.action_space import action_vector_to_cfgs
 
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -440,7 +440,7 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
     ``field_values`` (above-baseline SF allowed) — the precision boost evaluator.
     Returns valid / fusion_count / total_bits / q_initial / q_final / fusions /
     points (the chain fields come straight from the real replan result)."""
-    from .action_space import build_block_cfg_from_field_values
+    from blb_stage2_rl.action_space import build_block_cfg_from_field_values
 
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -506,8 +506,10 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     at target are left at whatever the earlier stage(s) produced (or unchanged).
     ``option0`` (fc=0) is never touched. Mutates + returns ``options``.
     """
-    from . import fusion_count_map as _fcm, precision_boost as _pb
-    from .action_space import _decode_block_field_values
+    from blb_stage2_rl import precision_boost as _pb
+    from blb_stage2_rl.action_space import _decode_block_field_values
+
+    from . import count_map as _fcm
 
 
     topo = _pb.topology_for_graph_key(ctx.graph_key)
@@ -650,8 +652,8 @@ def prepare_block_type_context(
     import json as _json
     import os as _os
 
-    from . import action_space as _action_space
-    from .action_space import (
+    from blb_stage2_rl import action_space as _action_space
+    from blb_stage2_rl.action_space import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,
@@ -662,11 +664,11 @@ def prepare_block_type_context(
 
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
 
-    from .baseline_bootstrap import (
+    from blb_stage2_rl.baseline_bootstrap import (
         load_static_skeletons_baseline,
         static_skeletons_baseline_to_action,
     )
-    from .skeleton_stage_map import (
+    from blb_stage2_rl.skeleton_stage_map import (
         build_stage_plans_from_archive as _build_stage_plans,
     )
 
@@ -896,7 +898,7 @@ def check_k_independence(
     confirm ``fusion_count`` does not change (spec §3.6). K is decided
     separately, so the map (built at baseline K) is only valid if K does not
     move fusion."""
-    from .action_space import K_LEVELS
+    from blb_stage2_rl.action_space import K_LEVELS
 
     violations: List[Dict[str, Any]] = []
     samples_checked = 0
@@ -927,7 +929,7 @@ def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int])
     calibrated max_sfs). This avoids the action-field-name vs cfg-attr-name
     mismatch that previously left ``slots`` empty.
     """
-    from .action_space import (
+    from blb_stage2_rl.action_space import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,

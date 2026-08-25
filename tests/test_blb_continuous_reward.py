@@ -2,7 +2,7 @@
 import types
 import unittest
 
-from blb_stage2_rl import fusion_cost as FC
+from rfr.preparation.fusion import cost as FC
 from blb_stage2_rl import reward as R
 
 THR = 0.858

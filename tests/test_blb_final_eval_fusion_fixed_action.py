@@ -397,7 +397,7 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
         )
         graph = types.SimpleNamespace(k_slot_index=1, options=[option])
         fusion_map = types.SimpleNamespace(graphs={"block4": graph})
-        fusion_map_module = types.ModuleType("blb_stage2_rl.fusion_count_map")
+        fusion_map_module = types.ModuleType("rfr.preparation.fusion.count_map")
         fusion_map_module.FusionCountMap = types.SimpleNamespace(
             load=lambda _profile: fusion_map,
         )
@@ -454,7 +454,7 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
         }
 
         with mock.patch.dict(sys.modules, {
-            "blb_stage2_rl.fusion_count_map": fusion_map_module,
+            "rfr.preparation.fusion.count_map": fusion_map_module,
         }):
             result = decode(
                 object(),
@@ -488,7 +488,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
             make_all_max_action_vector,
             step_schedule,
         )
-        from blb_stage2_rl.fusion_count_map import FusionCountMap
+        from rfr.preparation.fusion.count_map import FusionCountMap
 
         num_layers = 12
         gelu = [4] * num_layers

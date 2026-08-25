@@ -4,9 +4,9 @@ from __future__ import annotations
 import unittest
 
 from blb_stage2_rl import action_space as _asp
-from blb_stage2_rl import fusion_cost
-from blb_stage2_rl import fusion_count_map as fcm
-from blb_stage2_rl import fusion_enum
+from rfr.preparation.fusion import cost as fusion_cost
+from rfr.preparation.fusion import count_map as fcm
+from rfr.preparation.fusion import enumeration as fusion_enum
 from blb_stage2_rl import layerwise_action
 from blb_stage2_rl import reward as rwd
 

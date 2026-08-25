@@ -536,7 +536,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
             action_vector_to_cfgs,
             build_block_cfg_from_field_values,
         )
-        from blb_stage2_rl import fusion_enum
+        from rfr.preparation.fusion import enumeration as fusion_enum
         import numpy as np
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
@@ -580,7 +580,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
 
 
         from blb_stage2_rl.action_space import _decode_block_field_values
-        from blb_stage2_rl import fusion_enum
+        from rfr.preparation.fusion import enumeration as fusion_enum
         import numpy as np
         from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost
         ctx = fusion_enum.prepare_block_type_context(
@@ -634,7 +634,7 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
     def _ctx_and_options(self, graph_key, block_idx, gelu_degree):
         import json
 
-        from blb_stage2_rl import fusion_enum
+        from rfr.preparation.fusion import enumeration as fusion_enum
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
             profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
@@ -645,7 +645,7 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         return ctx, options
 
     def _assert_phase2(self, graph_key, block_idx, gelu_degree, expected_target, prior_prime):
-        from blb_stage2_rl import fusion_enum
+        from rfr.preparation.fusion import enumeration as fusion_enum
         from blb_stage2_rl import precision_boost as pbm
         ctx, options = self._ctx_and_options(graph_key, block_idx, gelu_degree)
         boosted = fusion_enum.boost_options_for_block(ctx, options)

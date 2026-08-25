@@ -12,7 +12,7 @@ from unittest.mock import patch
 import numpy as np
 
 from blb_stage2_rl.candidate_store import action_hash, candidate_key
-from blb_stage2_rl.fusion_count_map import FusionCountMap
+from rfr.preparation.fusion.count_map import FusionCountMap
 from blb_stage2_rl.layerwise_action import (
     layerwise_schedule,
     materialize_layerwise_counterfactuals,

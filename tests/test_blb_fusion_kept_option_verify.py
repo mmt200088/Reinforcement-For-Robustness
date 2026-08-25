@@ -33,7 +33,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from blb_stage2_rl import fusion_enum as fe
+from rfr.preparation.fusion import enumeration as fe
 
 
 class KeptOptionGoldenVerifyTest(unittest.TestCase):

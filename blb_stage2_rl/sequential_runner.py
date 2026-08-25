@@ -743,7 +743,7 @@ def _run_layerwise_training_branch(
 
     from .candidate_store import CandidateStore, sha256_json
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
-    from .fusion_fixed_action import build_fusion_fixed_config
+    from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
@@ -3499,7 +3499,7 @@ def _build_completed_search_resume_result(
         invocation_contract: Mapping[str, Any],
         inner_run: Mapping[str, Any],
         ) -> dict[str, Any]:
-    from .fusion_fixed_action import build_fusion_fixed_config
+    from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
     from .layerwise_action import describe_layerwise_action_matrix
     from .training import _build_best_noise_config
 
@@ -5214,7 +5214,7 @@ def _run_sequential_via_runner_locked(
         f"fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。"
     )
 
-    from .fusion_count_map import FusionCountMap
+    from rfr.preparation.fusion.count_map import FusionCountMap
 
     fusion_map = FusionCountMap.load(str(train_cfg.profile))
     log(

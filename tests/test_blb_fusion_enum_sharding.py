@@ -10,7 +10,7 @@ for _p in (str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer"), str(_
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from blb_stage2_rl import fusion_enum  # noqa: E402
+from rfr.preparation.fusion import enumeration as fusion_enum  # noqa: E402
 
 
 class FusionEnumShardingTests(unittest.TestCase):
