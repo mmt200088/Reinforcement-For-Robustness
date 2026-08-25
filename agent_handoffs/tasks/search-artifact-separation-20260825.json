@@ -1,0 +1,100 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "f3411ecb913ff557b1315a8c12ec0f9f4acd15e7",
+  "base_tree": "d754feabe40678c168fcb275840de515e07ae224",
+  "branch": "codex/task-search-artifact-separation-20260825",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".claude",
+    ".github/workflows/ci.yml",
+    ".gitignore",
+    ".vscode",
+    "Model_analysis/model_statistics",
+    "Paean/outputs",
+    "Parting Chapter",
+    "Prelude Chapter",
+    "Previous Chapter",
+    "Previous Chapter Server Reserve",
+    "README.md",
+    "Rescale_optimizer",
+    "blb_stage2_rl/diagnostics.py",
+    "commonsense_170k.json",
+    "docs/assets",
+    "docs/evidence",
+    "examples",
+    "experiment",
+    "experiments",
+    "gelu_analysis",
+    "glue_submission",
+    "local_assets",
+    "pruning_search_log_eval.txt",
+    "pyproject.toml",
+    "report_format_utils.py",
+    "reports",
+    "rl_agent_checkpoint_BertForSequenceClassification.pt",
+    "rl_training_data_points",
+    "scripts",
+    "server_backups",
+    "tests"
+  ],
+  "completed_at": "2026-08-25T22:02:10+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "experiments/server_command_runs/search_artifact_separation_2922823b_20260825/"
+  ],
+  "source_commit": "2922823b774a519d7cce2cd546e0f797da1da31c",
+  "source_tree": "ca7497d8e4912e67cd874c1327ae7d6cafd16358",
+  "started_at": "2026-08-25T21:38:53+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "search-artifact-separation-20260825",
+  "verification": [
+    {
+      "command": "remote archive branch and tree audit",
+      "evidence": "training archive f81887d6/tree 2120aa97 and experiment archive cdc1b5da/tree 1a968c22 are remotely readable; model weights, checkpoints, raw datasets and server recovery bundles are excluded from archive tips",
+      "outcome": "passed"
+    },
+    {
+      "command": "python scripts/production_surface_guard.py --json",
+      "evidence": "local and server audits report no forbidden paths, generated artifact roots, model weights, personal source references, retired variants or HTML generators",
+      "outcome": "passed"
+    },
+    {
+      "command": "representative log identity and tree-size audit",
+      "evidence": "392 tracked files, 12,488,816 bytes; retained log is the unchanged original Git blob, 6,158,778 bytes, 600 rows, SHA-256 aa065bc468dfcf6a19396ffcca193fb40cf5a7325e3953a953bcdcad4cce8968",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m compileall -q . and bash -n production launchers",
+      "evidence": "server compile and shell syntax gates passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "focused cleanup pytest gate",
+      "evidence": "56 passed and 10 subtests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "Stage2All4BaseConfigTest record-isolation regression",
+      "evidence": "initial full gate identified a test-only historical-record dependency; isolated fixture regression passed after the fix",
+      "outcome": "passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES=0 python -m pytest -q",
+      "evidence": "1658 passed, 3 hardware-count skips, 267 subtests passed in 46.22 seconds",
+      "outcome": "passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES=0 python -m unittest discover -s tests -v",
+      "evidence": "1509 tests passed; 3 skips require unavailable 2-GPU or 5-GPU hardware",
+      "outcome": "passed"
+    },
+    {
+      "command": "repo_sync_guard.py result-check --require-remote",
+      "evidence": "result commit 6e5175c6693ba2856051e76dac110cf93a0d596d; remote parity and artifact-only path validation passed; SHA256SUMS verified locally",
+      "outcome": "passed"
+    }
+  ]
+}
