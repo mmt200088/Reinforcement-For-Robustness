@@ -717,7 +717,7 @@ aggregate. Return evidence through a result branch.
 - [ ] **Step 6: Finalize canonical**
 
 Run `aggregate-finalize`, fast-forward `jk_standard_rl`, and update the clean
-canonical checkout at `/Users/pengjunkai/Documents/USENIX Security CODE`.
+canonical checkout at `<local-canonical-checkout>`.
 
 - [ ] **Step 7: Verify parity**
 
