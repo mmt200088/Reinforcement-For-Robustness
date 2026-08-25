@@ -1,0 +1,14 @@
+{
+  "change": "noise_std_table.csv is ignored and forbidden from tracked source; runtime noise values and loaders are unchanged",
+  "gates": {
+    "focused_pytest": "8 passed",
+    "full_pytest": "1659 passed, 3 hardware-count skips, 267 subtests passed",
+    "full_unittest": "1510 tests, 3 hardware-count skips",
+    "git_check_ignore": "passed",
+    "production_surface": "passed"
+  },
+  "schema_version": "ignore_local_noise_table_server_evidence_v1",
+  "source_commit": "2d66d459a5e64fb8c8bfea80a53387b5310cc89f",
+  "source_tree": "1b9651eb452107d15c0c391e39043816a84e8413",
+  "tracked_clean": true
+}
