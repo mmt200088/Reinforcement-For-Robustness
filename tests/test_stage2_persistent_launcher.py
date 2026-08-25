@@ -125,6 +125,11 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(self._value(stage1_argv, "--skip_stage1_rl"), "false")
         self.assertEqual(self._value(stage1_argv, "--skip_noise_rl"), "true")
         self.assertEqual(self._value(stage1_argv, "--decoupled_layout"), "true")
+        self.assertEqual(self._value(stage1_argv, "--stage2_rl_episodes"), "0")
+        self.assertEqual(
+            self._value(stage1_argv, "--stage2_rl_episodes_specified"),
+            "false",
+        )
         self.assertEqual(stage1_path.parts[-2:], ("stage1", "bert base mrpc"))
         self.assertEqual(stage1_meta["policy_network_variant"], "shared_gtrxl_small_v1")
 
@@ -133,6 +138,13 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         )
         self.assertEqual(self._value(stage2_argv, "--skip_stage1_rl"), "true")
         self.assertEqual(self._value(stage2_argv, "--skip_noise_rl"), "false")
+        self.assertEqual(
+            self._value(stage2_argv, "--stage1_rl_episodes"), "51000"
+        )
+        self.assertEqual(
+            self._value(stage2_argv, "--stage1_rl_episodes_specified"),
+            "false",
+        )
         self.assertEqual(
             self._value(stage2_argv, "--stage2_fixed_config_source"), "all4"
         )
