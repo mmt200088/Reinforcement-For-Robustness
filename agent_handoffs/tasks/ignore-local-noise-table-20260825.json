@@ -1,0 +1,57 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "c0f09fb89097ac0ad6de41b788819dbcf52e8115",
+  "base_tree": "0ec4927891c5efa2714d29dfee6837f62f8288b3",
+  "branch": "codex/task-ignore-local-noise-table-20260825",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".gitignore",
+    "scripts/production_surface_guard.py",
+    "tests/test_production_surface.py"
+  ],
+  "completed_at": "2026-08-25T22:25:45+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "experiments/server_command_runs/ignore_local_noise_table_2d66d459_20260825/"
+  ],
+  "source_commit": "2d66d459a5e64fb8c8bfea80a53387b5310cc89f",
+  "source_tree": "1b9651eb452107d15c0c391e39043816a84e8413",
+  "started_at": "2026-08-25T22:22:15+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "ignore-local-noise-table-20260825",
+  "verification": [
+    {
+      "command": "git check-ignore -v noise_std_table.csv",
+      "evidence": ".gitignore line 26 selects the repository-root noise table",
+      "outcome": "passed"
+    },
+    {
+      "command": "python scripts/production_surface_guard.py --json",
+      "evidence": "no forbidden paths, tracked artifacts or source references",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m pytest -q tests/test_production_surface.py",
+      "evidence": "8 passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES=0 python -m pytest -q",
+      "evidence": "1659 passed, 3 hardware-count skips, 267 subtests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES=0 python -m unittest discover -s tests -v",
+      "evidence": "1510 tests passed; 3 hardware-count skips",
+      "outcome": "passed"
+    },
+    {
+      "command": "repo_sync_guard.py result-check --require-remote",
+      "evidence": "result commit 4b9d7e960aa9d7752b601fb7d9e1dae2b5f75a2b; remote parity and artifact-only validation passed",
+      "outcome": "passed"
+    }
+  ]
+}
