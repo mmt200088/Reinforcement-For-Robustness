@@ -125,11 +125,11 @@ def load_action_grid_config(
          "base": "max",
          "overrides": [{"label": "L05.B3.K", "truncation_bits": 10}]}
 
-    3. **Old action_vec list** (back-compat with existing presets)::
+    3. **Persisted action_vec list**::
 
         {"action_vec": [3, 4, 5, ...], "num_layers": 12}
 
-    4. **fixed / ranges only** (back-compat with cartesian-sweep presets)::
+    4. **fixed / ranges only** (cartesian-sweep presets)::
 
         {"fixed": {"layer2.block5.wffn1_sf": 18},
          "ranges": {"block3.truncation": [6, 7, 8, 9, 10, 11, 12, 13]}}
@@ -511,8 +511,8 @@ def build_cost_matched_random_action_candidates(
     ``selected_*`` exactly on all three dimensions:
     ``(total_bits_sum, total_fusion_count, sum_truncation_k)``.
 
-    Each attempt — even ones discarded by the cheap pre-filter — counts toward
-    ``max_attempts`` per user spec. Invalid (modulus chain) draws also count.
+    Each attempt, including pre-filtered and modulus-chain-invalid draws, counts
+    toward ``max_attempts``.
     Accepted draws are returned in attempt order; the caller is responsible
     for prepending the selected action as the comparison anchor.
     """

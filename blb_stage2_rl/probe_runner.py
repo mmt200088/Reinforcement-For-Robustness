@@ -17,7 +17,7 @@ Design:
 * **Process fan-out.** The primary GPU runs in the learner process. Replica
   GPUs live in persistent ``spawn`` children, avoiding Python/GIL contention
   between the model wrappers while retaining one model per GPU. Set
-  ``BLB_STAGE2_PROBE_BACKEND=thread`` for the legacy in-process fallback.
+  ``BLB_STAGE2_PROBE_BACKEND=thread`` for the in-process fallback.
 * **Single-device fallback.** A 1-worker ``ProbeRunner`` is a thin no-op
   wrapper. ``BLBStage2Env`` only constructs one when there are 2+ devices,
   so existing single-GPU runs keep the original codepath bitwise.
@@ -1030,9 +1030,8 @@ class ProbeRunner:
     def _for_each_worker(self, fn) -> None:
         """Run a worker-local operation on every worker.
 
-        Install/clear touches separate model replicas and CUDA devices. The old
-        serial loop made multi-GPU reward probes pay that setup cost N times
-        before the actual parallel forward even began.
+        Install and clear touch independent model replicas and CUDA devices, so
+        worker-local setup runs concurrently with the same failure aggregation.
         """
         if len(self.workers) == 1:
             fn(self.workers[0])

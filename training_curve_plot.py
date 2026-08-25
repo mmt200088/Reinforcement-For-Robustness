@@ -49,7 +49,7 @@ def save_stage1_style_training_curve(
     The full two-metric case uses Stage-1's 2x2 layout:
     reward / loss / metric1 / metric2.  The one-metric case uses Stage-1's
     1x3 layout: reward / loss / metric1.  When only reward is provided, a
-    single-panel fallback is written for legacy callers.
+    single-panel fallback is written when optional series are absent.
     """
     import matplotlib
 

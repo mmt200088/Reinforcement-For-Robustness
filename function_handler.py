@@ -323,8 +323,8 @@ def reseed_noise_rng_for_device(
         ) -> None:
     """只重播种 ``device`` 自己的噪声 generator（不动其它 device、不动全局模式）。
 
-    Stage-2 确定性 probe 路径（2026-06-10）用它在每个 trial 开始前把本卡的
-    噪声流定到 ``(run_seed, global_episode, trial)`` 派生的种子上：
+    Stage-2 确定性 probe 在每个 trial 开始前把本卡的噪声流定到
+    ``(run_seed, global_episode, trial)`` 派生的种子上：
     CUDA Philox 与设备无关，同一种子在任何卡上产生同一噪声序列，因此 1 卡
     与 N 卡（以及任何 trial→卡 的调度）逐位一致。worker 线程各自持有不同
     device，只触碰自己的 generator —— 与并发的其它 worker 无竞态。
@@ -1336,8 +1336,8 @@ def _make_block2_qk_proj_forward(
     在 ``X · W`` 之后加 rescale 噪声（cfg.*_result_rescale 控制是否加）。
 
     This path does not add fresh noise to X. Block 2 receives X noise
-    噪声在 LN tail γ 乘法的 rescale 那里就够了，旧的 ``replace_layer_input_noise``
-    的 fresh-on-X 不再纳入 Block 2 框架（legacy 保留供 stage2 RL 使用）。
+    噪声在 LN tail γ 乘法的 rescale 处注入；Block 2 不再额外添加 input-X
+    fresh noise。
     """
     def block2_qk_forward(hidden_states):
         if hidden_states is None:
@@ -2195,24 +2195,6 @@ def make_block5_default_config(
     return cfg
 
 
-def _make_blb_first_input_noise_forward(
-        original_forward,
-        point: NoisePoint,
-        ):
-    """构造在 ``layer.forward`` 入口对 hidden_states 加 fresh 噪声的包装。
-
-    与 legacy ``_make_input_noise_forward`` 同结构，但走 BLB 多 N 表。
-    """
-    def noisy_forward(hidden_states, *args, **kwargs):
-        if hidden_states is None:
-            return original_forward(hidden_states, *args, **kwargs)
-        noisy_hidden_states = _sample_and_add_gaussian_for_point(
-            hidden_states, point,
-        )
-        return original_forward(noisy_hidden_states, *args, **kwargs)
-    return noisy_forward
-
-
 def _make_block5_wffn1_forward(
         linear_module: nn.Linear,
         encode_point: NoisePoint,
@@ -2949,7 +2931,6 @@ class ReversibleLayerHandler:
         self.block5_cfg_per_layer = {}
 
 
-        self.blb_first_input_noise_state = {}
         self.backup_model = copy.deepcopy(model)
 
     @staticmethod
@@ -3066,7 +3047,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="legacy")
+        self._check_noise_mode_conflict(selected, installing="single_table")
 
         for i, layer in enumerate(layers):
             if i not in selected:
@@ -3113,7 +3094,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="legacy")
+        self._check_noise_mode_conflict(selected, installing="single_table")
 
         state = {
             "softmax_scaling_factor": int(softmax_scaling_factor),
@@ -3158,7 +3139,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="legacy")
+        self._check_noise_mode_conflict(selected, installing="single_table")
 
 
         projection_store = self.original_projection_noise.setdefault(projection_name, {})
@@ -3204,7 +3185,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="legacy")
+        self._check_noise_mode_conflict(selected, installing="single_table")
 
         projection_store = self.original_projection_noise.setdefault(store_key, {})
         for i, layer in enumerate(layers):
@@ -3494,9 +3475,8 @@ class ReversibleLayerHandler:
             layer_name: encoder layer list 的属性路径（默认与其它 replace_* 一致）
             cfg: ``Block1NoiseConfig``；None = 用 ``make_block1_default_config()``
 
-        注：本方法**会覆盖**之前 ``replace_layer_ffn2_noise`` 对 Wffn2 forward
-        的包装（因为 Block 1 是 ffn2 噪声的严格扩展）。如果想回到 legacy 模式，
-        请先调用 ``restore_layer_block1_noise``。
+        本方法会覆盖 ``replace_layer_ffn2_noise`` 对 Wffn2 forward 的包装，因为
+        Block 1 是该包装的严格扩展；恢复 Block 1 后会还原原始 forward。
         """
 
         if cfg is None:
@@ -3511,7 +3491,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="blb")
+        self._check_noise_mode_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
             if i not in selected:
@@ -3645,9 +3625,9 @@ class ReversibleLayerHandler:
           * 若 Block 1 未安装：把原始 LayerNorm 包成 ``NoisyBlock1LayerNorm(cfg1=None, cfg2=cfg)``，
             等价于 LN head 用 clean 计算、tail 加 Block 2 噪声。
 
-        与 legacy ``replace_layer_input_noise`` 的关系：
+        与单表 ``replace_layer_input_noise`` 的关系：
           * Block 2 视角下，X 进 Wq/Wk/Wv 之前**不再加 fresh**（X 的 PPTI 噪声
-            来自 LN tail γ 乘法的 rescale）。本方法**不会**触发 legacy 的
+            来自 LN tail γ 乘法的 rescale）。本方法不会触发单表
             input-X fresh 噪声；如果你之前装过 ``replace_layer_input_noise``，
             建议先 ``restore_*`` 再 install Block 2，避免双重加噪。
         """
@@ -3664,7 +3644,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="blb")
+        self._check_noise_mode_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
             if i not in selected:
@@ -3898,7 +3878,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="blb")
+        self._check_noise_mode_conflict(selected, installing="blb")
 
         installed_summary = []
         for i, layer in enumerate(layers):
@@ -3997,12 +3977,12 @@ class ReversibleLayerHandler:
           * attention.self 必须已是 ``BertSelfAttentionWithAproximation``
             （Block 4 hook 通过 ``_block4_*_hook`` 实例属性激活）。
 
-        与 legacy ``replace_layer_softmax_value_noise`` 的关系：
+        与单表 ``replace_layer_softmax_value_noise`` 的关系：
           * 装 Block 4 后，BertSelfAttentionWithAproximation.forward 会 short-circuit
-            掉 legacy ``_apply_softmax_value_noise``。restore Block 4 后回到 legacy 路径。
+            掉 ``_apply_softmax_value_noise``。恢复 Block 4 后回到单表路径。
 
-        与 legacy ``replace_layer_attention_output_noise`` 的关系：
-          * Block 4 的 Wo wrap 是 legacy wo wrap 的严格扩展（多了 result rescale）。
+        与单表 ``replace_layer_attention_output_noise`` 的关系：
+          * Block 4 的 Wo wrap 是单表 Wo wrap 的严格扩展（多了 result rescale）。
             install Block 4 时会**覆盖**之前的 wo wrap；restore 时回到原始 forward。
         """
         if cfg is None:
@@ -4017,7 +3997,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="blb")
+        self._check_noise_mode_conflict(selected, installing="blb")
 
         for i, layer in enumerate(layers):
             if i not in selected:
@@ -4211,7 +4191,7 @@ class ReversibleLayerHandler:
                 return
 
 
-        self._check_blb_legacy_conflict(selected, installing="blb")
+        self._check_noise_mode_conflict(selected, installing="blb")
 
         installed_summary = []
         for i, layer in enumerate(layers):
@@ -4361,92 +4341,8 @@ class ReversibleLayerHandler:
             self.block5_cfg_per_layer.pop(i, None)
 
 
-    def replace_blb_first_input_noise(
-            self,
-            scaling_factor: int,
-            N: int = 8192,
-            layer_indices=None,
-            layer_name="model.model.layers",
-            ):
-        """[DEPRECATED] 在指定层（默认 layer 0）的 forward 入口注入 BLB-style fresh 噪声。
-
-        BLB Block 2-5 是 transformer 各层之间循环的 block，覆盖"上一层 LN tail
-        → Wq/Wk/Wv"路径噪声。但 layer 0 的 X 直接来自 embedding（没有上一层
-        LN tail），所以缺一个对应位置的 fresh 噪声。本方法补上这块。
-
-        Args:
-            scaling_factor: scale_bits（``NOISE_VARIANCE_TABLE_BY_N`` 的 key）
-            N: CKKS 多项式阶（默认 8192）
-            layer_indices: 要安装的层；None 默认只装 layer 0
-            layer_name: encoder layer 列表的属性路径
-
-        与 legacy ``replace_layer_input_noise`` 的关系：
-          * 二者**互斥**：legacy 用 ``INPUT_NOISE_VARIANCE_TABLE`` 单 N 表，
-            BLB 这边用 ``NOISE_VARIANCE_TABLE_BY_N`` 多 N 表。
-          * 同时安装时本方法会报错（参见 ``_check_blb_legacy_conflict``）。
-        """
-        layers = list(eval("self." + layer_name))
-        if layer_indices is None:
-            selected = {0}
-        else:
-            selected = set(layer_indices)
-            if not selected:
-                return
-
-
-        for i in selected:
-            if i in self.original_input_noise:
-                raise RuntimeError(
-                    f"layer {i} 已装 legacy ``replace_layer_input_noise``；"
-                    f"BLB first-input 与 legacy input 互斥，请先 restore_layer_input_noise。"
-                )
-
-        point = NoisePoint("fresh", int(scaling_factor), int(N))
-        for i, layer in enumerate(layers):
-            if i not in selected:
-                continue
-            stored = self.blb_first_input_noise_state.get(i)
-            if stored is None or getattr(stored.get("forward"), "__self__", None) is not layer:
-                self.blb_first_input_noise_state[i] = {
-                    "forward": layer.forward,
-                    "point": point,
-                }
-            else:
-                self.blb_first_input_noise_state[i]["point"] = point
-            original_forward = self.blb_first_input_noise_state[i]["forward"]
-            layer.forward = _make_blb_first_input_noise_forward(original_forward, point)
-
-        _print_blb_install(
-            f"已为 {len(selected)} 层启用 BLB first-input fresh 噪声 "
-            f"(layers={sorted(selected)}, N={N}, scaling_factor={scaling_factor})"
-        )
-
-    def restore_blb_first_input_noise(
-            self,
-            layer_indices=None,
-            layer_name="model.model.layers",
-            ):
-        """恢复 BLB first-input fresh 噪声安装前的 layer.forward。"""
-        layers = list(eval("self." + layer_name))
-        if layer_indices is None:
-            selected = set(self.blb_first_input_noise_state.keys())
-        else:
-            selected = set(layer_indices)
-            if not selected:
-                return
-
-        for i, layer in enumerate(layers):
-            if i not in selected:
-                continue
-            if i in self.blb_first_input_noise_state:
-                original_forward = self.blb_first_input_noise_state[i]["forward"]
-                if getattr(original_forward, "__self__", None) is layer:
-                    layer.forward = original_forward
-                del self.blb_first_input_noise_state[i]
-
-
-    def get_active_legacy_noise_layers(self) -> dict:
-        """返回每种 legacy 噪声类型当前安装到了哪些层。
+    def get_active_single_table_noise_layers(self) -> dict:
+        """返回每种单表噪声类型当前安装到了哪些层。
 
         返回 ``{noise_type: set(layer_idx)}``，noise_type ∈
         {input, query, key, value, wo, wffn1, wffn2, softmax_value}。
@@ -4471,16 +4367,15 @@ class ReversibleLayerHandler:
             "block3": set(self.block3_cfg_per_layer.keys()),
             "block4": set(self.block4_cfg_per_layer.keys()),
             "block5": set(self.block5_cfg_per_layer.keys()),
-            "first_input": set(self.blb_first_input_noise_state.keys()),
         }
 
-    def _check_blb_legacy_conflict(self, target_layers, *, installing: str):
-        """安装 BLB 噪声前，确认目标层没有任何 legacy 噪声残留；反之亦然。
+    def _check_noise_mode_conflict(self, target_layers, *, installing: str):
+        """确认 BLB 与单表噪声不会安装在同一层。
 
         Args:
             target_layers: 即将操作的 layer 索引集合
-            installing: "blb" 表示在装 BLB（检查是否有 legacy 残留）；
-                        "legacy" 表示在装 legacy（检查是否有 BLB 残留）。
+            installing: "blb" 表示在装 BLB；
+                        "single_table" 表示在装单表噪声。
                         二者互斥时抛 RuntimeError。
         """
         target = set(int(i) for i in target_layers)
@@ -4488,19 +4383,19 @@ class ReversibleLayerHandler:
             return
 
         if installing == "blb":
-            legacy_active = self.get_active_legacy_noise_layers()
+            single_table_active = self.get_active_single_table_noise_layers()
             conflicts = []
-            for noise_type, layer_set in legacy_active.items():
+            for noise_type, layer_set in single_table_active.items():
                 inter = layer_set & target
                 if inter:
-                    conflicts.append(f"legacy {noise_type}: layers {sorted(inter)}")
+                    conflicts.append(f"single-table {noise_type}: layers {sorted(inter)}")
             if conflicts:
                 raise RuntimeError(
-                    "BLB 噪声与 legacy 噪声互斥，检测到 legacy 残留：\n  - "
+                    "BLB 噪声与单表噪声互斥，检测到单表噪声残留：\n  - "
                     + "\n  - ".join(conflicts)
-                    + "\n请先调用对应的 restore_layer_*_noise 还原 legacy 噪声后再装 BLB。"
+                    + "\n请先调用对应的 restore_layer_*_noise 还原单表噪声后再装 BLB。"
                 )
-        elif installing == "legacy":
+        elif installing == "single_table":
             blb_active = self.get_active_blb_noise_layers()
             conflicts = []
             for block_name, layer_set in blb_active.items():
@@ -4509,12 +4404,14 @@ class ReversibleLayerHandler:
                     conflicts.append(f"BLB {block_name}: layers {sorted(inter)}")
             if conflicts:
                 raise RuntimeError(
-                    "legacy 噪声与 BLB 噪声互斥，检测到 BLB 残留：\n  - "
+                    "单表噪声与 BLB 噪声互斥，检测到 BLB 残留：\n  - "
                     + "\n  - ".join(conflicts)
-                    + "\n请先调用对应的 restore_layer_block*_noise 还原 BLB 噪声后再装 legacy。"
+                    + "\n请先调用对应的 restore_layer_block*_noise 还原 BLB 噪声后再装单表噪声。"
                 )
         else:
-            raise ValueError(f"installing 必须是 'blb' 或 'legacy'，不能是 {installing!r}")
+            raise ValueError(
+                f"installing 必须是 'blb' 或 'single_table'，不能是 {installing!r}"
+            )
 
     def restore_all(self):
         """完全恢复原始模型状态"""
@@ -4551,5 +4448,4 @@ class ReversibleLayerHandler:
         self.original_block5_gelu = {}
         self.block5_cfg_per_layer = {}
 
-        self.blb_first_input_noise_state = {}
         print("已完全恢复原始模型状态")

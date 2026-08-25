@@ -80,7 +80,7 @@ def parse_broadcast_int_vector(
 
 
 def parse_degree_config(raw_value: Any) -> List[int] | None:
-    """Parse the legacy RL degree-vector flag format.
+    """Parse an RL degree-vector flag.
 
     Accepts ``None``/empty as missing, Python sequences, JSON-list strings, and
     comma-separated strings.  This intentionally preserves the historical
@@ -99,7 +99,7 @@ def parse_degree_config(raw_value: Any) -> List[int] | None:
 
 
 def parse_noise_config(raw_value: Any) -> Any | None:
-    """Parse a legacy JSON noise config flag."""
+    """Parse a JSON noise-config flag."""
     if raw_value is None or raw_value == "":
         return None
     if isinstance(raw_value, dict):

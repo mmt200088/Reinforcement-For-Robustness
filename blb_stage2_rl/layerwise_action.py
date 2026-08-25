@@ -1,6 +1,6 @@
 """Torch-free codec for the canonical Stage-2 layerwise policy.
 
-The legacy full action vector remains the runtime interchange format. This
+The full action vector remains the runtime interchange format. This
 module owns only the compact policy action: one Block4 fusion choice and one
 high/medium/low truncation-precision preset per Transformer layer.
 """
@@ -109,7 +109,7 @@ def truncation_k_summary_from_full_action(
         *,
         k_levels: Sequence[int] = K_LEVELS,
         ) -> Tuple[int, int, float]:
-    """Decode the five per-layer K slots from one legacy full action vector."""
+    """Decode the five per-layer K slots from one full action vector."""
     layers = _validated_num_layers(num_layers)
     levels = validate_exact_k_domain(k_levels)
     try:
@@ -243,7 +243,7 @@ class LayerActionApplication:
 
 @dataclass(frozen=True)
 class LayerwiseMaterialization:
-    """One exact legacy-vector materialization used by strict evaluation."""
+    """Materialize one full action exactly for strict evaluation."""
 
     mode: str
     full_vector: np.ndarray
@@ -472,7 +472,7 @@ def layerwise_fusion_option_by_step(
         schedule: Sequence[LayerwiseStepSpec],
         fusion_map: Any,
         ) -> Mapping[str, int]:
-    """Project the compact action to the executable legacy fusion-step map.
+    """Project the compact action to the executable fusion-step map.
 
     The step keys match :func:`action_space.step_schedule`: layer 0 owns
     ``B2,B4,B5`` and later layers own ``B1,B2,B4,B5``. Comparator actions fix
@@ -556,7 +556,7 @@ def apply_layer_action(
         profile: str = "mrpc",
         gelu_degree: int = 4,
         ) -> LayerActionApplication:
-    """Copy a legacy vector and apply exactly one layer's policy action."""
+    """Copy a full vector and apply exactly one layer's policy action."""
     del profile, gelu_degree
     _validate_k_levels()
     action = _validate_layer_action(layer_action, step_spec)

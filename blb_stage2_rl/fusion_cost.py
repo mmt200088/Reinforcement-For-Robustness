@@ -51,12 +51,9 @@ class BlockChoice:
 class FusionCostResult:
     """Output of :func:`compute_fusion_cost_saving`.
 
-    ``fusion_norm`` / ``trunc_norm`` are the two components normalized over their
-    OWN maxima (2026-06-11, ADR-011): the 60k run showed that under a single
-    shared normalization the K pot (47 x 50 weight) diluted the fusion signal to
-    invisibility (one block5 fusion = +0.029 reward), so the caller now budgets
-    the two components separately. ``cost_norm`` (shared normalization) is kept
-    for diagnostics/back-compat; ``cost_rank`` is unchanged.
+    ``fusion_norm`` and ``trunc_norm`` use independent maxima so the larger
+    truncation range cannot suppress the fusion signal. ``cost_norm`` is the
+    shared diagnostic normalization; ``cost_rank`` remains unbounded.
     """
     cost_norm: float
     cost_rank: float
@@ -74,7 +71,7 @@ class FusionCostResult:
 
 
 def saturate_fusion(x: float, tau: float) -> float:
-    """Concave saturating transform on ``x in [0, 1]`` (anti-runaway, ADR-014).
+    """Concave saturating transform on ``x in [0, 1]``.
 
     ``sat(0)=0``, ``sat(1)=1``, with a steep initial slope that flattens past a
     knee controlled by ``tau`` (smaller ``tau`` saturates earlier). Used to turn
@@ -83,7 +80,7 @@ def saturate_fusion(x: float, tau: float) -> float:
     incentive no longer pushes the policy past a healthy fusion level into the
     noisy accuracy boundary (the 4th-60k hot collapse, fusion 8→35).
 
-    ``tau <= 0`` => identity (saturation off; bit-for-bit back-compat).
+    ``tau <= 0`` selects the identity transform.
     """
     x = min(1.0, max(0.0, float(x)))
     t = float(tau)

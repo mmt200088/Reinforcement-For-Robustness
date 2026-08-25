@@ -1681,10 +1681,8 @@ def sequential_ppo_update(
     ``ent_coef_override``: if not None, replace ``cfg.ent_coef`` for THIS
     update only. Used by the entropy-schedule mechanism in
     :func:`train_sequential` to ramp ent_coef from 0 (anchor) to the target
-    value (steady) — see the 2026-05-18 warmstart-sampling bug fix for why
-    the schedule matters (PPO entropy bonus was undoing the warmstart bias
-    during the forced-baseline anchor episodes, leaving the policy too
-    diffuse to land near baseline once sampling started).
+    value (steady). The zero-entropy anchor prevents the entropy bonus from
+    undoing the warm-start bias before normal sampling begins.
     """
     if len(buffer) == 0:
         slot_count = int(getattr(getattr(policy, "cfg", None), "max_step_dim", 0))
@@ -2188,7 +2186,7 @@ def sequential_ppo_update(
 def _spec_slot_num_levels(spec) -> list:
     """Per-slot legal level counts for one step, for either spec type.
 
-    Fusion mode: a FusionStepSpec has 2 slots = (fusion option, K). Legacy
+    Fusion mode: a FusionStepSpec has 2 slots = (fusion option, K). Full-vector
     per-slot mode: a BlockStepSpec exposes per-slot ``slot_dims``.
     """
     if hasattr(spec, "fusion_num_options"):

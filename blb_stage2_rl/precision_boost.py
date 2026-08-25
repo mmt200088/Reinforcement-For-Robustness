@@ -623,14 +623,13 @@ def effective_output_target(
         ) -> int:
     """The achievable output-SF target after the install limit.
 
-    The output is ``last_rescale.sf_post (+ final_encode)``. Since the ADR (SF>46 =
-    no noise), an installed point may run up to the modulus limit ``max_installed_sf``
+    The output is ``last_rescale.sf_post (+ final_encode)``. Because SF values
+    above 46 install no noise, a point may run up to ``max_installed_sf``
     (q_max=60, NOT the noise-table max 46 — points in (46, 60] just install no noise).
     So the max installable output is ``q_max`` for a block with no final encode (the
     single rescale carries it all — block5), or ``2*q_max`` for one with a final
-    encode. Every mrpc config ceiling (``q_tail - amplitude - h_sf``; <=53, n1's 48)
-    is <= q_max, so none are clamped — block5_n1 now reaches its full 48 (was clamped
-    to 46 under the old <=46 install cap). The clamp only bites a config beyond q_max."""
+    encode. Every MRPC config ceiling is at most q_max, so only targets beyond
+    q_max are clamped."""
     _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
     ceiling = int(max_installed_sf) * (2 if final_field is not None else 1)
     return min(int(config_target), ceiling)
@@ -661,13 +660,11 @@ def generate_phase2_candidates(
     Blocks with no final encode (block5) get ``final_encode = 0`` → the whole
     target lands on ``sf_post``.
 
-    Install limit: since the ADR (SF>46 = no noise), an installed point may run up to
+    Install limit: since SF>46 installs no noise, a point may run up to
     ``max_installed_sf`` = the modulus limit q_max (60), NOT the noise-table max 46 —
-    a point in (46, 60] just installs no noise (negligible). So a composition whose
-    compensation pushes e.g. block4's ``ln_mean_rescale`` to 49 is now KEPT (it was
-    DROPPED under the old <=46 cap, which is why block4's final encode could not drop
-    below its base). Only points beyond q_max (a real modulus violation, also rejected
-    by replan) are dropped; no lower-prime fallback is generated.
+    a point in (46, 60] installs no noise. Compositions remain valid up to q_max;
+    points beyond q_max are rejected by replan, and no lower-prime fallback is
+    generated.
     """
     last_idx, last_field, final_field = _last_rescale_and_final_encode(topology)
     geo = _resolve_geometry(topology, last_idx)
@@ -737,9 +734,9 @@ def boost_option(
     """Raise the LAST short prime of ``base_slots`` as high as possible
     (≤ ``q_max``) at minimum installed noise.
 
-    Only the prime at the final rescale (the one feeding ``q_tail``) is boosted —
-    per the user spec, intermediate short primes are left as-is (block5_n4 keeps
-    its middle ``31`` while raising the trailing ``51`` to ``60``). Returns the
+    Only the prime at the final rescale (the one feeding ``q_tail``) is boosted;
+    intermediate short primes remain unchanged (block5_n4 keeps its middle
+    ``31`` while raising the trailing ``51`` to ``60``). Returns the
     min-noise boosted slots (same ``fusion_count``, replan-valid), or ``None`` if
     the last prime is not short/fillable or no candidate verifies (caller keeps
     the original option).

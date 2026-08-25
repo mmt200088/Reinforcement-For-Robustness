@@ -426,7 +426,7 @@ def write_action_description_files(
         file as-is.
       * top-level ``slots_by_layer`` — grouped compact view ``{"L05": {"B3":
         {"K": 10, "F.softmax_exp": 14, ...}, ...}, ...}`` for quick reading.
-      * ``records`` — the legacy verbose per-slot records (kept for back-compat).
+      * ``records`` — the complete per-slot records used by diagnostics.
       * ``summary`` — counts (scaling-factor slots / truncation slots / ineffective).
 
     The Markdown table leads with the *decoded value* (SF / truncation_bits)
@@ -690,7 +690,7 @@ class BLBStatusBoard:
                 in the status JSON's ``best.slots`` field so a ``tail -f`` /
                 ``jq`` flow can inspect the current best without decoding the
                 integer action vector. The raw ``action_vec`` is kept under
-                ``best.action_vec`` for back-compat.
+                ``best.action_vec`` for exact replay.
             best_slots_by_layer: optional grouped view (also from
                 ``action_io.group_slots_by_layer_block``). Convenient for
                 quick "which layer changed?" inspection.
@@ -882,7 +882,7 @@ def write_training_curves(
     Emits (when the matching data is provided):
       * ``blb_stage2_training_curve.png`` — Stage-1 风格多联图：Reward / Loss /
         metric1 / metric2，每联 raw + Moving Avg + Baseline 参考线。只给
-        ``episode_returns`` 时退化为单联 reward（向后兼容旧 legacy 调用方）。
+        ``episode_returns`` 时退化为单联 reward。
       * ``blb_stage2_entropy_curve.png`` — 独立熵曲线（镜像 Stage-1
         ``ppo_entropy_curve.png``），需提供 ``entropy_series``。
       * ``blb_stage2_reward_paper.png`` (+ ``.pdf``) — 单联 paper-ready reward。
@@ -1507,7 +1507,7 @@ BLB_WARNING_FILENAME = "warning.txt"
 
 
 class BLBStepDetailsWriter:
-    """Per-batch detail log writer matching legacy ``details/`` layout.
+    """Per-batch detail log writer for the canonical ``details/`` layout.
 
     Writes one file per ``batch_size`` episodes under
     ``<noise_root>/details/noise_ppo_step_info_<start>-<end>.txt``. Each file
@@ -1631,8 +1631,8 @@ class BLBStepDetailsWriter:
 class BLBRewardCrashWatcher:
     """Watches PPO-rollout mean reward and emits drop warnings.
 
-    Mirrors legacy ``warning.txt`` semantics: when a new rollout's mean reward
-    is at least ``drop_threshold`` below the previous rollout (or a rolling
+    When a new rollout's mean reward is at least ``drop_threshold`` below the
+    previous rollout (or a rolling
     baseline), write a warning entry pointing at the current details batch
     file. Useful for spotting policy collapse early.
     """

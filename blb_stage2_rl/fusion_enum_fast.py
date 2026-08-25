@@ -1,4 +1,4 @@
-"""Direct-replan fast path for the fusion-count map enumeration (2026-06-11).
+"""Direct-replan fast path for fusion-count map enumeration.
 
 Why: a single in-process ``ReplanSession.replan`` costs ~0.06 ms, but the
 golden per-combo pipeline (``fusion_enum._eval_block``) pays ~10x that in
@@ -6,7 +6,7 @@ intermediates — cfg-object construction (``action_vector_to_cfgs``), the
 bridge's per-call cache key + ``copy.deepcopy`` store (the enumeration's
 combos are all distinct, so that cache can never hit), ``RescaleOptimizerOutput``
 wrapping, optimizer-output→cfg write-back, and cfg introspection for the
-installed-noise points. Under the 2026-06-11 step-1 ×15 grid the full
+installed-noise points. Under the step-1 x15 grid the full
 enumeration is ~3-6e9 combos, so those intermediates are the difference
 between ~1 hour and ~10-30 hours.
 
@@ -17,7 +17,7 @@ calling ``ReplanSession.replan`` (the exact function the golden path bottoms
 out in — same DEFAULT_FUSION_POLICY, same math), and assembling the installed
 noise plan straight from the raw output.
 
-Correctness contract (the user's hard requirement):
+Correctness contract:
 
 * the template's slot→input wiring is DERIVED, not hand-written: each enum
   slot is probed through the golden decode at two levels and the produced

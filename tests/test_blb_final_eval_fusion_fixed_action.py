@@ -405,7 +405,6 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
             graph_key_suffix="block4",
             step_idx=0,
             full_vec_offsets=(0, 1),
-            includes_first_input=False,
             slot_field_names=("softmax_out_fresh_sf", "output_truncation_k"),
             layer_idx=0,
             block_idx=4,

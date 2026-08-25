@@ -1,67 +1,8 @@
-"""BLB Stage 2 RL 奖励函数（v3：m1+m2 双指标 + adaptive scalar P3 cost）。
+"""Stage-2 reward calculation and diagnostic breakdowns.
 
-2026-05-20 v3 重写（保留 ADR-007 的 clipped-shaping + tier-bonus 框架）：
-
-  * 指标 gate 同时看 m1、m2：以前只看 m1 → 现在两者都要过自己的阈值
-    (``baseline.metric{i}_mean * (1 - acc_tolerance)``)。margin_acc 取
-    两者归一化后的均值。
-  * 稳定性 gate 看 m1_std、m2_std、loss_std 三个方差，按 30:30:1 加权
-    （和指标重要性一致：m1=m2>>loss）。
-  * 顺序 Stage-2 路径的 cost_score 回到 budgeted adaptive scalar：
-      - 只有 P3（metric_ok 且 stab_ok 且非 invalid）能吃到 cost reward。
-      - P3 内部把 metric margin 和 cost 分开预算：metric 余量只占一个小
-        budget，不能挤掉 cost 优化空间。
-      - fusion_count 和 truncation/K reduction 是区间式奖励：多一个 fusion
-        或多一个 decoded K-bit unit 改善，都会产生清晰的 scalar jump。
-      - total_bits 是单独 clip 的弱线性 tie-breaker，不像 fusion/K 那样形成
-        明显 tier jump，也不能靠大 bits_gain 主导 cost ranking。
-      - Pareto archive 仍可记录 P3 frontier 用于诊断/探索统计，但不再是
-        PPO cost scalar 的来源。
-  * 优先级硬序：tier_bonus 0/+20/+40 锁住 metric_ok / stab_ok 三档，
-    cost_score bounded 且最终 shaping 仍 clip 到 [-5,+5]，所以 cost
-    不可能压过指标和稳定性 —— 即便所有 cost 维度同时打满。
-
-核心公式：
-
-  acc_thr_m1 = baseline.metric1_mean * (1 - acc_tolerance)   # e.g. 0.88 * 0.995
-  acc_thr_m2 = baseline.metric2_mean * (1 - acc_tolerance)
-  acc_violation = max(0, acc_thr_m1 - m1, acc_thr_m2 - m2)
-  margin_acc = ((m1 - thr_m1)/denom_m1 + (m2 - thr_m2)/denom_m2) / 2
-
-  stab_thr_X = max(baseline.X_std * stab_tolerance, stab_floor)     # X ∈ {m1,m2,loss}; tol is a MULTIPLIER
-  excess_X = max(0, X_std - stab_thr_X)
-  norm_X = excess_X / max(baseline.X_std, stab_floor)
-  combined_stab_excess = (30·norm_m1 + 30·norm_m2 + 1·norm_loss) / 61
-  stability_penalty = -lambda_stab · combined_stab_excess
-
-  P3 budgeted adaptive cost:
-    p3_metric_margin = clip(margin_acc, 0, 1) * p3_metric_margin_budget
-    fusion_bonus = floor(max(fusion_gain, 0)) * fusion_step_bonus
-    truncation_step_gain = max(k_gain, 0) / k_step_size   # avg-K -> coarse K tier units
-    k_bonus = floor(truncation_step_gain) * k_step_bonus
-    bits_tiebreaker = clip(bits_linear_scale * bits_gain / typical_bits,
-                           -bits_tiebreaker_clip, +bits_tiebreaker_clip)
-    cost_score = clip(fusion_bonus + k_bonus + bits_tiebreaker,
-                      cost_score_clip_min, p3_cost_budget)
-
-  metric_ok = (acc_violation == 0) AND not invalid
-  stab_ok = (combined_stab_excess == 0)
-
-  shaping_raw =
-      P1: margin_acc + invalid_term
-      P2: margin_acc + stab_penalty
-      P3: p3_metric_margin + adaptive_cost_score
-  shaping_clipped = clip(shaping_raw, -5, +5)
-  tier_bonus = 20·metric_ok + 20·(metric_ok AND stab_ok)
-  total = shaping_clipped + tier_bonus
-
-reward range:
-  · 全部 fail (invalid 或 acc < threshold)   → [-5, 0]
-  · metric OK + stab fail                       → [+15, +25]
-  · metric OK + stab OK                          → [+35, +45]
-
-3 个 tier 之间至少差 ~15 reward，PPO 看到的 advantage 信号清晰；同时单 episode 的
-reward 永远 bounded，cost 优化只在 metric/stab 都通过后驱动候选排序。
+Every reward design orders precision before stability and resource savings.
+The production robust-constrained path uses six bootstrap probabilities and a
+bounded dual-resource score, so infeasible candidates cannot gain cost credit.
 """
 from __future__ import annotations
 
@@ -162,12 +103,7 @@ DEFAULT_PRIORITY2_SCALE = 100.0
 
 @dataclass
 class BaselineCostStats:
-    """RL 训练前一次性算出的 baseline cost stats（全 max-action / 全 max-K）。
-
-    v2-style 用到的额外字段（typical_*_drop）保留旧名字，由
-    ``estimate_baseline_cost_stats`` 在 setup 阶段从 random samples 估出，
-    作为 cost_score normalizer。
-    """
+    """Metrics and cost normalizers measured from the all-maximum baseline."""
     total_bits_sum: int = 0
     total_fusion_count: int = 0
     avg_k: float = DEFAULT_BASELINE_AVG_K
@@ -186,55 +122,7 @@ class BaselineCostStats:
 
 @dataclass
 class RewardWeights:
-    """v3 reward 的可调权重。
-
-    Args:
-        cost_weight:       cost_score 整体乘子（默认 1.0）
-        lambda_stab:       combined_stab_excess → penalty 的乘子（默认 1.0；
-                           v2 的 5.0 在 m1_std/m2_std 加进来后会过强）
-        invalid_penalty:   any_invalid 时一次性罚（默认 5.0，足够打满 clip）
-        reward_clip_min:   shaping 下限（默认 -5.0）
-        reward_clip_max:   shaping 上限（默认 +5.0）
-        tier_metric_bonus: metric_ok 时加（默认 +20）
-        tier_stability_bonus: 进一步 stab_ok 时再加（默认 +20）
-        margin_denom_floor: margin 计算的分母下限
-        baseline_metric1:  baseline metric1 的 margin denominator 来源
-                           （runner 把 baseline.metric1_mean 灌进来即可）
-        baseline_metric2:  baseline metric2 的 margin denominator 来源
-        acc_tolerance:     metric_ok 的容忍百分比；阈值 = baseline_X * (1 - tol)
-                           caller 显式传 acc_threshold_m{1,2} 时覆盖该 fallback
-        stab_tolerance:    stability gate 的倍率（MULTIPLIER）；阈值 = baseline.X_std × tol
-        stab_floor:        stability 阈值的最小绝对值（防 baseline.std≈0 失稳）
-        p3_metric_margin_budget:
-                           P3 内 accuracy margin 可占的最大 shaping 空间。
-                           该预算故意很小，避免更高精度余量挤掉 cost 优化。
-        p3_cost_budget:    P3 内 cost shaping 的最大空间。fusion/K step bonus
-                           和 bits tie-breaker 的和会 clip 到此预算内。
-        cost_w_fusion / cost_w_k / cost_w_bits:
-                           旧配置兼容字段；默认 adaptive scalar P3 cost
-                           不再读取这些权重。
-        cost_fusion_step_bonus:
-                           P3 内每新增 1 个 fusion_gain 的区间式奖励。
-        cost_k_step_bonus:
-                           P3 内每新增 1 个 truncation/K step 的区间式奖励。
-        cost_k_step_size:  ``k_gain`` 是 episode 平均 K drop；默认 1/12 把
-                           truncation/K 改善按 layer-equivalent 粗粒度分档。
-                           早期 1/59 会把单个 slot 的 K 降低 1 档当成完整
-                           reward unit，真实 60k 前序样本中约 27.5% 的 P3
-                           候选过早打满 cost clip，削弱 fusion/K 的继续排序。
-        cost_bits_linear_scale:
-                           total_bits 的弱线性权重；它只做细粒度排序。
-        cost_bits_tiebreaker_clip:
-                           total_bits 弱线性项的独立 clip，保证 bits-only
-                           改善不能接近一个 fusion/K 区间级跳变。
-        cost_score_clip_min / max:
-                           P3 cost scalar 的独立 clip，仍会再被总 shaping
-                           clip 到 [-5,+5]，因此不能跨越 P1/P2 tier。
-        stab_w_m1 / stab_w_m2 / stab_w_loss:
-                           combined_stab_excess 内部三方差的权重（30:30:1）
-        # legacy fields kept for backward-compatibility:
-        w_bits / w_fusion / w_k / priority1_* / priority2_* / cost_reward_mode
-    """
+    """Weights, thresholds, and bounded budgets used by reward designs."""
     cost_weight: float = 1.0
     lambda_stab: float = DEFAULT_LAMBDA_STAB
     invalid_penalty: float = DEFAULT_INVALID_PENALTY
@@ -305,12 +193,7 @@ def calibrate_weights_from_baseline(
         baseline: BaselineCostStats,
         s: float = DEFAULT_S,
         ) -> RewardWeights:
-    """v3 反推：写入 baseline_metric1 / baseline_metric2。
-
-    其他权重（cost_weight / lambda_stab 等）走 RewardWeights 默认值——这些
-    The fixed target defines the production transition point. ``s`` only
-    向后兼容，不影响新公式。
-    """
+    """Bind baseline metric denominators while keeping production defaults."""
     return RewardWeights(
         baseline_metric1=float(getattr(baseline, "metric1_mean", 0.0) or 0.0),
         baseline_metric2=float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
@@ -319,13 +202,7 @@ def calibrate_weights_from_baseline(
 
 @dataclass
 class EpisodeMetrics:
-    """单回合 K trials 评估得到的精度 / 稳定性结果。
-
-    2026-05-20 v3：新增 ``metric1_std`` / ``metric2_std`` —— v3 stability gate
-    需要 m1、m2 的 trial 间方差，配合 loss_std 共同进入 combined_stab_excess。
-    旧 caller 不填这两个字段时 default=0.0 等价于"trial 间无差异"（不触发 stab
-    excess），保持向后兼容。
-    """
+    """Precision and cross-trial stability metrics for one episode."""
     loss_mean: float = 0.0
     loss_std: float = 0.0
     metric1_mean: float = 0.0
@@ -349,7 +226,7 @@ class EpisodeMetrics:
 
 @dataclass
 class RewardBreakdown:
-    """``compute_reward`` 的明细返回值（v3 字段 + 旧字段兼容）。"""
+    """Complete scalar and diagnostic output from ``compute_reward``."""
     reward: float
     priority: int
     invalid: bool
@@ -1075,7 +952,7 @@ def _resolve_metric_for_threshold(
         metrics: EpisodeMetrics,
         prefer_metric: str = "accuracy",
         ) -> float:
-    """Legacy single-metric resolver kept for callers that haven't moved to v3."""
+    """Resolve the primary metric for single-metric threshold callers."""
     return float(metrics.metric1_mean)
 
 
@@ -1089,7 +966,7 @@ def _resolve_acc_threshold(
     Priority: ``explicit`` (caller-supplied via ``acc_threshold`` /
     ``acc_threshold_m2``) → ``baseline_value * (1 - acc_tolerance)`` if the
     baseline value is meaningful (> margin_denom_floor) → 0.0 as the last
-    resort (legacy callers that don't have baseline metric data).
+    resort when baseline metric data is unavailable.
     """
     if explicit is not None:
         return float(explicit)

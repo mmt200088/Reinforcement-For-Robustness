@@ -335,7 +335,7 @@ def load_static_skeletons_baseline(
         rescale_optimizer_root: ``Rescale_optimizer`` 仓库根目录
         dataset:                supported GLUE task name
         num_layers:             模型 encoder 层数
-        gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}（degree 0/ReLU 已于 2026-06-06 关闭）
+        gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}
         softmax_per_layer:      长度 num_layers，元素 ∈ {2, 3, 4, 5, 6}
         archive_path:           手动指定 archive 路径；缺省自动拼
 

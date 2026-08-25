@@ -82,9 +82,6 @@ class BLBNoiseRLBridge:
     def apply(
             self,
             *,
-            first_input_sf: Optional[int] = None,
-            first_input_N: int = 8192,
-            first_input_layers: Sequence[int] = (0,),
             block1_cfgs: Optional[Dict[int, Block1NoiseConfig]] = None,
             block2_cfgs: Optional[Dict[int, Block2NoiseConfig]] = None,
             block3_cfgs: Optional[Dict[int, Block3NoiseConfig]] = None,
@@ -94,11 +91,6 @@ class BLBNoiseRLBridge:
         """安装一次 RL 动作对应的所有 BLB 噪声。
 
         Args:
-            first_input_sf:    **DEPRECATED**。语义上"第一个 HE 配置无损"，layer 0
-                               input 端不再注入 fresh 噪声。保留参数仅为旧调用
-                               站点兼容；任何非 None 取值会被忽略 + 警告。
-            first_input_N:     与 ``first_input_sf`` 一同 deprecated。
-            first_input_layers: 同上 deprecated。
             block1_cfgs:       {layer_idx: Block1NoiseConfig}。layer 0 使用
                                ``noise_enabled=False`` 的 K-only 配置：不注入
                                Block 1 Gaussian/rotation 噪声，但会在 variance
@@ -107,19 +99,8 @@ class BLBNoiseRLBridge:
 
         每个 cfg 直接调用 ``handler.replace_layer_block*_noise`` 完成实际安装；
         Block 3 / Block 5 走 ``cfg_per_layer`` 路径以支持每层不同 degree。
-        BLB / legacy 互斥校验由 handler 内部完成（残留 legacy 噪声会抛 RuntimeError）。
+        BLB 与单表噪声的互斥校验由 handler 完成。
         """
-
-
-        if first_input_sf is not None:
-            import warnings
-            warnings.warn(
-                "BLBNoiseRLBridge.apply(first_input_sf=...) is deprecated and ignored: "
-                "the first HE config is treated as lossless; no fresh noise is "
-                "injected at layer-0 input.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
 
         for block_name, cfgs, install_method in (
@@ -178,7 +159,7 @@ class BLBNoiseRLBridge:
 
         per_block: Dict[str, list] = {
             "block5": [], "block4": [], "block3": [],
-            "block2": [], "block1": [], "first_input": [],
+            "block2": [], "block1": [],
         }
         for li, blocks in self._installed.items():
             for b in blocks:
@@ -210,12 +191,6 @@ class BLBNoiseRLBridge:
                 layer_indices=per_block["block1"],
                 layer_name=self.layers_attribute,
             )
-        if per_block["first_input"]:
-            self.handler.restore_blb_first_input_noise(
-                layer_indices=per_block["first_input"],
-                layer_name=self.layers_attribute,
-            )
-
         self._installed = {}
 
 
@@ -243,12 +218,8 @@ class BLBNoiseRLBridge:
 class Block1ActionSpec:
     """RL 动作 → Block 1 cfg 的字段映射。
 
-    2026-05-14 精简：删除了 ``wffn2_rescale_sf`` 和 ``square_rescale_sf`` 两个 RL
-    动作槽（mrpc baseline skeleton 不在那两处下 rescale；Rescale_optimizer 也不
-    会选用）。对应 cfg 的 ``wffn2_result_rescale`` / ``square_result_rescale``
-    字段固定为 None（不安装这两处 rescale 噪声）。配套的 rotation flag
-    （``rotation_after_wffn2_rescale_a/b`` / ``rotation_after_square_rescale``）
-    也一并移除。
+    MRPC 的 optimizer skeleton 不使用 WFFN2 或 square rescale，因此对应 cfg
+    字段固定为 None。
 
     ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断。
     所有层（包括 layer 0）都可由 RL 选择；layer 0 通过 cfg 的
@@ -300,17 +271,8 @@ def build_block1_cfg_from_action(
 class Block2ActionSpec:
     """RL 动作 → Block 2 cfg。
 
-    2026-05-14 精简：
-    * Q 侧 3 个 encode 槽（``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``）与 K 侧
-      绑定 —— RL 不再独立选择 Q 侧 SF，由 ``_build_block2_action`` 用 K 侧动作
-      值同步填入。ActionSpec 保留这 3 个字段作为载体（仍然喂给 cfg）。
-    * 删除 8 个 rescale 槽：``normalize_rescale_sf``、``wk_rescale_sf``、
-      ``wq_rescale_sf``、``wv_rescale_sf``、``kt_mask1_rescale_sf``、
-      ``q_mask1_rescale_sf``、``q_mask2_rescale_sf``、``qkt_matmul_rescale_sf``。
-      它们对应的 cfg 字段固定 None。同步删除对应 rotation flags。
-    * 保留 ``gamma_rescale_sf`` / ``kt_mask2_rescale_sf`` / ``qkt_merge_mask_rescale_sf``
-      （这三个通过 t_new 进 optimizer cost）。
-    * ``wv_sf`` 保留作模型噪声单独控制 Wv 的 SF（cfg 仍写入 wv_encode）。
+    Q-side encode values mirror K-side values. Only the rescale fields that
+    enter optimizer cost are active; Wv remains a model-noise setting.
     """
     inv_std_fresh_sf: int
     x_centered_fresh_sf: int
@@ -348,7 +310,7 @@ def build_block2_cfg_from_action(
         ) -> Block2NoiseConfig:
     """``Block2ActionSpec`` → ``Block2NoiseConfig``。
 
-    Q/K 共享段绑定（2026-05-21 user spec）：
+    Q/K 共享段绑定：
       * 三个 Q 侧 encode（wq / q_mask1 / q_mask2）已由 ``_build_block2_action``
         写为 K 侧同值。
       * ``q_mask2_r`` 也绑到 ``kt_mask2_r`` —— mrpc baseline 里
@@ -403,9 +365,8 @@ def build_block2_cfg_from_action(
 class Block3ActionSpec:
     """RL 动作 → Block 3 cfg。degree 决定 N 默认值与 square_rescales 长度。
 
-    2026-05-14 精简：删除 ``x_inv_2n_rescale_sf`` —— mrpc baseline skeleton 不上
-    ``ctct_x_inv_2n_rescale``，Rescale_optimizer 不会选用。cfg 上对应字段
-    ``x_inv_2n_result_rescale`` 固定为 None。
+    MRPC 的 optimizer skeleton 不使用 ``ctct_x_inv_2n_rescale``，因此对应
+    cfg 字段固定为 None。
     """
     degree: int
     x_fresh_sf: int
@@ -440,12 +401,8 @@ def build_block3_cfg_from_action(
 class Block4ActionSpec:
     """RL 动作 → Block 4 cfg。
 
-    2026-05-14 精简：删除 5 个 rescale 槽 ——
-    ``softmax_out_mask_rescale_sf`` / ``v_mask_rescale_sf`` /
-    ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` / ``ln_square_rescale_sf``
-    及对应 5 个 rotation flag。它们对应的 cfg 字段固定 None。
-    保留 V 侧 ``v_fresh_sf`` / ``v_mask_sf`` 控制模型 V 路径上的噪声（mrpc graph
-    没有 V 节点，不入 optimizer cost）。
+    Rescale fields absent from the optimizer graph remain None. V-side fresh
+    and mask values still control model noise without entering optimizer cost.
     """
     softmax_out_fresh_sf: int
     softmax_out_mask_sf: int
@@ -507,13 +464,8 @@ def build_block4_cfg_from_action(
 class Block5ActionSpec:
     """RL 动作 → Block 5 cfg。GELU degree 决定 N 默认与 power/coeff_mul rescales 长度。
 
-    2026-05-14 精简：
-    * ``gelu_power_rescale_sfs`` —— RL 仅控制 idx=0 (x²)；idx=1 (x³) / idx=2 (x⁴)
-      在 mrpc graph 里被折掉，不上 skeleton，固定 None。``_build_block5_action``
-      会用 ``(power_sf_0, None, ...)`` 构造正确长度的 tuple。
-    * ``gelu_coeff_mul_rescale_sfs`` —— 整个 tuple 全部 RL 不再控制，由
-      ``ctpt_gelu_coeff`` 单节点合并表达；``_build_block5_action`` 用
-      ``(None, ..., None)`` 长度=degree 的 tuple。
+    The optimizer graph exposes only x² power rescale. Higher powers remain
+    None, and the coefficient products are represented by one merged node.
     """
     gelu_degree: int
     inv_std_fresh_sf: int

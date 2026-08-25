@@ -406,7 +406,7 @@ class BLBStage2Env:
             *,
             seed: Optional[int] = None,
             ) -> np.ndarray:
-        """清掉所有 legacy 噪声 + BLB 残留，回到干净状态；返回 obs。"""
+        """清掉单表噪声和 BLB 残留，回到干净状态；返回 obs。"""
 
         try:
             self.handler.restore_layer_input_noise(layer_indices=list(range(self.num_layers)))
@@ -1077,14 +1077,14 @@ class BLBStage2Env:
 
         ``external_cost_score`` / ``external_cost_rank``：fusion-count 路径专用。
         sequential_env 终局把 per-block 加权 cost 节省算好传进来，只在最终 valid
-        reward（P3）里替掉聚合 fusion/K/bits cost。非 fusion 调用保持 None ⇒ 旧路径。
+        reward（P3）里替掉聚合 fusion/K/bits cost。非 fusion 调用保持 None。
         invalid 分支必为 P1，compute_reward 不读 cost，故无需透传。
 
         ``boosted_overrides``：加大精度专用。``{(block_idx, layer_idx): {field: sf}}``
         —— 选中的 boosted fusion option 的显式 SF（含选定 K）。因为 ``action_vec`` 只能
         携带网格动作索引、表达不了高于 baseline 的 boosted SF，这里把对应 (block, layer)
         的 cfg 用 SF-direct 重建，使 **本次 forward 真正安装的噪声是加大精度之后的动作组**
-        （cost replan / optimizer override / 装噪声 全部基于 boosted cfg）。None ⇒ 旧路径。
+        （cost replan / optimizer override / 装噪声 全部基于 boosted cfg）。
         """
         action_vec = validate_action_vector(action_vec, self.num_layers)
         is_optimizer_baseline_action = bool(
@@ -1390,7 +1390,7 @@ class BLBStage2Env:
         first measurement. Deterministic: the retest probe seed is a salt of
         the episode-keyed probe_noise_seed, so it is identical for any GPU
         count (1==N preserved). No-op when the deficit is zero, beyond the
-        near-miss band, on the legacy random-probe path, or when disabled.
+        near-miss band, on the direct random-probe path, or when disabled.
         """
         if not bool(getattr(self.env_cfg, "borderline_retest_enabled", False)):
             return metrics

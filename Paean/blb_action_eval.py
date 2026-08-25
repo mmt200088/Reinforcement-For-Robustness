@@ -1223,11 +1223,7 @@ class BLBActionFinalEvaluationModule:
             if option is None:
                 raise KeyError(f"fusion map graph {graph_key!r} has no option {option_id}")
 
-            block_offsets = (
-                step.full_vec_offsets[:-1]
-                if bool(step.includes_first_input)
-                else step.full_vec_offsets
-            )
+            block_offsets = step.full_vec_offsets
             action_slice = np.take(base_arr, block_offsets)
             layer_idx = int(step.layer_idx)
             block_idx = int(step.block_idx)
@@ -1856,7 +1852,6 @@ class BLBActionFinalEvaluationModule:
             "restore_layer_block3_noise",
             "restore_layer_block2_noise",
             "restore_layer_block1_noise",
-            "restore_blb_first_input_noise",
         ):
             method = getattr(ev.reversible_handler, restore_name, None)
             if method is None:

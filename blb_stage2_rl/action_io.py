@@ -35,7 +35,7 @@ For SF kinds (F, W, M, S):
     "location":       "layer5.block5.wffn1_sf",
     "distribution":   "weight",
     "scaling_factor": 14,                     // PRIMARY user-facing value
-    "action_index":   5,                      // back-compat / sanity check
+    "action_index":   5,                      // replay and sanity check
     "level_values":   [8, 10, 12, 14],        // what other choices look like
     "max_sf":         14,
     "N":              14,
@@ -60,8 +60,8 @@ For K kind:
     "level_values":    [8, 9, 11, 13, 10, 12, 6, 7]
   }
 
-The legacy ``first_input`` slot (last element of action_vec, layer 0, no block)
-is deprecated. It may appear in old descriptions for compatibility, but new
+The inactive ``first_input`` slot (last element of action_vec, layer 0, no block)
+may appear in persisted descriptions, but new
 slot-list overrides must not select it.
 ::
 
@@ -553,7 +553,7 @@ def slots_payload_to_action_vec(
           "base": "max",
           "overrides": [{"label": "L05.B3.K", "truncation_bits": 10}, ...]}
 
-    D) **Old action_vec format** — back-compat::
+    D) **Persisted action_vec format**::
 
          {"num_layers": 12, "action_vec": [3, 4, 5, ...]}
     """

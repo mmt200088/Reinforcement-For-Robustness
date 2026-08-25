@@ -249,8 +249,8 @@ class Stage1ParallelRunner:
         own device (built once, then weight-synced each window).
 
         The policy is frozen during a window's collection (PPO updates the
-        central net only afterwards), so per-worker replicas remove the old
-        shared-policy lock WITHOUT changing what gets sampled: episode ``g``
+        central net only afterwards), so per-worker replicas avoid a shared
+        policy lock without changing what gets sampled: episode ``g``
         draws the same action on any device (identical weights + global-index
         seed + device-independent CUDA Philox). This is the speedup — the 12-step
         GTrXL rollout now runs on each worker's GPU in parallel instead of

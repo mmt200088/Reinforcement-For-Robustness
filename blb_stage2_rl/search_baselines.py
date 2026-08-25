@@ -474,12 +474,12 @@ class LayerwiseSearchSpace:
         return _owned_action_matrix(rows)
 
     def flatten(self, action_matrix: Sequence[Sequence[int]]) -> tuple[int, ...]:
-        """Return the legacy ``2 * num_layers`` coordinate representation."""
+        """Return the pairwise ``2 * num_layers`` coordinate representation."""
         action = self.validate(action_matrix)
         return tuple(value for row in action for value in row)
 
     def unflatten(self, values: Sequence[int]) -> ActionMatrix:
-        """Decode legacy coordinates, or atomic genes when one per layer."""
+        """Decode pairwise coordinates or one atomic gene per layer."""
         flat = tuple(int(value) for value in values)
         if len(flat) == self.num_layers:
             return self.from_genes(flat)

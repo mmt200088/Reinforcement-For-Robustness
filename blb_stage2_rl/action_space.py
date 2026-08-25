@@ -281,10 +281,9 @@ def sf_from(idx: int, max_sf: int, levels: int) -> int:
     """Uniform step-1 downward sweep from ``max_sf`` (= the slot's BASELINE SF,
     not the table max).
 
-    2026-06-11 (supersedes the hybrid 2/1 sweep): ``idx levels-1..0 → max_sf,
-    -1, -2, …, -(levels-1)`` — the full integer range. For the canonical
-    15-level slot, baseline 30 → 30,29,28,…,16 (reach baseline-14, same depth
-    as the old hybrid but at integer resolution).
+    ``idx levels-1..0 → max_sf, -1, -2, …, -(levels-1)`` spans the full integer
+    range. For the canonical
+    15-level slot, baseline 30 → 30,29,28,…,16 (reach baseline-14).
 
     May return a value below the noise-table minimum for a low-baseline-SF slot;
     callers wrap with ``_snap_to_table`` which floors it at the table min (SF=10).
@@ -532,11 +531,8 @@ class BlockStepSpec:
         slot_dims:       num_levels for each slot decided at this step.
         slot_field_names: corresponding _BLOCK{N}_FIELDS field names.
         slot_kinds:      "F"/"W"/"M"/"S"/"R"/"K".
-        full_vec_offsets: index into the legacy full action vector where
+        full_vec_offsets: index into the full action vector where
                           each slot's value should be written.
-        includes_first_input: legacy flag retained for compatibility. Always
-                              False; first_input fresh is deprecated and must
-                              not be a sequential RL decision.
         graph_key:       e.g. "block2_mrpc" -- the Rescale_optimizer graph that
                          scores this block (independent of layer).
         terminal:        True for the last step in the episode.
@@ -548,7 +544,6 @@ class BlockStepSpec:
     slot_field_names: Tuple[str, ...]
     slot_kinds: Tuple[str, ...]
     full_vec_offsets: Tuple[int, ...]
-    includes_first_input: bool
     graph_key_suffix: str
     terminal: bool
 
@@ -566,13 +561,13 @@ _BLOCK_GRAPH_KEY_TEMPLATE = {
 
 
 def horizon_for_num_layers(num_layers: int) -> int:
-    """Sequential episode horizon (C, 2026-05-30: block 3 excluded from schedule).
+    """Sequential episode horizon with Block 3 excluded from the schedule.
 
     Block 3 is no longer a decided step, so:
       - layer 0 has 3 steps (B2, B4, B5)
       - layers 1..L-1 have 4 steps each (B1, B2, B4, B5)
-    giving horizon = 3 + (L-1) * 4. For L=12 this is 47 steps (was 59 with block 3).
-    The legacy first_input fresh tail slot is no longer a decision; it remains
+    giving horizon = 3 + (L-1) * 4. For L=12 this is 47 steps.
+    The persisted first_input tail slot is not a decision; it remains
     frozen at the baseline placeholder and is ignored by model installation.
     """
     L = int(num_layers)
@@ -669,7 +664,6 @@ def step_schedule(
                 slot_field_names=tuple(slot_field_names),
                 slot_kinds=tuple(slot_kinds),
                 full_vec_offsets=tuple(full_vec_offsets),
-                includes_first_input=False,
                 graph_key_suffix=gk,
                 terminal=(step_idx == horizon - 1),
             ))
@@ -938,11 +932,11 @@ def _build_block2_action(
     Q 侧动作（wq / q_mask1 / q_mask2）被删，cfg 上 Q 侧三个 encode 字段由 K 侧
     的同名动作绑定填入（K 侧选什么 SF，Q 侧用同一个 SF）。
 
-    2026-05-20 user spec：Wv 也不再有 RL 动作 —— Rescale_optimizer 的 block2
+    Wv 不是 RL 动作：Rescale_optimizer 的 block2
     计算图里没有 ``ctpt_wv`` 节点，wv 选什么 SF 都不影响 modulus chain；模型噪声
     侧用一个固定的 SF（``_BLOCK2_FIXED_WV_SF``）安装 Wv 噪声即可。
 
-    2026-05-21 user spec：``x_centered_fresh_sf`` 绑定到 ``inv_std_fresh_sf``。
+    ``x_centered_fresh_sf`` 绑定到 ``inv_std_fresh_sf``。
     Rescale_optimizer 的 ``ctct_x_mean_over_std`` 是 "x2" 旁节点，语义要求
     x_centered 和 inv_std 两个 fresh ciphertext 的 SF 严格相等；二者拆成
     两个独立动作只会让 optimizer 的 "x2" 假设在某些组合下失效。所以
@@ -1033,7 +1027,7 @@ def _build_block4_action(
         ) -> Block4ActionSpec:
     """精简后的 Block 4 动作构造。
 
-    2026-05-20 user spec：``softmax_out_mask_sf`` 和 ``v_mask_sf`` 在 RO 计算
+    ``softmax_out_mask_sf`` 和 ``v_mask_sf`` 在 RO 计算
     图里对应同一个 ``ctpt_mask2`` 节点（softmax_out × mask 与 v × mask 共享
     mask2 输入）。RL 只用 ``softmax_out_mask_sf`` 一个 slot 表达 mask2 的 SF；
     ``v_mask_sf`` 仍然在 action vector 里（compat-extra），cfg 上直接绑定到
@@ -1076,13 +1070,13 @@ def _build_block5_action(
         ) -> Block5ActionSpec:
     """Block 5 动作构造。
 
-    2026-05-21 user spec：
+    当前映射约束：
     * ``inv_std_fresh_sf`` 绑定到 ``x_centered_fresh_sf``（mrpc graph 的
       ``ctct_xmean_over_std`` 是 "x2" 旁节点，两个 fresh 必须 SF 相同）。
       二者合并成一个动作（由 x_centered_fresh_sf 主导）。
     * ``gelu_coeff_mul_rescale_sf_0`` 升级为 active，驱动
       ``cfg.gelu_coeff_mul_rescales[-1]``（DEFAULT_CFG_TO_T_NEW_MAP 里所有
-      block5_n* 的最后一个 entry 都读 [-1]）。slot 名带 "_0" 是历史遗留：
+      block5_n* 的最后一个 entry 都读 [-1]）。slot 名带 "_0"，因为
       cfg 的 ``gelu_coeff_mul_rescales`` 是 length=deg 的 tuple，但 mrpc
       graph 实际把整条 coeff·x^k rescale 合并成一个 ``ctpt_gelu_coeff`` 节点，
       所以只有 [-1] 位置真正进 optimizer。
@@ -1788,7 +1782,7 @@ def describe_action_vector(
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
     """生成 baseline 动作向量：SF 字段取最高档，K 取该 block 的 baseline K 值。
 
-    Per-block baseline K（user-tuned 2026-05-15）：
+    Per-block baseline K：
         Block 1 → K=13    Block 2 → K=10    Block 3 → K=13
         Block 4 → K=10    Block 5 → K=13
 

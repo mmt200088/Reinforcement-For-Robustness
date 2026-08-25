@@ -242,8 +242,8 @@ def _level_breaks_pin(probe_result: Mapping[str, Any], base_key: Tuple[int, int]
     """One probed slot level forces ENUMERATION (the slot cannot be pinned) iff it
     is invalid or changes the baseline ``(fusion_count, total_bits)``.
 
-    The ``total_bits`` half is a build-time over-enumeration PROXY, NOT a reward
-    term (bits left the reward 2026-06-03). It is required for soundness: fusion is
+    The ``total_bits`` half is a build-time over-enumeration proxy, not a reward
+    term. It is required for soundness: fusion is
     driven by the JOINT lowering of several non-rescale encode SFs (committed
     ground-truth maps: each block's fusion>0 option lowers 2-4 encodes together
     while all rescales stay at baseline). No single encode moves fusion alone, so a

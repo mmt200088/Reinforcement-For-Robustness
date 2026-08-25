@@ -75,7 +75,7 @@ Design notes
 * The recorder owns ZERO knowledge about the launcher / runner / policy
   internals. Callers pass in plain dataclass payloads. This keeps the recorder
   testable and the runner integration shallow.
-* Legacy callers keep best-effort writes. The layerwise robust runner enables
+* Best-effort callers may omit strict write settings. The layerwise runner enables
   ``strict_writes`` so mandatory JSON/JSONL failures abort instead of leaving
   scientifically incomplete evidence behind.
 * JSONL files are append-only so a crash leaves a tail-able record. The

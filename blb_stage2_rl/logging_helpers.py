@@ -24,10 +24,8 @@ Why a dedicated helper instead of plain ``logging.getLogger``?
 5. **CJK-safe console** — under Windows GBK, non-GBK chars in messages
    fall back instead of crashing stdout.
 
-The helper deliberately does NOT replace ``evaluator.log(...)`` (which is
-an instance method on the LayerImportance evaluator and does its own
-file-handle juggling). It complements it: new code should prefer
-``get_logger``; legacy paths can keep ``evaluator.log`` until a refactor.
+The helper does not replace ``evaluator.log(...)``, which owns its own training
+file handles. Modules without that evaluator should use ``get_logger``.
 
 Migration tips
 --------------
@@ -166,13 +164,10 @@ def get_logger(name: str = "blb_stage2_rl") -> logging.Logger:
 
 
 def bind_evaluator_log(evaluator, level: int = logging.INFO):
-    """Adapter: return a ``log(message)`` callable that bridges the legacy
-    ``evaluator.log`` API to a stdlib logger.
+    """Adapt an evaluator-style ``log(message)`` callback to stdlib logging.
 
-    Some modules accept ``log_fn`` (a callable, not a Logger) for back-compat.
-    Pass the result of this function in place of ``evaluator.log`` and the
-    legacy callsites keep working while the underlying writes flow through
-    the unified logger.
+    Modules that accept a callable ``log_fn`` can use this adapter while their
+    writes flow through the unified logger.
     """
     logger = get_logger(getattr(evaluator, "__class__", type(evaluator)).__name__)
 

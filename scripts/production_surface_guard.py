@@ -98,6 +98,21 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "STAGE1_ENABLE_DIFFERENTIAL_REWARD",
     "RL_OPT_FLAGS",
     "BLB_TRUNCATION_K_LEVELS",
+    "block1_wnli",
+    "block2_wnli",
+    "includes_first_input",
+    "replace_blb_first_input_noise",
+    "restore_blb_first_input_noise",
+    "_make_blb_first_input_noise_forward",
+    "blb_first_input_noise_state",
+    "_run_legacy_preflight_if_needed",
+    "user spec",
+    "用户要求",
+    "提示词",
+    "pengjunkai",
+    "/Users/",
+    "gpushare.com",
+    "100.64.229.185",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}

@@ -1,8 +1,7 @@
-"""
-High-level in-process replan interface.
+"""High-level in-process replan interface.
 
-This module keeps the old JSON/CLI flow intact while exposing the same replan
-operation as ordinary Python inputs and return values. It is intended for the
+The module exposes the JSON/CLI replan operation through ordinary Python inputs
+and return values. It is intended for the
 BLB Stage-2 RL fast path: preload graph configs and static baselines once, then
 call replan with ``t_new`` and ``delta_overrides`` variables in a tight loop.
 """
@@ -32,9 +31,7 @@ SUPPORTED_GELU_GRAPH_DEGREES = {0, 1, 2, 4}
 
 _DEFAULT_ALLOWED_FUSION_PAIRS: Dict[str, List[FusionPair]] = {
     "block1_mrpc": [],
-    "block1_wnli": [],
     "block2_mrpc": [(1, 2)],
-    "block2_wnli": [(1, 2)],
     "block4": [(1, 2)],
     "block5_n1": [(1, 2)],
     "block5_n2": [(1, 2)],
@@ -147,7 +144,7 @@ def split_replan_payload(
     Supports two shapes:
 
     * ``{"t_new": [...], "delta_overrides": {...}}`` for the variable API.
-    * ``{"node_name": delta, ...}`` for backward-compatible bare deltas.
+    * ``{"node_name": delta, ...}`` for the bare-delta shorthand.
     * optionally ``{"allowed_fusion_pairs": [[1, 2], ...]}`` for legal
       rescale-fusion boundaries; omit it to use the graph default policy.
     """
@@ -421,7 +418,7 @@ def build_replan_output_dict(
     metadata: Optional[Mapping[str, Any]] = None,
     include_compact: bool = True,
 ) -> Dict[str, Any]:
-    """Convert a ``ReplanResult`` to the dict shape used by the old JSON output."""
+    """Convert a ``ReplanResult`` to the canonical JSON result shape."""
 
     deltas = _normalize_delta_overrides(delta_overrides)
     doc: Dict[str, Any] = {

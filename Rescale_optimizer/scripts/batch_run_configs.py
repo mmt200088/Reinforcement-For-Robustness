@@ -7,7 +7,7 @@ rescale skeleton" summary into a single compact JSON archive.
 Per-config schema (compact, one-line-per-row arrays of small dicts):
 
     {
-      "config_name": "block1_wnli",
+      "config_name": "block1_mrpc",
       "success": true,
       "skeleton": [0, 2, 4, 5],
 
@@ -84,7 +84,7 @@ Failed configs only emit  {"config_name", "success": false, "message"}.
 
 Usage:
     python scripts/batch_run_configs.py
-    python scripts/batch_run_configs.py --configs block1_wnli block4
+    python scripts/batch_run_configs.py --configs block1_mrpc block4
     python scripts/batch_run_configs.py --out my_skeletons.json
 """
 

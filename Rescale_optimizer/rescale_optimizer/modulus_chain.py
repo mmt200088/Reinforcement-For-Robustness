@@ -189,8 +189,8 @@ def repair_chain(
     This is essential when the path between two skeleton points
     contains a symmetric ``CTCT_MUL`` (s → 2s): a bump of ``q_u`` by
     ``δ`` shrinks ``t_u`` by ``δ`` but ``t_{u+1}`` by ``2^k · δ``
-    (k = #symmetric CTCTs on the path between u and u+1), which the
-    old linear formula ``t_v -= δ`` got wrong.
+    (k = #symmetric CTCTs on the path between u and u+1), which a linear
+    ``t_v -= δ`` update cannot preserve.
 
     Returns
     -------

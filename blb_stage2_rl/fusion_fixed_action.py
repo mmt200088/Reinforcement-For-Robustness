@@ -1,34 +1,8 @@
-"""Reconstruct the per-step fusion ``(option, K)`` selection from a flat Stage-2
-best-action vector + the committed fusion-count map.
+"""Reconstruct per-step fusion ``(option, K)`` selections from a full action.
 
-WHY THIS EXISTS (the boost-handoff fix, 2026-06-25)
----------------------------------------------------
-Stage-2 fusion-count RL decides ``(fusion_option, K)`` per block. The training
-terminal probe installs the EXACT chosen config — including the precision boost
-("加大精度") whose above-grid SFs live in ``FusionOption.explicit_field_values`` —
-via the env's ``_boosted_overrides`` (SF-direct cfg rebuild).
-
-But the persisted ``best_action_vec`` is the legacy per-slot *grid index* vector.
-A boosted option's ``action_indices`` are the in-grid base SFs; the boost is NOT
-representable as indices. So the flat vector alone loses the boost, and the
-standalone consumers (validation-set final eval, GLUE submission) that decode it
-directly install PRE-boost (noisier) noise — a config the RL search never
-selected.
-
-This module recovers ``group.option_by_step`` by matching each block slice of the
-flat vector against the map's options (ignoring the K slot, which is decided
-independently). With that, the consumers replay the same boosted option the RL
-search chose (``_decode_fusion_count_fixed_action`` then uses the option's
-``explicit_field_values``). Match is unambiguous because the map keeps exactly one
-option per realized fusion_count (boost is applied in place, not as a sibling).
-
-TORCH NOTES
------------
-:func:`match_option_id` is pure and torch-free (operates on a
-``BlockTypeFusionMap`` + a numpy slice), so it is unit-tested on a torch-free box.
-:func:`reconstruct_fusion_group` / :func:`build_fusion_fixed_config` call
-``action_space.step_schedule`` which pulls torch, so they run in a torch context
-(the runner / GLUE / final-eval, all of which already import torch).
+The flat action stores grid indices, while a selected fusion option may carry
+above-grid precision values. Matching each block slice to the committed map
+restores that option so strict evaluation installs the exact searched config.
 """
 
 from __future__ import annotations
@@ -191,7 +165,7 @@ def build_boosted_overrides_from_group(
         ) -> Dict[Tuple[int, int], Dict[str, int]]:
     """Return terminal-probe SF-direct overrides for boosted fusion options.
 
-    The legacy full action vector carries map ``action_indices`` and the selected
+    The persisted full action vector carries map ``action_indices`` and the selected
     K index, but it cannot carry above-baseline precision-boost SFs. This helper
     is the shared handoff for any path that wants to replay a fusion-count action
     through :func:`optimizer_cost.evaluate_action_for_cost`: it recovers the

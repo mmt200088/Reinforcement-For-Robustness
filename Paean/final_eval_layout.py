@@ -1,15 +1,7 @@
-"""Torch-free primitives for the decoupled standalone final-eval tools.
+"""Torch-free layout, plot shaping, and Stage-1 peer sampling for final eval.
 
-Holds the layout/numbering, the sorted-bar plot-data shaping, and the Stage-1
-same-cost peer sampler. Kept torch-free (imports only ``config.constants`` +
-``config.run_layout`` + numpy/stdlib) so the units in
-``2026-05-30-decoupled-standalone-final-eval-design.md`` §10 are testable
-without torch. The torch-importing Stage-1/Stage-2 final-eval modules import
-from here.
-
-(The Stage-1 sampler lives here rather than ``Paean/action_grid.py`` as the spec
-suggested, because ``action_grid`` imports ``blb_stage2_rl.action_space`` whose
-package ``__init__`` pulls torch — which would defeat the torch-free test.)
+Keeping these primitives independent of the action-space package allows report
+and sampling tests to run without importing torch.
 """
 from __future__ import annotations
 

@@ -117,9 +117,9 @@ def iter_jsonl_records(
         ) -> Iterable[tuple[int, Any]]:
     """Yield ``(line_no, parsed_payload)`` JSONL records.
 
-    Blank lines are ignored.  ``errors="skip"`` preserves legacy monitor
-    behavior for partially-written logs; ``errors="raise"`` preserves verifier
-    behavior that reports the file and line number on malformed JSON.
+    Blank lines are ignored. ``errors="skip"`` lets live monitors tolerate
+    partially-written logs; ``errors="raise"`` reports the file and line number
+    on malformed JSON.
     """
     jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
     with _open_resolved_jsonl(jsonl_path) as handle:

@@ -250,7 +250,7 @@ class InProcessInvoker:
     @property
     def baselines(self) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
         """``{graph_key: (skeleton, t_baseline, q_bits_baseline)}`` — tuple form
-        for backward compatibility with bridge code that iterates baselines."""
+        for bridge code that iterates baseline entries."""
         return {
             k: (list(rec.skeleton), list(rec.t_baseline), list(rec.q_bits_baseline))
             for k, rec in self._session.baselines.items()
@@ -338,7 +338,7 @@ def default_block2_cfg_to_delta(cfg: Block2NoiseConfig) -> Dict[str, Union[int, 
       * ctct_preprocess_qkt (CTCT_MUL)  ← Q·K^T，固定 "x2"
       * ctpt_mask (CTPT_MUL)            ← 合并 Q,K mask
 
-    2026-05-14 起 BLB Stage-2 RL 的 Q 侧动作（wq_sf / q_mask1_sf / q_mask2_sf）
+    BLB Stage-2 RL 的 Q 侧动作（wq_sf / q_mask1_sf / q_mask2_sf）
     与 K 侧绑定 —— ``_build_block2_action`` 用 K 侧的 SF 同时填 cfg 的 Q/K 字段，
     所以这里 ``ctpt_wq_wk`` 直接读 ``cfg.wk_encode.scaling_factor``（语义上"由 K
     侧控制"）。``wk_encode == wq_encode`` 始终成立。BLB cfg 的 ``wv_encode``
@@ -384,8 +384,7 @@ def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, 
       * ctct_square (CTCT_MUL)              ← post-attn LN (X−μ)²，固定 "x2"
       * ctpt_inv_d_2 (CTPT_MUL)             ← post-attn LN var 的 1/D
 
-    2026-05-20 user spec：``ctct_rot_softmax_mul_v`` 的 delta 之前是硬编码 39
-    （mrpc baseline 值），现在根据 cfg 动态计算成
+    ``ctct_rot_softmax_mul_v`` 的 delta 根据 cfg 动态计算成
     ``SF(v_fresh) + SF(v_mask_encode)``。CKKS 里两个密文相乘的累积 SF 是各自
     SF 之和，所以 v * mask2 这一步的 SF 就是 SF(v) + SF(mask2)。``v_mask_encode``
     已经被 ``_build_block4_action`` 绑定到 ``softmax_out_mask_encode``（同一个
@@ -719,7 +718,7 @@ class RescaleOptimizerBridge:
                                         ``DEFAULT_CFG_TO_T_NEW_MAP``。可用于支持 mrpc 之外的
                                         profile key.
             auto_t_new_from_cfg:        默认 ``True`` ⇒ 当 ``evaluate(t_new=None)`` 时
-                                        自动从 cfg 派生 t_new；False ⇒ 保持旧行为
+                                        自动从 cfg 派生 t_new；False ⇒ 不派生
                                         （t_new=None ⇒ invoker fallback 到 baseline）。
             cache_max_entries:          LRU cache size for deterministic optimizer
                                         calls. Sequential RL repeats many per-block

@@ -1050,8 +1050,7 @@ class TransformerOptEnv:
         """
         构造31维状态向量（gelu-only：softmax 通道已移除）。
 
-        说明（A, 2026-05-30）：softmax 不再是动作，每层固定 degree 6，因此状态
-        向量删去 softmax_norm(1) 与 softmax_history(12)，由 44 维降到 31 维。活动的
+        Softmax 每层固定为 degree 6，不占动作或状态通道。活动的
         GTrXL 策略只消费 get_policy_cont_features() 暴露的 6 个连续特征，所以这个扁平
         向量的布局不再承载任何 softmax 通道。
 
@@ -4681,7 +4680,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         """Construct the Stage-1 multi-GPU rollout runner once at training start.
 
         Returns ``None`` only when ``self.stage1_rl_devices`` is empty (then the
-        legacy single-GPU central loop runs). Pass an explicit device list — even
+        the single-GPU central loop runs). Pass an explicit device list — even
         a single id like ``0`` — to take the global-seeded rollout path, which
         produces identical results for any GPU count (1, 4, 5, ...).
 

@@ -166,12 +166,8 @@ def _seq_block_title(log_fn, title: str) -> None:
 def _seq_log_rounded_box(log_fn, lines, indent: str = "  ", min_inner_width: int = 8) -> None:
     """Render multi-line content as a plain, border-less indented block.
 
-    Historically this used rounded box-drawing characters (``╭─╮│╰╯``), but
-    those broke badly on narrow terminals + CJK mixed content: when a single
-    line stretched past the terminal width, the right border wrapped to the
-    next line and visually decoupled from the rest of the box. As of 2026-05-17
-    we emit a tiny dashed separator + bulleted lines, which scans cleanly at
-    any width and survives copy-paste into chat / markdown.
+    A short separator and bullets remain readable on narrow terminals and with
+    mixed-width text.
     """
     stripped = [str(x) for x in lines]
     if not stripped:
@@ -218,7 +214,7 @@ def _noisy_std_threshold_from_baseline(
 
 
 def _resolve_robust_baseline_config(train_cfg: Any, evaluator: Any) -> Tuple[float, float, int]:
-    """Read robust constraint calibration inputs without legacy tolerance math."""
+    """Read robust constraint calibration inputs."""
     raw_precision_tolerance = getattr(evaluator, "stage2_limit_tolerance", None)
     precision_tolerance = (
         0.001 if raw_precision_tolerance is None else float(raw_precision_tolerance)
@@ -236,14 +232,14 @@ def _resolve_robust_baseline_config(train_cfg: Any, evaluator: Any) -> Tuple[flo
     return precision_tolerance, stability_multiplier, bootstrap_samples
 
 
-def _run_legacy_preflight_if_needed(
+def _run_standard_preflight_if_needed(
         *,
         robust_mode: bool,
-        run_legacy_preflight: Callable[[], None],
+        run_standard_preflight: Callable[[], None],
         ) -> None:
-    """Run the legacy one-shot preflight only outside robust mode."""
+    """Run the one-shot baseline preflight only outside robust mode."""
     if not robust_mode:
-        run_legacy_preflight()
+        run_standard_preflight()
 
 
 def _build_search_gate_env(
@@ -730,7 +726,7 @@ def _run_layerwise_training_branch(
         run_lock: Any,
         log: Callable[[str], None],
         ) -> Dict[str, Any]:
-    """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
+    """Run the production layerwise PPO pipeline."""
     if robust_reference is None:
         raise RuntimeError("layerwise robust PPO requires a calibrated statistical reference")
     if (
@@ -2907,7 +2903,7 @@ def _run_layerwise_training_branch(
                         for restore_name in (
                                 "restore_layer_block5_noise", "restore_layer_block4_noise",
                                 "restore_layer_block3_noise", "restore_layer_block2_noise",
-                                "restore_layer_block1_noise", "restore_blb_first_input_noise",
+                                "restore_layer_block1_noise",
                         ):
                             method = getattr(
                                 evaluator.reversible_handler, restore_name, None,
@@ -4502,7 +4498,7 @@ def _run_sequential_via_runner_locked(
     Returns a noise_stage_result dict matching the keys downstream consumers
     (UnifiedFinalEvaluationModule, BLBActionFinalEvaluationModule) read from
     the single-shot path: ``blb_v3_best_action_vec``, ``blb_v3_profile``,
-    ``best_noise_config`` (legacy-compat all-max), ``limit_loss`` /
+    ``best_noise_config`` (all-maximum config), ``limit_loss`` /
     ``limit_p`` / ``limit_s``, ``baseline_tot_c``.
     """
     from .action_io import action_vec_to_slots_list
@@ -4737,7 +4733,7 @@ def _run_sequential_via_runner_locked(
     preflight_ok = False
 
 
-    def run_legacy_preflight() -> None:
+    def run_standard_preflight() -> None:
         nonlocal noisy_baseline_metric1
         nonlocal noisy_baseline_metric2
         nonlocal noisy_baseline_loss_std
@@ -4769,9 +4765,9 @@ def _run_sequential_via_runner_locked(
         except Exception as exc:
             log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
 
-    _run_legacy_preflight_if_needed(
+    _run_standard_preflight_if_needed(
         robust_mode=robust_mode,
-        run_legacy_preflight=run_legacy_preflight,
+        run_standard_preflight=run_standard_preflight,
     )
 
 

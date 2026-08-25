@@ -11,7 +11,7 @@ class FirstInputExclusionTests(unittest.TestCase):
         self.assertNotIn('slot_field_names.append("__first_input_sf__")', source)
         self.assertNotIn("slot_dims.append(LEVELS_FIRST_INPUT)", source)
         self.assertNotIn("full_vec_offsets.append(fi_offset)", source)
-        self.assertIn("includes_first_input=False", source)
+        self.assertNotIn("includes_first_input", source)
 
     def test_action_slot_list_rejects_first_input_override(self):
         source = (REPO_ROOT / "blb_stage2_rl" / "action_io.py").read_text(encoding="utf-8")

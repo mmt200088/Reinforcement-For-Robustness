@@ -183,21 +183,21 @@ def test_baseline_group_probe_seed_rejects_invalid_integer_inputs(base_seed, gro
         derive_baseline_group_probe_seed(base_seed, group_idx)
 
 
-def test_baseline_preflight_dispatch_skips_legacy_callback_for_robust_mode():
-    from blb_stage2_rl.sequential_runner import _run_legacy_preflight_if_needed
+def test_baseline_preflight_dispatch_skips_standard_callback_for_robust_mode():
+    from blb_stage2_rl.sequential_runner import _run_standard_preflight_if_needed
 
     calls = []
-    _run_legacy_preflight_if_needed(
+    _run_standard_preflight_if_needed(
         robust_mode=True,
-        run_legacy_preflight=lambda: calls.append("legacy"),
+        run_standard_preflight=lambda: calls.append("standard"),
     )
     assert calls == []
 
-    _run_legacy_preflight_if_needed(
+    _run_standard_preflight_if_needed(
         robust_mode=False,
-        run_legacy_preflight=lambda: calls.append("legacy"),
+        run_standard_preflight=lambda: calls.append("standard"),
     )
-    assert calls == ["legacy"]
+    assert calls == ["standard"]
 
 
 def test_robust_baseline_config_reads_public_bootstrap_samples_name():

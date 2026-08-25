@@ -374,7 +374,7 @@ def _fuse_chain(
     q_bits   : list of int, length R     — initial drop bits per stage
     t_vec    : list of int, length R+1  — post-rescale scales (or source)
     allowed_fusion_pairs : optional list of 1-indexed original stage pairs.
-        ``None`` keeps the legacy all-adjacent behaviour; ``[]`` disables
+        ``None`` allows every adjacent boundary; ``[]`` disables
         fusion.  After a fusion, later decisions still use the original
         stage boundary, so allowing only ``(1, 2)`` cannot accidentally permit
         a second fusion across the new shifted ``(1, 2)`` boundary.

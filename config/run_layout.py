@@ -312,7 +312,7 @@ def constraints_from(meta: Dict) -> Dict[str, object]:
 def constraint_mismatch(persisted_meta: Dict, current: Dict) -> Optional[str]:
     """续训时校验约束。返回人类可读的不一致信息；一致返回 ``None``。
 
-    只比较两边都给出的键；任一侧缺失则跳过（向后兼容旧 metadata）。
+    只比较两边都给出的键；任一侧缺失则跳过。
     """
     msgs: List[str] = []
     for k in CONSTRAINT_KEYS:
