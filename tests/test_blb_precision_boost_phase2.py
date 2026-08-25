@@ -257,7 +257,7 @@ def _noise_fn_for(topology):
 
 
 @unittest.skipUnless(
-    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rescale_optimizer required",
 )
 class Phase2BoostReplanTest(unittest.TestCase):

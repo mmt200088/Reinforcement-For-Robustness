@@ -84,7 +84,7 @@ class CandidateGenTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rescale_optimizer required",
 )
 class BoostReplanTest(unittest.TestCase):
@@ -200,7 +200,7 @@ class Block4CandidateGenTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rescale_optimizer required",
 )
 class Block4BoostReplanTest(unittest.TestCase):
@@ -324,7 +324,7 @@ class Block5N2CandidateGenTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rescale_optimizer required",
 )
 class Block5N2BoostReplanTest(unittest.TestCase):
@@ -436,7 +436,7 @@ class Block5N4CandidateGenTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rescale_optimizer required",
 )
 class Block5N4BoostReplanTest(unittest.TestCase):
@@ -521,7 +521,7 @@ def _cfg_sf_projection(cfg):
 
 @unittest.skipUnless(
     __import__("importlib").util.find_spec("torch") is not None
-    and __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    and __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "torch + rescale_optimizer required",
 )
 class SFDirectEquivalenceTest(unittest.TestCase):
@@ -619,7 +619,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
 
 @unittest.skipUnless(
     __import__("importlib").util.find_spec("torch") is not None
-    and __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    and __import__("importlib").util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "torch + rescale_optimizer required",
 )
 class BoostOptionsForBlockGuardTest(unittest.TestCase):

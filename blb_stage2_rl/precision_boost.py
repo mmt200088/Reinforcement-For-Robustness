@@ -76,13 +76,13 @@ def target_output_sf(graph_key: str, profile: str, root: str) -> int:
     Rescale_optimizer config: ``q_tail_bits - amplitude_budgets[-1] - h_sf``.
 
     General, not hardcoded — a changed JSON yields a changed target (the config
-    file is ``<root>/configs/<profile>/<graph_key>.json``; the file name matches
+    file is ``<root>/<profile>/<graph_key>.json``; the file name matches
     the graph key for every block type, e.g. ``block2_mrpc`` / ``block4`` /
     ``block5_n2``)."""
     import json as _json
     import os as _os
 
-    path = _os.path.join(str(root), "configs", str(profile), f"{graph_key}.json")
+    path = _os.path.join(str(root), str(profile), f"{graph_key}.json")
     with open(path, encoding="utf-8") as fh:
         cfg = _json.load(fh)
     q_tail = int(cfg["optimization"]["q_tail_bits"])

@@ -164,7 +164,7 @@ _BUILD = {
 
 
 @unittest.skipUnless(
-    _BRIDGE_OK and importlib.util.find_spec("rescale_optimizer") is not None,
+    _BRIDGE_OK and importlib.util.find_spec("rfr.preparation.rescale.optimizer") is not None,
     "rfr.preparation.rescale.bridge (torch) + rescale_optimizer required",
 )
 class RealReplanTest(unittest.TestCase):

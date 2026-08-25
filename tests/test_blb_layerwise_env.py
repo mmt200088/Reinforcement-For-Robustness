@@ -372,7 +372,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         base.gelu_degree = [1, 2] * 12
         base.attn_degree = [6] * 24
         fusion_map = self.fcm.FusionCountMap.load(
-            "mrpc_large", root=str(BLB_DIR),
+            "mrpc_large",
         )
         baseline = self.mod.make_all_max_action_vector(24)
         for layer_idx in range(24):
@@ -683,10 +683,26 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             f"{pkg_name}.block_materialization",
             REPO_ROOT / "src/rfr/preparation/rescale/block_materialization.py",
         )
+        cls._materialization_module_name = (
+            "rfr.preparation.rescale.block_materialization"
+        )
+        cls._previous_materialization_module = sys.modules.get(
+            cls._materialization_module_name
+        )
+        sys.modules[cls._materialization_module_name] = cls.sequential
         cls.layerwise_env = load(
             f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py",
         )
         cls.fusion_map = cls._fusion_map()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._previous_materialization_module is None:
+            sys.modules.pop(cls._materialization_module_name, None)
+        else:
+            sys.modules[cls._materialization_module_name] = (
+                cls._previous_materialization_module
+            )
 
     @classmethod
     def _fusion_map(cls):

@@ -37,7 +37,7 @@ class ReplanSessionConstructionTest(unittest.TestCase):
             replan_interface.build_feasibility_dag = lambda graph: graph
 
             with tempfile.TemporaryDirectory() as td:
-                cfg_dir = Path(td) / "configs" / "toy"
+                cfg_dir = Path(td) / "toy"
                 cfg_dir.mkdir(parents=True)
                 (cfg_dir / "graph_a.json").write_text("{}", encoding="utf-8")
 

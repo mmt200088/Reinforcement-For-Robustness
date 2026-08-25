@@ -309,8 +309,8 @@ def active_rescale_rl_fields(block_idx: int, archive_entry: Mapping[str, Any]) -
 
 
 def load_profile_configs(rescale_optimizer_root: str, profile: str) -> Dict[str, Mapping[str, Any]]:
-    """Load every ``configs/<profile>/<graph>.json`` (excluding static_skeletons)."""
-    cfg_dir = os.path.join(os.path.abspath(str(rescale_optimizer_root)), "configs", str(profile))
+    """Load every graph JSON under one Rescale profile directory."""
+    cfg_dir = os.path.join(os.path.abspath(str(rescale_optimizer_root)), str(profile))
     out: Dict[str, Mapping[str, Any]] = {}
     if not os.path.isdir(cfg_dir):
         return out
