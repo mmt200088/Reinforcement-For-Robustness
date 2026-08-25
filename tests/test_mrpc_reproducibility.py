@@ -40,10 +40,11 @@ PROBE_IDS = [4053, 558]
 
 
 def _module():
-    spec = importlib.util.find_spec("mrpc_reproducibility")
+    module_name = "rfr.preparation.data.mrpc_reproducibility"
+    spec = importlib.util.find_spec(module_name)
     if spec is None:
-        raise AssertionError("mrpc_reproducibility module is missing")
-    return importlib.import_module("mrpc_reproducibility")
+        raise AssertionError(f"{module_name} module is missing")
+    return importlib.import_module(module_name)
 
 
 def _fixture(module):
