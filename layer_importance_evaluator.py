@@ -281,6 +281,21 @@ def _install_stage1_function_configuration(
             )
 
 
+_NOISE_COST_SCALE = 0.025
+INPUT_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * _NOISE_COST_SCALE
+    for scaling_factor in INPUT_NOISE_ALLOWED_SCALING_FACTORS
+}
+WEIGHT_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * _NOISE_COST_SCALE
+    for scaling_factor in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS
+}
+WFFN1_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * _NOISE_COST_SCALE
+    for scaling_factor in WFFN1_NOISE_ALLOWED_SCALING_FACTORS
+}
+
+
 NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
 NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
 NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
