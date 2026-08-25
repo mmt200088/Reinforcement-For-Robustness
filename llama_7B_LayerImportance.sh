@@ -378,10 +378,12 @@ if [ "$ALGORITHM" = "rl" ]; then
       SKIP_STAGE2="true"
       SKIP_FINAL_EVAL="true"
       DECOUPLED_LAYOUT="true"
+      STAGE2_EPISODES="0"
       ;;
     stage2-only)
       SKIP_STAGE1="true"
       SKIP_FINAL_EVAL="true"
+      STAGE1_EPISODES="51000"
       ;;
     *) fail "run rl requires --mode stage1-only or stage2-only" ;;
   esac
