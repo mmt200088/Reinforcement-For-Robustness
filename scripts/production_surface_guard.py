@@ -185,7 +185,6 @@ NON_RUNTIME_SOURCE_ROOTS = (
     "docs/",
     "examples/",
     "local_assets/",
-    "tests/",
 )
 
 

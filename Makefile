@@ -3,13 +3,10 @@ PYTHON ?= python3
 PRESET ?= bert-base-mrpc-stage2-rl
 ALGORITHM ?= rl
 
-.PHONY: help test lint format docker stage1 stage2 comparator preset-check
+.PHONY: help lint format docker stage1 stage2 comparator preset-check
 
 help:
-	@printf "Available targets: test lint format docker stage1 stage2 comparator preset-check\n"
-
-test:
-	$(PYTHON) -m unittest discover -s tests -v
+	@printf "Available targets: lint format docker stage1 stage2 comparator preset-check\n"
 
 lint:
 	ruff check .

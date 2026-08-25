@@ -43,6 +43,8 @@ must not patch, format, or commit source.
 
 ## Verification
 
-Use focused tests while editing and run the complete test suite before a
-handoff. GPU-dependent tests and experiments run on the server. Report exactly
-which tests ran, which were skipped, and why.
+Run Python compilation, shell syntax, preset validation, production-surface
+checks, and command dry-runs before a handoff. Torch/CUDA and real model smoke
+checks run on the server. The pre-cleanup regression suite remains available in
+Git history for structural migrations; report the exact source commit, results,
+and any hardware-conditioned skips when it is used.

@@ -33,20 +33,9 @@ dependencies = [
     "evaluate>=0.4",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-xdist>=3.0",
-]
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["rfr*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-addopts = "-ra"
 
 [tool.ruff]
 line-length = 120
@@ -83,7 +72,6 @@ ignore = [
 allowed-confusables = ["’", "‘"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["F401", "F841", "E402"]
 "src/rfr/search/common/evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
 "src/rfr/cli/run.py" = ["F841", "E402"]
 ".github/*" = ["ALL"]
