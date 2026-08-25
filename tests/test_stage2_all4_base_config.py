@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -42,24 +43,32 @@ def _bare_evaluator(source: str) -> LayerImportanceEvaluator:
 
 class Stage2All4BaseConfigTest(unittest.TestCase):
     def test_large_mrpc_stage1_record_resolves_through_production_stage2_path(self):
-        ev = _bare_evaluator("stage1_result")
-        ev.total_layers = 24
-        ev.decoupled_layout = True
-        ev.run_output_dir = str(
-            REPO_ROOT / "Parting Chapter" / "stage2" / "bert large mrpc"
-        )
-        ev.stage1_run_id = ""
-        ev._build_stage2_fixed_config_resolver = lambda: object()
-
-        gelu, softmax, label, source = ev._resolve_stage2_fixed_stage1_config()
-
-        self.assertEqual(
-            gelu.tolist(),
-            [
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            record_dir = root / "stage1" / "record" / "bert large mrpc 1 20260725"
+            record_dir.mkdir(parents=True)
+            expected_gelu = [
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2,
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            ],
-        )
+            ]
+            (record_dir / "final_config.json").write_text(
+                json.dumps({
+                    "gelu_degree_per_layer": expected_gelu,
+                    "softmax_degree_per_layer": [6] * 24,
+                }),
+                encoding="utf-8",
+            )
+
+            ev = _bare_evaluator("stage1_result")
+            ev.total_layers = 24
+            ev.decoupled_layout = True
+            ev.run_output_dir = str(root / "stage2" / "bert large mrpc")
+            ev.stage1_run_id = ""
+            ev._build_stage2_fixed_config_resolver = lambda: object()
+
+            gelu, softmax, label, source = ev._resolve_stage2_fixed_stage1_config()
+
+        self.assertEqual(gelu.tolist(), expected_gelu)
         self.assertEqual(softmax.tolist(), [6] * 24)
         self.assertIn("stage1_record:bert large mrpc", source)
         self.assertIn("softmax fixed deg6", label)
