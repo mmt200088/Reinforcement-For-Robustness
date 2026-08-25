@@ -1,0 +1,78 @@
+{
+  "blocking_reason": "Mandatory CUDA/GPU smoke tests cannot run until the server driver and NVML library match.",
+  "canonical_eligible": false,
+  "cleanup_diff_shortstat": "610 files changed, 15698 insertions(+), 173247 deletions(-)",
+  "comment_audit": {
+    "dated_history": 0,
+    "historical_comments": 0,
+    "prompt_wording": 0
+  },
+  "comparison_baseline": {
+    "commit": "ad593728a6595e8b697e56b205e4466f9a8be796",
+    "tree": "b906220dd6487fa034c3182af97b27317f049ef9"
+  },
+  "gpu_gate": {
+    "cuda_available": false,
+    "cuda_count": 0,
+    "nvidia_smi_rc": 18,
+    "nvml_error": true,
+    "status": "blocked_environment",
+    "torch_cuda_error_803": true
+  },
+  "non_result_pdf_count": 0,
+  "non_result_pdfs": [],
+  "parity": {
+    "covered": [
+      "action",
+      "materialization",
+      "cost",
+      "reward",
+      "candidate",
+      "checkpoint",
+      "final_evaluation"
+    ],
+    "execution_equal": true,
+    "execution_sha256": "68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7",
+    "scientific_state_equal": true,
+    "scientific_state_sha256": "0e42f6e55ed8c01a90dc776e9a2150f177f000535d9d97f8ebc6106b6accace8"
+  },
+  "production_surface_guard": {
+    "backup_paths": [],
+    "forbidden_paths": [],
+    "ok": true,
+    "reference_hits": []
+  },
+  "readme_dry_runs": {
+    "bo_rf": true,
+    "coinn_ga": true,
+    "final_eval": true,
+    "greedy": true,
+    "stage1": true,
+    "stage2": true
+  },
+  "schema": "production_code_cleanup_server_evidence_v1",
+  "source": {
+    "commit": "4a16e8102141d76bf90f7b138b091516c4b890df",
+    "tree": "8495914e749c0e44cc716a00aa8975f4bc913bbf"
+  },
+  "task_id": "production-code-cleanup-20260825",
+  "tests": {
+    "focused": {
+      "pass": true,
+      "passed": 126,
+      "skipped": 1,
+      "subtests_passed": 26
+    },
+    "pytest": {
+      "pass": true,
+      "passed": 1646,
+      "skipped": 14,
+      "subtests_passed": 267
+    },
+    "unittest": {
+      "pass": true,
+      "ran": 1508,
+      "skipped": 14
+    }
+  }
+}
