@@ -87,12 +87,12 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             "block2_qkt": _source_region(
                 source,
                 "def _make_block2_qkt_merge_hook(",
-                "    return hook\n\n\n# ============================================================================\n# BLB Block 3",
+                "class Block3NoiseConfig",
             ),
             "block2_bsgs": _source_region(
                 source,
                 "def _make_block2_bsgs_mask_hook(",
-                "# ============================================================================\n# BLB Block 4",
+                "class Block4NoiseConfig",
             ),
             "block4_input": _source_region(
                 source,
@@ -154,7 +154,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         gelu_region = _source_region(
             source,
             "class PolynomialGELU",
-            "# change BertsdpaAttention",
+            "class BertSelfAttentionWithAproximation",
         )
 
         self.assertIn("_GELU_PAIRED_POLY_MIN_NUMEL = 12_000_000", source)
@@ -171,7 +171,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         bert_region = _source_region(
             source,
             "    def approximation_softmax(self, x: torch.Tensor) -> torch.Tensor:",
-            "    # error construction",
+            "    def _looks_like_attention_mask",
         )
         self.assertIn("torch.where(x < self.lower_bound, 0.0, exp_approx)", bert_region)
         self.assertNotIn("torch.zeros_like", bert_region)
@@ -181,7 +181,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         block1_region = _source_region(
             source,
             "class NoisyBlock1LayerNorm",
-            "# ============================================================================\n# BLB Block 3",
+            "def _make_block2_qk_proj_forward",
         )
         block3_region = _source_region(
             source,
@@ -191,7 +191,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         block4_region = _source_region(
             source,
             "class NoisyBlock4LayerNorm",
-            "# ============================================================================\n# BLB Block 5",
+            "class Block5NoiseConfig",
         )
 
         self.assertIn("noisy_inv_d = _sample_gaussian_for_point(x, cfg.mean_inv_d_encode)", block1_region)
@@ -217,7 +217,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         block5_region = _source_region(
             source,
             "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
-            "# tensor polynomial approximation",
+            "def polynomial(",
         )
 
         self.assertIn("def _compute_polynomial(", block5_region)
@@ -231,7 +231,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         block5_region = _source_region(
             source,
             "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
-            "# tensor polynomial approximation",
+            "def polynomial(",
         )
 
         self.assertIn("def _compute_powers(x: Tensor):", block5_region)
@@ -249,7 +249,7 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             _source_region(
                 source,
                 "class PolynomialGELU",
-                "# change BertsdpaAttention",
+                "class BertSelfAttentionWithAproximation",
             ),
         ]
 
@@ -359,7 +359,7 @@ class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
         init_region = _source_region(
             source,
             "        self._eval_cache =",
-            "        # Track one-time device placement;",
+            "        self._stage1_worker_eval_cache =",
         )
         eval_region = _source_region(
             source,
@@ -407,8 +407,8 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         init_region = _source_region(
             source,
-            "        # ==================== PPO 7.1: 运行时回报归一化状态 ====================",
-            "        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================",
+            "        self.reward_history = deque",
+            "        self.return_normalizer = RunningMeanStd()",
         )
         reset_region = _source_region(
             source,
@@ -418,7 +418,7 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         resume_region = _source_region(
             source,
             "                _ev_rt = ckpt.get(\"ev_runtime_state\", {})",
-            "                # 恢复 return_normalizer（RunningMeanStd）状态",
+            "                self.current_episode =",
         )
         update_region = _source_region(
             source,
@@ -436,8 +436,8 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         init_region = _source_region(
             source,
-            "        # ==================== PPO 7.1: 运行时回报归一化状态 ====================",
-            "        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================",
+            "        self.reward_history = deque",
+            "        self.return_normalizer = RunningMeanStd()",
         )
         reset_region = _source_region(
             source,
@@ -447,7 +447,7 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         resume_region = _source_region(
             source,
             "                _ev_rt = ckpt.get(\"ev_runtime_state\", {})",
-            "                # 恢复 return_normalizer（RunningMeanStd）状态",
+            "                self.current_episode =",
         )
         helper_marker = "    def _rebuild_reward_statistics_accumulators(self):"
         if helper_marker not in source:

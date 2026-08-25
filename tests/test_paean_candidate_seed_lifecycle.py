@@ -90,7 +90,7 @@ class PaeanCandidateSeedLifecycleTest(unittest.TestCase):
     def test_selected_and_random_loops_use_the_shared_seed_lifecycle(self):
         text = _PAEAN_PATH.read_text(encoding="utf-8")
         selected_start = text.index("for idx, candidate in enumerate(selected_candidates")
-        selected_end = text.index("# ---- Generate cost-matched random candidates", selected_start)
+        selected_end = text.index("cost_match_diagnostics:", selected_start)
         random_start = text.index("for idx, candidate in enumerate(random_candidates", selected_end)
         random_end = text.index("results = selected_results + random_results", random_start)
 

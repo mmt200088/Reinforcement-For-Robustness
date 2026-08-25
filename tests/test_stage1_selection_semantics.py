@@ -33,9 +33,8 @@ class Stage1SelectionSemanticsTest(unittest.TestCase):
 
     def test_stage1_final_selection_keeps_raw_reward_best_config(self):
         text = _source_text()
-        marker = "# ---- 局部最优检测：写入 pruning_search_log.txt ----"
-        start = text.index(marker)
-        end = text.index("# ---------------------------------------------------------\n        # Plot:", start)
+        start = text.index("            stage1_data_writer.close()")
+        end = text.index("        if len(episode_rewards) > 0:", start)
         final_selection = text[start:end]
         self.assertNotIn("global_best_config is not None", final_selection)
         self.assertNotIn("search_best_config is not None", final_selection)

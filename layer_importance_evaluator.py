@@ -39,7 +39,10 @@ from function_handler import (
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from glue_data_protocol import TRAIN_PROBE_SPLIT, validate_dataset
-from mrpc_reproducibility import validate_mrpc_evaluation_setup
+from mrpc_reproducibility import (
+    MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
+    validate_mrpc_evaluation_setup,
+)
 from blb_stage2_rl.runtime_control import (
     PROGRESS_BOX_PPO_INTERVAL as NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
     STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -2041,8 +2044,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
             if int(self.final_eval_random_seed) != 42 or int(self.blb_v3_seed or 42) != 42:
                 raise ValueError("formal comparators require seed 42")
-            if int(self.stage2_inference_batch_size or self.batch_size) != 64:
-                raise ValueError("formal comparators require Stage-2 batch size 64")
+            if (
+                int(self.stage2_inference_batch_size or self.batch_size)
+                != MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE
+            ):
+                raise ValueError(
+                    "formal comparators require Stage-2 batch size "
+                    f"{MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE}"
+                )
             validate_comparator_scientific_parameters(
                 communication_importance_ratio=(
                     self.stage2_communication_importance_ratio

@@ -1,37 +1,8 @@
-"""Torch-free tests for the ADR-014 structural anti-runaway fusion cost.
-
-The 4th 60k still collapsed HOT because the LINEAR fusion cost reward is a
-deterministic monotone incentive that the noise-drowned accuracy barrier can't
-counter — fusion ran away 8→35. The fix (``fusion_cost.saturate_fusion`` +
-``compute_fusion_cost_saving(fusion_saturation_tau=...)``) makes the fusion
-reward CONCAVE so its marginal value → ~0 past a healthy knee (~fusion 8), and
-``DEFAULT_ACC_BARRIER_MARGIN_REF`` is raised so the restoring penalty starts at
-more headroom. Together: ``cost(fusion)+barrier(margin)`` has an interior peak at
-a moderate POSITIVE margin, and there is no deterministic pull past the knee.
-
-Loaded via ``spec_from_file_location`` so the torch-importing package __init__ is
-never triggered (reward.py / fusion_cost.py are numpy-only at module level).
-"""
-import importlib.util
-import os
-import sys
+"""Fusion-cost saturation invariants."""
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-
-def _load(name, rel):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(REPO_ROOT, rel))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-FC = _load("fusion_cost_sat_test", "blb_stage2_rl/fusion_cost.py")
-RW = _load("reward_sat_test", "blb_stage2_rl/reward.py")
+from blb_stage2_rl import fusion_cost as FC
+from blb_stage2_rl import reward as RW
 
 
 class SaturateShapeTest(unittest.TestCase):

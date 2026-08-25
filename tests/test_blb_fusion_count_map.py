@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+import sys
 import types
 import unittest
 from unittest import mock
@@ -13,6 +15,9 @@ from blb_stage2_rl import fusion_enum
 from blb_stage2_rl import layerwise_action as layerwise
 
 
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
+_RO_ROOT = _REPO_ROOT / "Rescale_optimizer"
 _ASPACE_OK = True
 
 
@@ -282,7 +287,10 @@ class CheckKIndependenceTest(unittest.TestCase):
             return {"valid": True, "fusion_count": int(block[0])}
 
         samples = (cfg for cfg in ([0, 0], [1, 0]))
-        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}),\
+        with mock.patch.dict(
+             sys.modules,
+             {"blb_stage2_rl.action_space": fake_action_space},
+        ),\
              mock.patch.object(fusion_enum, "_eval_block", side_effect=fake_eval):
             result = fusion_enum.check_k_independence(Ctx(), sample_configs=samples)
 
@@ -299,10 +307,10 @@ class ActiveRescalePremiseTest(unittest.TestCase):
     action_space's silently-empty __file__-relative cache; the builder now seeds
     the cache from the explicit ro_root)."""
 
-    def test_seven_block_types_have_active_rescales(self):
+    def test_six_block_types_have_active_rescales(self):
         import json
 
-        import skeleton_stage_map as ssm
+        from blb_stage2_rl import skeleton_stage_map as ssm
 
         arch_path = _RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json"
         archive = json.loads(arch_path.read_text(encoding="utf-8"))

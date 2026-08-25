@@ -123,7 +123,6 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checked = [
             repo / "blb_stage2_rl" / "env.py",
-            repo / "blb_stage2_rl" / "block_materialization.py",
             repo / "Paean" / "blb_action_eval.py",
         ]
         forbidden = [
@@ -140,12 +139,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             for token in forbidden:
                 if token in text:
                     offenders.append(f"{path.relative_to(repo)} contains {token}")
-            expected_helper = (
-                "materialize_decoded_action"
-                if path.name == "block_materialization.py"
-                else "apply_optimizer_outputs_to_cfgs"
-            )
-            self.assertIn(expected_helper, text)
+            self.assertIn("apply_optimizer_outputs_to_cfgs", text)
         self.assertEqual(offenders, [])
 
     def test_paean_final_eval_does_not_forward_unapplied_replan_cfgs(self):

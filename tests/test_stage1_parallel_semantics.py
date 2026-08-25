@@ -18,6 +18,12 @@ def _method_region(source: str, method_name: str) -> str:
     return source[start:next_method]
 
 
+def _single_gpu_rollout_region(source: str) -> str:
+    start = source.index("                if not _handled_via_parallel:")
+    end = source.index("                    buffer.end_episode()", start)
+    return source[start:end]
+
+
 class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_parallel_worker_uses_serial_sos_token_for_initial_previous_action(self):
         region = _method_region(_source(LAYER_EVALUATOR), "_stage1_collect_episode_in_worker")
@@ -109,8 +115,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_stage1_rollout_reuses_action_scalar_and_builds_device_tensors_directly(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
-        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
-        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+        fallback_region = _single_gpu_rollout_region(source)
 
         self.assertIn("prev_g_idx = SOS_TOKEN_GELU", worker_region)
         self.assertIn("gelu_action_idx = int(gelu_action.item())", worker_region)
@@ -132,8 +137,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_stage1_rollout_reuses_static_gelu_mask_template_per_device(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
-        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
-        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+        fallback_region = _single_gpu_rollout_region(source)
 
         self.assertIn("def _get_stage1_gelu_mask_templates(", source)
         self.assertIn("_stage1_gelu_mask_template_cache", source)
@@ -167,8 +171,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_stage1_rollout_records_cont_features_without_cpu_tensor_roundtrip(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
-        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
-        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+        fallback_region = _single_gpu_rollout_region(source)
         runner_source = _source(PARALLEL_RUNNER)
 
         self.assertIn("cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)", worker_region)
@@ -202,8 +205,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
 
     def test_stage1_single_gpu_rollout_defers_logprob_value_sync_until_episode_end(self):
         source = _source(LAYER_EVALUATOR)
-        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
-        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+        fallback_region = _single_gpu_rollout_region(source)
 
         self.assertIn("logprob_tensors.append(logprob.detach()", fallback_region)
         self.assertIn("value_tensors.append(value.detach()", fallback_region)
@@ -219,11 +221,9 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
 
     def test_stage1_parallel_replay_stash_uses_deque(self):
         source = _source(LAYER_EVALUATOR)
-        marker = "# Stage-1 multi-GPU rollout pre-fetch"
-        parallel_region = source.split(marker, 1)[1].split(
-            "if not _handled_via_parallel:",
-            1,
-        )[0]
+        start = source.index("_stage1_parallel_stash = deque()")
+        end = source.index("                if not _handled_via_parallel:", start)
+        parallel_region = source[start:end]
 
         self.assertIn("from collections import deque", source)
         self.assertIn("_stage1_parallel_stash = deque()", source)

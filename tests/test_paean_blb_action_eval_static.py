@@ -18,7 +18,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
     def test_batch_candidates_reset_independent_process_seed_before_eval(self):
         text = source_text("Paean/blb_action_eval.py")
         loop_start = text.index("for idx, candidate in enumerate(selected_candidates")
-        loop_end = text.index("# ---- Generate cost-matched random candidates", loop_start)
+        loop_end = text.index("cost_match_diagnostics:", loop_start)
         loop = text[loop_start:loop_end]
         lifecycle_start = text.index(
             "def _evaluate_candidate_with_seed_lifecycle("

@@ -192,7 +192,10 @@ class ReconstructFusionGroupBaselineOwnedBlocksTest(unittest.TestCase):
             graphs={"block2_mrpc_large": self._graph()},
         )
 
-        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}):
+        with mock.patch.dict(
+            sys.modules,
+            {"blb_stage2_rl.action_space": fake_action_space},
+        ):
             result = ffa.reconstruct_fusion_group(
                 [0, 0, 7, 1, 0, 0],
                 fusion_map=fusion_map,
@@ -214,7 +217,10 @@ class ReconstructFusionGroupBaselineOwnedBlocksTest(unittest.TestCase):
             step_schedule=lambda *_args, **_kwargs: schedule,
         )
 
-        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}):
+        with mock.patch.dict(
+            sys.modules,
+            {"blb_stage2_rl.action_space": fake_action_space},
+        ):
             with self.assertRaisesRegex(KeyError, "block4"):
                 ffa.reconstruct_fusion_group(
                     [7, 1],

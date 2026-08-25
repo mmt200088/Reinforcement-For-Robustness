@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
+import torch
 from glue_data_protocol import validate_dataset_protocol_binding
 
 from .candidate_store import (

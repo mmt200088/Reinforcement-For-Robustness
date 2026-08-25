@@ -15,7 +15,10 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
             "        ):"
         )
         end = source.index(
-            "        # ---------------------------------------------------------\n        # Phase 2: PPO Training",
+            "        if (\n"
+            "                not self.skip_stage1_rl\n"
+            '                and self.blb_v3_search_backend == "ppo"\n'
+            "        ):",
             start,
         )
         cls.block = source[start:end]

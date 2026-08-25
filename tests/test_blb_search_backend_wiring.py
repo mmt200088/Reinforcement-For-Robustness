@@ -309,7 +309,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn(
             "MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE", evaluator,
         )
-        self.assertIn("formal comparators require Stage-2 batch size 64", evaluator)
+        self.assertIn("!= MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE", evaluator)
         self.assertIn(
             "def activate_stage2_inference_batch_size(self)", evaluator,
         )

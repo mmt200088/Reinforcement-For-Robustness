@@ -13,6 +13,8 @@ ablations, or support for another model or dataset without an explicit task.
 ## Git Protocol
 
 Read `docs/GIT_MULTI_AGENT_PROTOCOL.md` before changing source.
+Use `scripts/repo_sync_guard.py` for every task, aggregate, and deployment
+boundary.
 
 - Ordinary task agents work in isolated `codex/task-*` branches and worktrees.
 - Ordinary agents never update `jk_standard_rl` and never deploy source.

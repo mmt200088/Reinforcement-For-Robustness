@@ -1,18 +1,11 @@
 import unittest
-import importlib.util
-import sys
-from pathlib import Path
 from unittest import mock
 
 
 def load_candidate_store_module():
-    path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "candidate_store.py"
-    spec = importlib.util.spec_from_file_location("candidate_store_under_test", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    from blb_stage2_rl import candidate_store
+
+    return candidate_store
 
 
 class BLBCostSemanticsTests(unittest.TestCase):

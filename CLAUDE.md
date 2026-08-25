@@ -1,6 +1,7 @@
 # Agent Instructions
 
 Follow `AGENTS.md` and `docs/GIT_MULTI_AGENT_PROTOCOL.md` for every task.
+Run the required boundary checks through `scripts/repo_sync_guard.py`.
 
 Work in an isolated task branch. Do not update the canonical branch or server
 checkout unless the user has explicitly authorized this agent as the sole

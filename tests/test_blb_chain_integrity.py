@@ -701,21 +701,21 @@ class SequentialPolicyInitTest(unittest.TestCase):
     def test_action_head_weight_is_small(self):
         """Every per-slot head must start near zero so external prior wins."""
         policy = self._make_policy()
-        for idx, head in enumerate(policy.slot_heads):
-            weight_norm = float(head.weight.norm().item())
+        for idx, weight in enumerate(policy.slot_head_weight):
+            weight_norm = float(weight.norm().item())
             self.assertLess(
                 weight_norm, 0.05,
-                f"slot_heads[{idx}].weight norm {weight_norm:.4f} too large; "
+                f"slot_head_weight[{idx}] norm {weight_norm:.4f} too large; "
                 "warmstart prior will be overwhelmed by random logits",
             )
 
     def test_action_head_bias_starts_zero(self):
         """Learned actor biases start zero; caller controls baseline prior."""
         policy = self._make_policy()
-        for idx, head in enumerate(policy.slot_heads):
+        for idx, bias in enumerate(policy.slot_head_bias):
             self.assertTrue(
-                torch.allclose(head.bias, torch.zeros_like(head.bias)),
-                f"slot_heads[{idx}].bias must start at 0",
+                torch.allclose(bias, torch.zeros_like(bias)),
+                f"slot_head_bias[{idx}] must start at 0",
             )
         self.assertTrue(torch.all(policy._preferred_per_slot_idx < 0))
 

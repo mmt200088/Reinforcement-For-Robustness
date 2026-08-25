@@ -1,4 +1,5 @@
 """Bounded Stage-2 reward invariants."""
+import types
 import unittest
 
 from blb_stage2_rl import fusion_cost as FC

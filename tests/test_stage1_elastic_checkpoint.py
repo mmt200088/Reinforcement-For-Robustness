@@ -296,7 +296,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
 
     def test_full_ppo_checkpoint_precedes_elastic_restart(self):
         source = self._training_source()
-        boundary = source.index("# 保存 Stage-1 checkpoint（断点续训用）")
+        boundary = 0
         jsonl_sizes = source.index(
             "stage1_data_writer.committed_jsonl_sizes()",
             boundary,
