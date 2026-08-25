@@ -50,7 +50,7 @@ def _load_function_standalone(rel_path, function_name, **runtime_globals):
 
 def _load_paean_method(method_name, **runtime_globals):
     return _load_paean_method_from_path(
-        "Paean/blb_action_eval.py",
+        "src/rfr/evaluation/action_eval.py",
         "BLBActionFinalEvaluationModule",
         method_name,
         **runtime_globals,

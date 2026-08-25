@@ -437,7 +437,7 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
 
 class BLBActionFinalEvalRegressionTests(unittest.TestCase):
     def test_clean_baseline_reuses_single_configuration_install_without_eval_cache(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         class FakeEvaluator:
             total_layers = 1
@@ -495,8 +495,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertIn("repeat_evaluation", result)
 
     def test_blb_repeat_reuses_single_bridge_install_without_eval_cache(self):
-        import Paean.blb_action_eval as mod
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        import rfr.evaluation.action_eval as mod
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         class FakeBridge:
             instances = []
@@ -595,12 +595,12 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         )
 
     def test_final_eval_has_no_profile_only_max_sfs_loader(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         self.assertFalse(hasattr(BLBActionFinalEvaluationModule, "_load_max_sfs"))
 
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
         action = np.arange(12, dtype=int)
@@ -616,8 +616,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertTrue(np.array_equal(resolved, action))
 
     def test_action_candidate_applies_replan_cfg_before_model_forward(self):
-        import Paean.blb_action_eval as mod
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        import rfr.evaluation.action_eval as mod
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
         from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
 
         class FakeCfg:
@@ -769,7 +769,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(result["config_details"]["marker_seen_by_details"], "replan_applied")
 
     def test_model_installation_verification_matches_current_blb_bridge_semantics(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         class FakeDecoded:
             pass
@@ -824,7 +824,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(result["expected_active_layers"]["first_input"], [])
 
     def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
         from rfr.search.common.action_space import load_max_sfs, make_all_max_action_vector
 
         class FakeEvaluator:
@@ -876,7 +876,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertTrue(result["install_verification"]["skipped"])
 
     def test_full_noise_config_excludes_deprecated_first_input(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         decoded = type(
             "Decoded",
@@ -1779,7 +1779,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
         self.assertEqual(evaluator.batch_size, 16)
 
     def test_stage2_activation_rebuilds_evaluator_loaders_and_drops_stage1_cache(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
         from rfr.search.rl.stage1.eval_cache import Stage1EvalCache
 
         evaluator = object.__new__(LayerImportanceEvaluator)

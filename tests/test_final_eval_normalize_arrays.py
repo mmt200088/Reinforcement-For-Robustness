@@ -5,7 +5,7 @@ from unittest import mock
 
 import numpy as np
 
-from final_evaluation_module import NOISE_SCALING_FACTOR_KEYS, UnifiedFinalEvaluationModule
+from rfr.evaluation.final_evaluation import NOISE_SCALING_FACTOR_KEYS, UnifiedFinalEvaluationModule
 
 
 class _DummyEvaluator:

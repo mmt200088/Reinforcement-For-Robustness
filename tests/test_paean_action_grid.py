@@ -13,7 +13,7 @@ import numpy as np
 from rfr.search.common.truncation_levels import K_LEVELS
 
 ROOT = Path(__file__).resolve().parents[1]
-ACTION_GRID_PATH = ROOT / "Paean" / "action_grid.py"
+ACTION_GRID_PATH = ROOT / "src/rfr/evaluation/action_grid.py"
 
 
 def _load_action_grid_module():

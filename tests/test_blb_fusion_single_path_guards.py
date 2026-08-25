@@ -29,7 +29,7 @@ def _called_names(node: ast.AST) -> set[str]:
 
 class FusionSinglePathGuardTest(unittest.TestCase):
     def test_final_eval_fusion_decoder_uses_sf_direct_builder(self):
-        fn = _function_def(REPO / "Paean" / "blb_action_eval.py", "_decode_fusion_count_fixed_action")
+        fn = _function_def(REPO / "src/rfr/evaluation/action_eval.py", "_decode_fusion_count_fixed_action")
         calls = _called_names(fn)
 
         self.assertIn("build_block_cfg_from_field_values", calls)

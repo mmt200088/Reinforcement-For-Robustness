@@ -37,7 +37,7 @@ from rfr.search.runtime.model_handler import (
     SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
-from final_evaluation_module import UnifiedFinalEvaluationModule
+from rfr.evaluation.final_evaluation import UnifiedFinalEvaluationModule
 from rfr.preparation.data.protocol import TRAIN_PROBE_SPLIT, validate_dataset
 from rfr.preparation.data.mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
@@ -4159,7 +4159,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_s = selection_limits["metric2"] if limit_s is None else limit_s
 
         if self._should_run_blb_action_final_eval(stage2_search_best):
-            from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+            from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
             blb_random_enabled = bool(
                 self.final_eval_random_enabled
                 or int(getattr(self, "final_eval_cost_match_count", 0)) > 0
@@ -6684,7 +6684,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
                     final_eval_result = None
                 else:
-                    from Paean.embedded import run_embedded_final_eval
+                    from rfr.evaluation.embedded import run_embedded_final_eval
 
                     try:
                         final_eval_result = run_embedded_final_eval(

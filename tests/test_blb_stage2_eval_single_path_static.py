@@ -12,7 +12,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         sequential = (repo / "src/rfr/preparation/rescale/block_materialization.py").read_text(
             encoding="utf-8"
         )
-        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        paean = (repo / "src/rfr/evaluation/action_eval.py").read_text(encoding="utf-8")
 
         self.assertIn("materialize_action_for_model", env)
         self.assertNotIn("evaluate_action_for_cost(", env)
@@ -29,7 +29,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         bridge = (repo / "src/rfr/search/runtime/blb_bridge.py").read_text(encoding="utf-8")
         paean = (
-            repo / "Paean" / "blb_action_eval.py"
+            repo / "src/rfr/evaluation/action_eval.py"
         ).read_text(encoding="utf-8")
 
         self.assertIn("noise_enabled=(li != 0)", action_space)
@@ -106,7 +106,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_truncation_backend_is_explicitly_wired_and_defaults_to_binary(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         launcher = (repo / "llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
-        evaluator = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        evaluator = (repo / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         training = (repo / "src/rfr/search/rl/stage2/training.py").read_text(encoding="utf-8")
         sequential = (repo / "src/rfr/search/rl/stage2/sequential_runner.py").read_text(
             encoding="utf-8"
@@ -123,7 +123,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checked = [
             repo / "src/rfr/search/rl/stage2/env.py",
-            repo / "Paean" / "blb_action_eval.py",
+            repo / "src/rfr/evaluation/action_eval.py",
         ]
         forbidden = [
             "apply_optimizer_output_to_cfg(",
@@ -149,14 +149,14 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_paean_final_eval_does_not_forward_unapplied_replan_cfgs(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        text = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        text = (repo / "src/rfr/evaluation/action_eval.py").read_text(encoding="utf-8")
         self.assertIn("optimizer_invalid_chain", text)
         self.assertIn("replan_config_not_fully_applied", text)
         self.assertIn("skipped_forward:{skip_reason}", text)
 
     def test_installed_model_forward_paths_use_shared_inference_eval(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        layer_eval = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        layer_eval = (repo / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         env = (repo / "src/rfr/search/rl/stage2/env.py").read_text(encoding="utf-8")
         probe = (repo / "src/rfr/search/runtime/probe_runner.py").read_text(encoding="utf-8")
 
@@ -170,8 +170,8 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_repeat_evaluation_payloads_use_shared_pack_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
-        final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
+        paean = (repo / "src/rfr/evaluation/action_eval.py").read_text(encoding="utf-8")
+        final_eval = (repo / "src/rfr/evaluation/final_evaluation.py").read_text(encoding="utf-8")
         eval_metrics = (repo / "src/rfr/search/common/eval_metrics.py").read_text(encoding="utf-8")
 
         self.assertIn("def pack_repeat_evaluation(", eval_metrics)

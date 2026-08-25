@@ -3,7 +3,7 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = REPO_ROOT / "Paean" / "blb_action_eval.py"
+SOURCE = REPO_ROOT / "src/rfr/evaluation/action_eval.py"
 
 
 class PaeanClearNoisePerfTests(unittest.TestCase):

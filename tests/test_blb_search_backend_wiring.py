@@ -46,7 +46,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
         evaluator_source = (
-            ROOT / "layer_importance_evaluator.py"
+            ROOT / "src/rfr/search/common/evaluator.py"
         ).read_text(encoding="utf-8")
         evaluator_tree = ast.parse(evaluator_source)
         evaluator_class = next(
@@ -74,7 +74,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("int(self.stage2_probe_size)", evaluator_source)
 
     def test_outer_two_stage_result_is_plain_and_atomic(self):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         tree = ast.parse(source)
@@ -110,7 +110,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             self.assertNotIn(removed, source)
 
     def test_outer_two_stage_result_keeps_direct_scientific_binding(self):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         tree = ast.parse(source)
@@ -130,7 +130,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertNotIn("scientific_export_allowed", helper_source)
 
     def test_strict_infeasible_comparator_skips_optional_final_eval_only(self):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         tree = ast.parse(source)
@@ -180,7 +180,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_one_backend_drives_serial_stage1_and_stage2_comparators(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("from rfr.search.comparators.common.stage1_runner import (", evaluator)
@@ -224,7 +224,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_stage1_handoff_reopens_completed_result_before_stage2_binding(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         reopen_call = "load_completed_search_result("
@@ -242,7 +242,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_stage1_ga_outer_gate_requires_full_200_generation_completion(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -255,7 +255,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_stage1_producer_uses_ordinary_result_path(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("stage1_rl.provenance", evaluator)
@@ -284,7 +284,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("os.path.dirname(stage1_result_path)", runner)
 
     def test_evaluator_validates_reproducible_mrpc_setup(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("validate_mrpc_evaluation_setup(", evaluator)
@@ -303,7 +303,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertNotIn("hash_formal_mrpc_tokenized_view", evaluator)
 
     def test_evaluator_pins_comparator_stage2_to_historical_rl_batch(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -325,7 +325,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
     def test_evaluator_revalidates_stage2_scientific_parameters(self):
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         tree = ast.parse(evaluator)
@@ -362,7 +362,7 @@ class SearchBackendWiringTests(unittest.TestCase):
 
     def test_evaluator_and_train_config_preserve_ppo_default(self):
         evaluator_tree = ast.parse(
-            (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+            (ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         )
         evaluator_class = next(
             node for node in evaluator_tree.body
@@ -424,7 +424,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             "--blb_v3_search_mutation_max_coordinates", launcher,
         )
 
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('self.blb_v3_search_backend == "coinn_ga" and (', evaluator)
@@ -476,7 +476,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertNotIn("expected_identity_context_hash=", baseline_runner)
         self.assertNotIn("expected_formal_run_identity=", baseline_runner)
 
-        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+        evaluator = (ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(

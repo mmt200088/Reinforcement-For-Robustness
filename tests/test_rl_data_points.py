@@ -787,7 +787,7 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertIn("pid123", first)
 
     def test_stage1_loop_integrates_structured_data_writer(self):
-        source = (REPO_ROOT / "layer_importance_evaluator.py").read_text()
+        source = (REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text()
         self.assertIn("RLDataPointWriter", source)
         self.assertIn("make_unique_run_id", source)
         self.assertIn("stage1_data_writer.write_step", source)

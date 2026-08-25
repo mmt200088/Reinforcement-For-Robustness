@@ -20,7 +20,7 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
 
 
 def _load_evaluator_method(name, **runtime_globals):
-    path = _REPO / "layer_importance_evaluator.py"
+    path = _REPO / "src/rfr/search/common/evaluator.py"
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     evaluator_class = next(
@@ -42,7 +42,7 @@ def _load_evaluator_method(name, **runtime_globals):
 
 
 def _load_paean_method(name, **runtime_globals):
-    path = _REPO / "Paean" / "blb_action_eval.py"
+    path = _REPO / "src/rfr/evaluation/action_eval.py"
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     module_class = next(
@@ -477,11 +477,11 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
 
 @unittest.skipUnless(
     importlib.util.find_spec("torch") is not None,
-    "torch required for Paean.blb_action_eval import",
+    "torch required for rfr.evaluation.action_eval import",
 )
 class FusionCountFixedActionDecodeTest(unittest.TestCase):
     def test_per_step_fusion_option_replay_preserves_rl_selected_k(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
         from rfr.search.common.action_space import (
             K_LEVELS,
             load_max_sfs,
@@ -544,7 +544,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         )
 
     def test_selected_vs_random_summary_keeps_existing_statistics(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         module = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
         selected = [{
@@ -582,7 +582,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertEqual(ranks["metric2_higher_better"]["rank_better_than_selected"], 1)
 
     def test_selected_vs_random_summary_streams_random_rows_once(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         source = inspect.getsource(BLBActionFinalEvaluationModule._summarize_selected_vs_random)
 
@@ -592,7 +592,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn("metric2_rows = [", source)
 
     def test_results_plot_scans_candidate_rows_once(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         source = inspect.getsource(BLBActionFinalEvaluationModule._save_results_plot)
 
@@ -604,7 +604,7 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn('np.asarray([float(r["time_ms"]) for r in candidate_results]', source)
 
     def test_scatter_plot_scans_result_rows_once_per_group(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         source = inspect.getsource(BLBActionFinalEvaluationModule._save_scatter_plot)
 
@@ -617,14 +617,14 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn('[float(r.get("s_std", 0.0)) for r in selected_results]', source)
 
     def test_full_noise_markdown_table_streams_entries_without_copy(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         source = inspect.getsource(BLBActionFinalEvaluationModule._full_noise_config_markdown_table)
 
         self.assertNotIn("entries = list(", source)
 
     def test_fusion_fixed_action_decode_avoids_step_copy_wrappers(self):
-        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         source = inspect.getsource(BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action)
 

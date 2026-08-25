@@ -10,7 +10,7 @@ from unittest import mock
 
 import numpy as np
 
-import final_evaluation_module as fem
+from rfr.evaluation import final_evaluation as fem
 
 
 class FinalEvaluationConfigCacheTest(unittest.TestCase):

@@ -35,7 +35,7 @@ from rfr.search.common.eval_metrics import (
 from rfr.preparation.fusion.count_map import FusionCountMap
 from rfr.preparation.fusion.fixed_action import select_fusion_eval_metadata
 from rfr.preparation.rescale.optimizer_cost import materialize_decoded_action
-from final_evaluation_module import (
+from rfr.evaluation.final_evaluation import (
     UnifiedFinalEvaluationModule,
     require_final_evaluation_protocol,
 )
@@ -1465,7 +1465,7 @@ class BLBActionFinalEvaluationModule:
         )
         path = Path(str(raw))
         if not path.is_absolute():
-            path = Path(__file__).resolve().parents[1] / path
+            path = Path(__file__).resolve().parents[3] / path
         return str(path)
 
     def _verify_model_installation(self, bridge: BLBNoiseRLBridge, decoded) -> Dict[str, Any]:

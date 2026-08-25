@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAYER_EVALUATOR = ROOT / "layer_importance_evaluator.py"
+LAYER_EVALUATOR = ROOT / "src/rfr/search/common/evaluator.py"
 PARALLEL_RUNNER = ROOT / "src/rfr/search/rl/stage1/parallel_runner.py"
 
 

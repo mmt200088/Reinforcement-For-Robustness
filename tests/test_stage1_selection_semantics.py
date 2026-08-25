@@ -3,7 +3,7 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = REPO_ROOT / "layer_importance_evaluator.py"
+SOURCE = REPO_ROOT / "src/rfr/search/common/evaluator.py"
 
 
 def _source_text() -> str:

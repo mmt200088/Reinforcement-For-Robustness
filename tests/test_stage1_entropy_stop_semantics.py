@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LAYER_EVALUATOR = ROOT / "layer_importance_evaluator.py"
+LAYER_EVALUATOR = ROOT / "src/rfr/search/common/evaluator.py"
 RL_TUNE = ROOT / "rl_tune.py"
 LAUNCHER = ROOT / "llama_7B_LayerImportance.sh"
 

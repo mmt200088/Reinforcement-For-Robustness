@@ -7,7 +7,7 @@ import types
 import unittest
 
 _REPO = Path(__file__).resolve().parents[1]
-_PAEAN_PATH = _REPO / "Paean" / "blb_action_eval.py"
+_PAEAN_PATH = _REPO / "src/rfr/evaluation/action_eval.py"
 
 
 def _load_paean_method(name, **runtime_globals):

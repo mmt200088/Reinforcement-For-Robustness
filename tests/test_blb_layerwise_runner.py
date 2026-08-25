@@ -2913,7 +2913,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"blb_v3_best_action_group": best_action_group', branch_source)
         self.assertNotIn('"blb_v3_best_action_group": None', branch_source)
 
-        evaluator_source = Path("layer_importance_evaluator.py").read_text(
+        evaluator_source = Path("src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8",
         )
         self.assertIn('checkpoint.get("strict_best")', evaluator_source)

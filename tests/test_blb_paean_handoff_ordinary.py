@@ -17,8 +17,8 @@ from unittest import mock
 import numpy as np
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-_EVALUATOR_PATH = _REPO / "layer_importance_evaluator.py"
-_PAEAN_PATH = _REPO / "Paean" / "blb_action_eval.py"
+_EVALUATOR_PATH = _REPO / "src/rfr/search/common/evaluator.py"
+_PAEAN_PATH = _REPO / "src/rfr/evaluation/action_eval.py"
 
 
 class FinalEvaluationSplitSourceTests(unittest.TestCase):

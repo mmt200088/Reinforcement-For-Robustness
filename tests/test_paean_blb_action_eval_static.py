@@ -5,7 +5,7 @@ from tests.source_inspection_utils import source_text
 
 class PaeanBLBActionEvalStaticTest(unittest.TestCase):
     def test_plot_rendering_is_opt_out_and_defaults_enabled(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         run_start = text.index("def run(")
         run_end = text.index("def _resolve_base_action", run_start)
         run_source = text[run_start:run_end]
@@ -16,7 +16,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("scatter_path = None", run_source)
 
     def test_batch_candidates_reset_independent_process_seed_before_eval(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         loop_start = text.index("for idx, candidate in enumerate(selected_candidates")
         loop_end = text.index("cost_match_diagnostics:", loop_start)
         loop = text[loop_start:loop_end]
@@ -53,7 +53,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("reseed_noise_rng(None)", lifecycle)
 
     def test_random_candidates_reset_seed_before_eval_and_restore_entropy(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         setup_start = text.index(
             "random_candidates, cost_match_diagnostics = ("
         )
@@ -79,7 +79,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         )
 
     def test_comparator_forward_accepts_configured_common_random_seed(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         run_start = text.index("def run(")
         run_end = text.index("def _resolve_base_action", run_start)
         run_source = text[run_start:run_end]
@@ -93,7 +93,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("reseed_noise_rng(self.random_seed)", text)
 
     def test_evaluation_protocol_random_groups_uses_actual_result_count(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         self.assertIn(
             '"random_groups": ("enabled" if len(candidate_results) > 1 else "disabled"),',
             text,
@@ -104,14 +104,14 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         )
 
     def test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
         self.assertIn('"action_ranges": self.action_ranges,', text)
         self.assertIn('"action_fixed": self.action_fixed,', text)
         self.assertNotIn('"action_ranges": list(self.action_ranges),', text)
         self.assertNotIn('"action_fixed": list(self.action_fixed),', text)
 
     def test_final_eval_uses_one_calibrated_context_for_every_decode_surface(self):
-        text = source_text("Paean/blb_action_eval.py")
+        text = source_text("src/rfr/evaluation/action_eval.py")
 
         self.assertIn("load_calibrated_stage2_action_context", text)
         self.assertNotIn("def _load_max_sfs(", text)

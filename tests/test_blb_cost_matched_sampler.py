@@ -1,6 +1,6 @@
 """Tests for the cost-matched random BLB action sampler.
 
-Exercises ``Paean.action_grid.build_cost_matched_random_action_candidates``
+Exercises ``rfr.evaluation.action_grid.build_cost_matched_random_action_candidates``
 end-to-end with a stubbed ``RescaleOptimizerBridge``-like object so the test
 runs without a working Rescale_optimizer install.
 """
@@ -115,7 +115,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
         }
 
     def test_invalid_only_bridge_returns_empty_with_full_attempts(self):
-        from Paean.action_grid import build_cost_matched_random_action_candidates
+        from rfr.evaluation.action_grid import build_cost_matched_random_action_candidates
 
         ctx = self._build_context(num_layers=4)
         bridge = _AlwaysInvalidBridge()
@@ -144,7 +144,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
         self.assertEqual(total_explained, diag.attempts)
 
     def test_perfect_match_bridge_fills_count_quickly(self):
-        from Paean.action_grid import build_cost_matched_random_action_candidates
+        from rfr.evaluation.action_grid import build_cost_matched_random_action_candidates
         from rfr.search.common.action_space import action_dims_for_config, sum_truncation_k_in_action
         import numpy as np
 
@@ -185,7 +185,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
             self.assertEqual(accepted[0].overrides["sampling"], "cost_matched_random")
 
     def test_diagnostics_counters_consistent(self):
-        from Paean.action_grid import build_cost_matched_random_action_candidates
+        from rfr.evaluation.action_grid import build_cost_matched_random_action_candidates
 
         ctx = self._build_context(num_layers=4)
         bridge = _StubBridge(target_bits=1000, target_fusion=5)

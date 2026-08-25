@@ -63,7 +63,7 @@ def _method_region(source: str, method_name: str) -> str:
 
 class DatasetProtocolPersistenceSourceTest(unittest.TestCase):
     def test_evaluator_persists_protocol_before_search_and_manifest_references_hash(self):
-        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(
+        source = (_REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text(
             encoding="utf-8"
         )
         init_region = _source_region(
@@ -355,7 +355,7 @@ class Stage1EvalCacheTest(unittest.TestCase):
 
 class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
     def test_single_gpu_evaluate_model_uses_shared_cache_helper(self):
-        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         init_region = _source_region(
             source,
             "        self._eval_cache =",
@@ -380,7 +380,7 @@ class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
 
 class Stage1RolloutPackingSourceTest(unittest.TestCase):
     def test_recurrent_rollout_tensor_pack_batches_scalar_transfers_to_target_device(self):
-        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         if "def _stage1_scalar_episode_values_to_tensor(" not in source:
             self.fail("Stage-1 recurrent rollout scalar tensors must batch directly to target device")
         helper_region = _source_region(
@@ -404,7 +404,7 @@ class Stage1RolloutPackingSourceTest(unittest.TestCase):
 
 class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
     def test_reward_history_uses_bounded_deque_not_front_pop(self):
-        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         init_region = _source_region(
             source,
             "        self.reward_history = deque",
@@ -433,7 +433,7 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         self.assertNotIn("len(self.reward_history) > RUNNING_REWARD_HISTORY_SIZE", update_region)
 
     def test_reward_statistics_maintain_running_sums_not_numpy_window_scans(self):
-        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (_REPO_ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         init_region = _source_region(
             source,
             "        self.reward_history = deque",
@@ -488,7 +488,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         evaluator.dataloaders = {}
 
     def test_validation_full_batches_are_collated_once_for_repeated_evaluation(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
 
         class CountingLoader:
             def __init__(self, batch):
@@ -519,7 +519,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertEqual(validation_loader.iter_calls, 1)
 
     def test_training_split_keeps_lazy_dataloader(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
 
         evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
         self._empty_split_registry(evaluator)
@@ -536,7 +536,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertIs(evaluator.dataloaders["train"], train_loader)
 
     def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
-        from layer_importance_evaluator import (
+        from rfr.search.common.evaluator import (
             LayerImportanceEvaluator,
             STAGE1_ORIGINAL_FUNCTION_DEGREE,
         )
@@ -588,7 +588,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertEqual(ev.model.eval_calls, 3)
 
     def test_changed_config_only_reinstalls_changed_layers(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
 
         class FakeModel:
             def eval(self):
@@ -637,7 +637,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         )
 
     def test_failed_delta_install_invalidates_cache_and_forces_full_repair(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
 
         class FakeModel:
             def eval(self):
@@ -694,7 +694,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         )
 
     def test_worker_eval_path_reuses_handler_install_without_eval_cache(self):
-        from layer_importance_evaluator import (
+        from rfr.search.common.evaluator import (
             LayerImportanceEvaluator,
             STAGE1_ORIGINAL_FUNCTION_DEGREE,
         )
@@ -1014,7 +1014,7 @@ class RunEvaluationDeferredSyncTest(unittest.TestCase):
         return out
 
     def _evaluator(self):
-        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rfr.search.common.evaluator import LayerImportanceEvaluator
         ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
         ev.dataset_key = "mrpc"
         ev.model = object()

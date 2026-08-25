@@ -25,7 +25,7 @@ class FirstInputExclusionTests(unittest.TestCase):
         self.assertIn("deprecated", branch)
 
     def test_paean_action_grid_rejects_first_input_selector(self):
-        source = (REPO_ROOT / "Paean" / "action_grid.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src/rfr/evaluation/action_grid.py").read_text(encoding="utf-8")
         marker = 'if name in ("first_input", "firstinput"):'
         start = source.index(marker)
         end = source.index("    for layer_idx", start)
@@ -36,7 +36,7 @@ class FirstInputExclusionTests(unittest.TestCase):
         self.assertIn("deprecated", branch)
 
     def test_final_eval_reports_do_not_emit_first_input_config(self):
-        source = (REPO_ROOT / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src/rfr/evaluation/action_eval.py").read_text(encoding="utf-8")
 
         self.assertNotIn('"first_input_sf": int(decoded.first_input_sf)', source)
         self.assertNotIn('"path": "first_input.fresh"', source)

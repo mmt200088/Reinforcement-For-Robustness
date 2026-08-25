@@ -20,7 +20,7 @@ class Stage1ElasticCheckpointTests(unittest.TestCase):
     def _training_source():
         return (
             Path(__file__).resolve().parents[1]
-            / "layer_importance_evaluator.py"
+            / "src/rfr/search/common/evaluator.py"
         ).read_text(encoding="utf-8")
 
     def test_detail_files_recover_to_committed_boundary(self):

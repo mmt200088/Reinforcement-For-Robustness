@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 from rfr.search.common.action_space import step_schedule
-from layer_importance_evaluator import LayerImportanceEvaluator
+from rfr.search.common.evaluator import LayerImportanceEvaluator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

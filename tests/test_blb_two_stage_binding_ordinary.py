@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class EmbeddedFinalEvaluationProtocolSourceTests(unittest.TestCase):
     def test_embedded_entrypoint_validates_protocol_before_runner_dispatch(self):
-        source = (ROOT / "Paean" / "embedded.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/evaluation/embedded.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         function = next(
             node for node in tree.body
@@ -89,7 +89,7 @@ def _selection_binding(result_path, *, gelu_degrees=(4, 2)):
 
 class OrdinaryTwoStageBindingTest(unittest.TestCase):
     def test_stage1_producer_puts_result_path_in_plain_binding(self):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         assignments = {
             target.id: node.value
@@ -709,13 +709,13 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertTrue(removed_helpers.isdisjoint(function_names))
 
     def test_outer_two_stage_result_uses_plain_stage_binding(self):
-        source_path = ROOT / "layer_importance_evaluator.py"
+        source_path = ROOT / "src/rfr/search/common/evaluator.py"
         source = source_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
         function_names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
         self.assertIn("_build_ordinary_two_stage_result", function_names)
         build = _load_function(
-            "layer_importance_evaluator.py",
+            "src/rfr/search/common/evaluator.py",
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
@@ -809,7 +809,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_optional_paean_failure_preserves_strict_stage2_result(self):
         build = _load_function(
-            "layer_importance_evaluator.py",
+            "src/rfr/search/common/evaluator.py",
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
@@ -883,7 +883,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_outer_two_stage_result_accepts_relative_and_absolute_result_path(self):
         build = _load_function(
-            "layer_importance_evaluator.py",
+            "src/rfr/search/common/evaluator.py",
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
@@ -941,7 +941,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
 
     def test_outer_two_stage_result_rejects_final_eval_for_infeasible_selection(self):
         build = _load_function(
-            "layer_importance_evaluator.py",
+            "src/rfr/search/common/evaluator.py",
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
@@ -981,7 +981,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             )
 
     def test_outer_two_stage_publication_has_no_authority_layer(self):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         block_start = source.index("ordinary_two_stage_payload = None")
         block_end = source.index(
             "        if ordinary_two_stage_payload is not None:",

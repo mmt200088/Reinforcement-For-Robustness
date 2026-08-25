@@ -783,7 +783,7 @@ def train(
     )
 
 
-    import layer_importance_evaluator as _lie
+    from rfr.search.common import evaluator as _lie
     _lie.set_ppo_update_interval(ppo_update_interval)
     print(
         f"[PPO] ppo_update_interval={_lie.PPO_UPDATE_INTERVAL} "
@@ -921,7 +921,7 @@ def train(
     parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
     parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
     parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
-    from layer_importance_evaluator import LayerImportanceEvaluator
+    from rfr.search.common.evaluator import LayerImportanceEvaluator
 
     importance_evaluator = LayerImportanceEvaluator(
         model=model,

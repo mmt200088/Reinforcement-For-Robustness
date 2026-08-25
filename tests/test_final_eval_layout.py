@@ -12,7 +12,7 @@ import os
 import tempfile
 import unittest
 
-from Paean.final_eval_layout import (
+from rfr.evaluation.final_eval_layout import (
     _gelu_choice_costs_q,
     _unique_extreme_cost_has_no_peer,
     build_cost_matched_stage1_configs,

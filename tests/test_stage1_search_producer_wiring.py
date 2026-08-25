@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class Stage1SearchProducerWiringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source = (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
         start = source.index(
             "        if (\n"
             "                not self.skip_stage1_rl\n"

@@ -14,7 +14,7 @@ import traceback
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
 
 from rfr.common.json_utils import to_jsonable as _to_jsonable
-from training_curve_plot import save_stage1_style_training_curve
+from rfr.evaluation.training_curve_plot import save_stage1_style_training_curve
 
 
 BLB_STATUS_FILENAME = "blb_stage2_status.json"

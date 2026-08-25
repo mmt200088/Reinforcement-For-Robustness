@@ -4,13 +4,13 @@ import dataclasses
 from pathlib import Path
 from typing import Optional, Type
 
-from final_evaluation_module import (
+from rfr.evaluation.final_evaluation import (
     UnifiedFinalEvaluationModule,
     require_final_evaluation_protocol,
 )
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT
 
-from .config import (
+from Paean.config import (
     DEFAULT_PRESET,
     FinalEvalSettings,
     default_config_for_algorithm,
@@ -112,7 +112,7 @@ def run_embedded_final_eval(
         and search_best_stage2.get("blb_v3_best_action_vec") is not None
     ) or bool(settings.action_config or settings.action_ranges or settings.action_fixed)
     if should_run_blb_action_eval:
-        from .blb_action_eval import BLBActionFinalEvaluationModule
+        from .action_eval import BLBActionFinalEvaluationModule
 
 
         random_enabled = bool(

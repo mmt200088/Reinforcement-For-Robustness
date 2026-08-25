@@ -163,7 +163,7 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         character-for-character identical install block on a per-worker handler,
         so this also covers its cache engagement."""
         try:
-            import layer_importance_evaluator as lie
+            from rfr.search.common import evaluator as lie
         except Exception as exc:  # pragma: no cover - heavy import, env-dependent
             self.skipTest(f"layer_importance_evaluator import failed: {exc}")
         from types import SimpleNamespace

@@ -13,8 +13,8 @@ from rfr.preparation.data.protocol import (
     TrainProbeIdentity,
 )
 from rfr.common.json_utils import read_json_file
-from layer_importance_evaluator import LayerImportanceEvaluator
-from final_evaluation_module import require_final_evaluation_protocol
+from rfr.search.common.evaluator import LayerImportanceEvaluator
+from rfr.evaluation.final_evaluation import require_final_evaluation_protocol
 from rfr.search.common.data_points import write_dataset_protocol
 
 
@@ -110,7 +110,7 @@ def test_search_reward_split_names_are_always_train_probe():
 
 
 def test_stage1_search_source_has_no_validation_guided_branch():
-    source = Path("layer_importance_evaluator.py").read_text(encoding="utf-8")
+    source = Path("src/rfr/search/common/evaluator.py").read_text(encoding="utf-8")
     stage1_flow = source[source.index("    def on_evaluate("):]
 
     assert "if USE_VALIDATION_FOR_REWARD" not in stage1_flow
@@ -193,7 +193,7 @@ def test_final_evaluation_requires_validation_full_and_matching_search_hash(tmp_
 
 
 def test_blb_final_eval_consumes_full_validation_once_per_repeat():
-    from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+    from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
     validation_ids = tuple(range(408))
     passes = []
