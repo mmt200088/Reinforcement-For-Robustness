@@ -1,0 +1,54 @@
+.............................................................. [  3%]
+....................................................... [  7%]
+..............................ss..................................... [ 11%]
+.................................................................... [ 15%]
+........................................................................ [ 19%]
+................................................................................................................ [ 26%]
+................................................. [ 29%]
+..................................................................... [ 33%]
+.................................................................... [ 37%]
+................................................................... [ 41%]
+........................................................................ [ 45%]
+...................................................... [ 49%]
+....................................................... [ 52%]
+........................................................... [ 55%]
+........................................................................ [ 60%]
+.............................................................. [ 64%]
+........................................................ [ 67%]
+........................................................................ [ 71%]
+...................................................... [ 74%]
+................................................................. [ 78%]
+......s................................................ [ 82%]
+.............................................................. [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+..........................................................................................               [100%]
+=============================== warnings summary ===============================
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+../../var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+tests/test_blb_layerwise_policy.py::LayerwisePolicyTest::test_initial_probabilities_disable_existing_epsilon_exploration
+  /hy-tmp/rfr_structure_reorganization_task/tests/test_blb_layerwise_policy.py:367: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+  Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+    self.assertAlmostEqual(float(sampled_log_prob), expected_selected_log_prob, places=6)
+
+tests/test_blb_stage2_rl_regressions.py: 33 warnings
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.pin_memory() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:46.)
+    return data.pin_memory(device)
+
+tests/test_blb_stage2_rl_regressions.py: 33 warnings
+  /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/utils/data/_utils/pin_memory.py:57: DeprecationWarning: The argument 'device' of Tensor.is_pinned() is deprecated. Please do not pass this argument. (Triggered internally at /pytorch/aten/src/ATen/native/Memory.cpp:31.)
+    return data.pin_memory(device)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_blb_chain_integrity.py:907: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_blb_chain_integrity.py:894: two-GPU probe runner test requires >=2 visible CUDA devices
+SKIPPED [1] tests/test_probe_runner_process_backend.py:1476: requires BLB_STAGE2_RUN_GPU_INTEGRATION=1 and at least five CUDA devices
+1660 passed, 3 skipped, 70 warnings, 267 subtests passed in 46.60s

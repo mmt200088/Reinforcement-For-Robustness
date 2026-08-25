@@ -1,0 +1,62 @@
+{
+  "baseline": {
+    "commit": "c799a2780a84ffc7c63e08bf834ec8cc4360ec42",
+    "pytest": "1659 passed, 3 hardware-count skips, 267 subtests",
+    "tree": "f6e6aafea6068bfc432a02dc27b848425d1b2240"
+  },
+  "created_at": "2026-08-25T18:57:29.122421+00:00",
+  "equivalence": {
+    "launcher_scientific_arguments_equal": true,
+    "launcher_sections_compared": 18,
+    "scientific_snapshot_cmp_rc": 0,
+    "scientific_snapshot_sha256": "9dddc4d6b0fcece4e61fd3456acedb57ae267e5e41d192e305d464052c1db4e2"
+  },
+  "final_gates": {
+    "algorithm_determinism": {
+      "repeat_comparison": "exact",
+      "stage1_and_stage2": [
+        "bo_rf",
+        "greedy",
+        "coinn_ga"
+      ]
+    },
+    "dry_run_commands": {
+      "algorithm_root_confinement": true,
+      "count": 18
+    },
+    "preset_files": {
+      "failures": 0,
+      "validated": 14
+    },
+    "production_surface_guard": "passed",
+    "python_module_imports": {
+      "failures": 0,
+      "modules": 126
+    },
+    "real_bert_smoke": {
+      "algorithm": "bo_rf",
+      "gpu_released": true,
+      "stage1_evaluation_count": 1,
+      "stage2_real_probe_completed": true,
+      "status": "smoke_only_complete"
+    },
+    "rescale_materialization": {
+      "fingerprint": "21c3e6f740f7aeeab80514041fbd4d2439f3ee4ccbcf2aea4dc53195e621f39d",
+      "graphs": 59,
+      "model_ready": true,
+      "optimizer_invalid": false
+    }
+  },
+  "final_source": {
+    "commit": "0f19b0000d962de45e5d8dbc7811e4d3dc12cf34",
+    "tests_and_model_analysis_absent": true,
+    "tracked_clean": true,
+    "tree": "9905b0a857ab8bbc64cc745184d10a5b6db01966"
+  },
+  "schema_version": "search_structure_reorganization_evidence_v1",
+  "verified_source_before_test_removal": {
+    "commit": "cd3ae58e98e3c220ba3630f4e00f52ce13b1720f",
+    "pytest": "1660 passed, 3 hardware-count skips, 267 subtests",
+    "tree": "8ad0c1e70fbe0991c41651a496d73a336495e69b"
+  }
+}
