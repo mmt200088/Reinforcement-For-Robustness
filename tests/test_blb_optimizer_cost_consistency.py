@@ -29,7 +29,7 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
         return SimpleNamespace(scaling_factor=int(sf))
 
     def _baseline_context(self, num_layers=2):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             build_optimizer_requests,
             describe_action_vector,
             load_max_sfs,
@@ -48,7 +48,7 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
         )
 
         def requests_for(action):
-            from blb_stage2_rl.action_space import action_vector_to_cfgs
+            from rfr.search.common.action_space import action_vector_to_cfgs
 
             decoded = action_vector_to_cfgs(
                 action,
@@ -98,7 +98,7 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
         self.assertNotEqual(effective_sig, baseline_sig)
 
     def test_effective_action_hash_ignores_inactive_compat_slots_only(self):
-        from blb_stage2_rl.candidate_store import effective_action_hash, raw_action_hash
+        from rfr.search.common.candidate_store import effective_action_hash, raw_action_hash
 
         baseline, desc, _requests_for = self._baseline_context(num_layers=2)
         l0b1 = next(

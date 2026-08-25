@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from blb_stage2_rl.action_space import action_dims_for_config, per_layer_field_offsets  # noqa: E402
+from rfr.search.common.action_space import action_dims_for_config, per_layer_field_offsets  # noqa: E402
 from rfr.common.json_utils import read_json_file, write_json_file  # noqa: E402
 
 

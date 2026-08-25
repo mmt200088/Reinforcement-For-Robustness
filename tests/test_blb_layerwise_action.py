@@ -16,10 +16,10 @@ for _path in (str(_REPO_ROOT),):
         sys.path.insert(0, _path)
 
 from rfr.preparation.fusion import count_map as fcm
-from blb_stage2_rl import layerwise_action as layerwise
+from rfr.search.common import layerwise_action as layerwise
 
 try:
-    from blb_stage2_rl.action_space import (
+    from rfr.search.common.action_space import (
         make_all_max_action_vector as _make_all_max_action_vector,
     )
 except ImportError:

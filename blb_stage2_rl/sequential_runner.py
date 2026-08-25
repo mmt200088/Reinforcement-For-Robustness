@@ -20,25 +20,25 @@ from elastic_gpu import (
     raise_if_elastic_gpu_restart_requested,
 )
 from rfr.preparation.data.protocol import PROTOCOL_SCHEMA, TRAIN_PROBE_SPLIT
-from rl_data_points import (
+from rfr.search.common.data_points import (
     RLDataPointWriter,
     make_unique_run_id,
     write_strict_json_file,
 )
 
-from .action_space import K_LEVELS
+from rfr.search.common.action_space import K_LEVELS
 from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_model_type
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
     SequentialPolicyConfig,
     SequentialPPOConfig,
 )
-from .truncation_levels import (
+from rfr.search.common.truncation_levels import (
     validate_exact_k_domain,
 )
 
 if TYPE_CHECKING:
-    from .statistical_constraints import BaselineReference
+    from rfr.search.common.statistical_constraints import BaselineReference
 
 
 CUDA_RNG_ROLE_REGISTRY_VERSION = 1
@@ -327,7 +327,7 @@ def _collect_robust_baseline_reference(
         ) -> Tuple["BaselineReference", Dict[str, Any]]:
     """Collect deterministic grouped baseline trials for robust constraints."""
     from .seed_utils import derive_baseline_group_probe_seed
-    from .statistical_constraints import (
+    from rfr.search.common.statistical_constraints import (
         DegenerateBaselineVariance,
         TrialSeries,
         build_baseline_reference,
@@ -491,12 +491,12 @@ def _build_layerwise_candidate_identity_context(
         stage1_selection_binding: Mapping[str, Any] | None = None,
         ) -> Dict[str, Any]:
     """Bind layerwise evidence to the ordinary scientific run context."""
-    from .candidate_store import build_candidate_identity_context, sha256_json
+    from rfr.search.common.candidate_store import build_candidate_identity_context, sha256_json
     from rfr.preparation.data.protocol import (
         PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
         TRAIN_PROBE_SPLIT as SEARCH_EVIDENCE_SPLIT,
     )
-    from .layerwise_action import (
+    from rfr.search.common.layerwise_action import (
         K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
         LAYERWISE_DECODE_VERSION,
@@ -741,10 +741,10 @@ def _run_layerwise_training_branch(
 
     from rfr.common.json_utils import to_jsonable
 
-    from .candidate_store import CandidateStore, sha256_json
-    from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
+    from rfr.search.common.candidate_store import CandidateStore, sha256_json
+    from rfr.search.common.diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
     from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
-    from .layerwise_action import (
+    from rfr.search.common.layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
         LAYERWISE_DECODE_VERSION,
@@ -780,8 +780,8 @@ def _run_layerwise_training_branch(
         policy_network_architecture,
         validate_checkpoint_policy_network,
     )
-    from .persistence import write_training_curves
-    from .precision_presets import (
+    from rfr.search.common.persistence import write_training_curves
+    from rfr.search.common.precision_presets import (
         PRECISION_PRESET_VERSION,
         PRECISION_PRESETS,
         allocated_precision_tolerances,
@@ -1174,7 +1174,7 @@ def _run_layerwise_training_branch(
 
         pending_strict_context_writer = None
         if strict_validator is not None:
-            from .statistical_constraints import (
+            from rfr.search.common.statistical_constraints import (
                 baseline_reference_resume_payload,
             )
 
@@ -1889,7 +1889,7 @@ def _run_layerwise_training_branch(
     )
 
     def layerwise_slots_view(action_vec):
-        from .action_io import action_vec_to_slots_list
+        from rfr.search.common.action_io import action_vec_to_slots_list
 
         return action_vec_to_slots_list(
             action_vec,
@@ -3500,7 +3500,7 @@ def _build_completed_search_resume_result(
         inner_run: Mapping[str, Any],
         ) -> dict[str, Any]:
     from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
-    from .layerwise_action import describe_layerwise_action_matrix
+    from rfr.search.common.layerwise_action import describe_layerwise_action_matrix
     from .training import _build_best_noise_config
 
     manifest = dict(inner_run.get("manifest") or {})
@@ -3884,7 +3884,7 @@ def _restore_pending_strict_resume_evidence(
         ) -> dict[str, Any]:
     """Restore and validate every baseline reference used by strict resume."""
     from .layerwise_runner import LayerwiseValidationBanks
-    from .statistical_constraints import baseline_reference_from_resume_payload
+    from rfr.search.common.statistical_constraints import baseline_reference_from_resume_payload
 
     if not isinstance(context, Mapping):
         raise ValueError("pending strict resume context must be a mapping")
@@ -4501,13 +4501,13 @@ def _run_sequential_via_runner_locked(
     ``best_noise_config`` (all-maximum config), ``limit_loss`` /
     ``limit_p`` / ``limit_s``, ``baseline_tot_c``.
     """
-    from .action_io import action_vec_to_slots_list
-    from .diagnostics import (
+    from rfr.search.common.action_io import action_vec_to_slots_list
+    from rfr.search.common.diagnostics import (
         EpisodeStats,
         PPOUpdateStats,
         RLDiagnosticsRecorder,
     )
-    from .persistence import (
+    from rfr.search.common.persistence import (
         BLBRewardCrashWatcher,
         BLBStatusBoard,
         BLBStepDetailsWriter,
@@ -5006,7 +5006,7 @@ def _run_sequential_via_runner_locked(
                     LayerwiseValidationBank,
                     LayerwiseValidationBanks,
                 )
-                from .statistical_constraints import build_baseline_reference
+                from rfr.search.common.statistical_constraints import build_baseline_reference
 
                 promotion_reference = build_baseline_reference(
                     [

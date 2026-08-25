@@ -194,7 +194,7 @@ class ReconstructFusionGroupBaselineOwnedBlocksTest(unittest.TestCase):
 
         with mock.patch.dict(
             sys.modules,
-            {"blb_stage2_rl.action_space": fake_action_space},
+            {"rfr.search.common.action_space": fake_action_space},
         ):
             result = ffa.reconstruct_fusion_group(
                 [0, 0, 7, 1, 0, 0],
@@ -219,7 +219,7 @@ class ReconstructFusionGroupBaselineOwnedBlocksTest(unittest.TestCase):
 
         with mock.patch.dict(
             sys.modules,
-            {"blb_stage2_rl.action_space": fake_action_space},
+            {"rfr.search.common.action_space": fake_action_space},
         ):
             with self.assertRaisesRegex(KeyError, "block4"):
                 ffa.reconstruct_fusion_group(

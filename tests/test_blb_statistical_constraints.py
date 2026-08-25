@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pytest
 
-from blb_stage2_rl.statistical_constraints import (
+from rfr.search.common.statistical_constraints import (
     DegenerateBaselineVariance,
     InsufficientBaselineTrials,
     TrialSeries,
@@ -481,7 +481,7 @@ def test_candidate_assessment_is_deterministic_for_the_same_seed():
 
 
 def test_candidate_assessment_chunks_bootstrap_without_changing_result(monkeypatch):
-    from blb_stage2_rl import statistical_constraints as constraints
+    from rfr.search.common import statistical_constraints as constraints
 
     reference = _reference()
     candidate = _candidate(

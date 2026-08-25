@@ -49,7 +49,7 @@ import torch.nn as nn
 from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
 from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
-from .action_space import ActionDecodeResult
+from rfr.search.common.action_space import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
 
 

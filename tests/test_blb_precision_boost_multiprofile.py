@@ -25,7 +25,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "configs/prepar
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from blb_stage2_rl import precision_boost as pb
+from rfr.search.common import precision_boost as pb
 
 PROFILES = ["mrpc", "rte", "sst2", "mrpc_large", "rte_large", "sst2_large"]
 

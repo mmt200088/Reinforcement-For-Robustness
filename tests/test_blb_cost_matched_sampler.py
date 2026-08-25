@@ -97,7 +97,7 @@ class _AlwaysInvalidBridge:
 
 class CostMatchedSamplerTests(unittest.TestCase):
     def _build_context(self, num_layers: int = 4):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             load_max_sfs,
             make_all_max_action_vector,
             sum_truncation_k_in_action,
@@ -145,7 +145,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
 
     def test_perfect_match_bridge_fills_count_quickly(self):
         from Paean.action_grid import build_cost_matched_random_action_candidates
-        from blb_stage2_rl.action_space import action_dims_for_config, sum_truncation_k_in_action
+        from rfr.search.common.action_space import action_dims_for_config, sum_truncation_k_in_action
         import numpy as np
 
         ctx = self._build_context(num_layers=4)
@@ -214,7 +214,7 @@ class CostMatchedSamplerTests(unittest.TestCase):
 
 class SumTruncationKHelperTests(unittest.TestCase):
     def test_sum_matches_avg_times_count(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             avg_truncation_k_in_action,
             make_all_max_action_vector,
             make_all_min_action_vector,

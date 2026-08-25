@@ -85,7 +85,7 @@ def reconstruct_fusion_group(
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    from blb_stage2_rl.action_space import K_LEVELS, step_schedule
+    from rfr.search.common.action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     schedule = step_schedule(
@@ -181,7 +181,7 @@ def build_boosted_overrides_from_group(
     if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
         raise ValueError("fusion group requires option_by_step or option_by_graph")
 
-    from blb_stage2_rl.action_space import K_LEVELS, step_schedule
+    from rfr.search.common.action_space import K_LEVELS, step_schedule
 
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)

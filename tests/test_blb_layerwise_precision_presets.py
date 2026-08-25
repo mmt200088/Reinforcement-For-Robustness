@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 from rfr.preparation.fusion.count_map import FusionCountMap
-from blb_stage2_rl.layerwise_action import (
+from rfr.search.common.layerwise_action import (
     LAYERWISE_SLOT_NAMES,
     apply_layer_action,
     compute_variable_cost_from_action_matrix,
@@ -16,7 +16,7 @@ from blb_stage2_rl.layerwise_action import (
     materialize_layerwise_counterfactuals,
     layerwise_schedule,
 )
-from blb_stage2_rl.precision_presets import (
+from rfr.search.common.precision_presets import (
     PRECISION_PRESETS,
     allocated_precision_tolerances,
     network_axis_weights,
@@ -229,7 +229,7 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
         )
 
     def test_every_preset_reaches_legacy_vector_and_boosted_overrides(self):
-        from blb_stage2_rl.truncation_levels import K_LEVELS
+        from rfr.search.common.truncation_levels import K_LEVELS
 
         baseline = np.full(12 * 73 + 1, 14, dtype=int)
         for layer_idx in range(12):
@@ -266,7 +266,7 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
                     )
 
     def test_counterfactuals_isolate_compute_and_communication_axes(self):
-        from blb_stage2_rl.truncation_levels import K_LEVELS
+        from rfr.search.common.truncation_levels import K_LEVELS
 
         baseline = np.full(12 * 73 + 1, 14, dtype=int)
         baseline_k_index = K_LEVELS.index(13)
@@ -336,7 +336,7 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
         )
 
     def test_retargeted_axis_reference_splits_only_precision_limits(self):
-        from blb_stage2_rl.statistical_constraints import (
+        from rfr.search.common.statistical_constraints import (
             TrialSeries,
             build_baseline_reference,
             retarget_precision_tolerance,

@@ -15,13 +15,13 @@ MANIFEST_PATH = REPO_ROOT / "scripts" / "blb_make_run_manifest.py"
 
 def _load_manifest_module():
     pkg = types.ModuleType("blb_stage2_rl")
-    action_space = types.ModuleType("blb_stage2_rl.action_space")
+    action_space = types.ModuleType("rfr.search.common.action_space")
     action_space.action_dims_for_config = lambda num_layers: [2] * (int(num_layers) + 1)
     action_space.per_layer_field_offsets = lambda: [(1, "a", "F"), (2, "b", "W")]
     original_pkg = sys.modules.get("blb_stage2_rl")
-    original_action_space = sys.modules.get("blb_stage2_rl.action_space")
+    original_action_space = sys.modules.get("rfr.search.common.action_space")
     sys.modules["blb_stage2_rl"] = pkg
-    sys.modules["blb_stage2_rl.action_space"] = action_space
+    sys.modules["rfr.search.common.action_space"] = action_space
     try:
         spec = importlib.util.spec_from_file_location("blb_make_run_manifest", MANIFEST_PATH)
         module = importlib.util.module_from_spec(spec)
@@ -34,9 +34,9 @@ def _load_manifest_module():
         else:
             sys.modules["blb_stage2_rl"] = original_pkg
         if original_action_space is None:
-            sys.modules.pop("blb_stage2_rl.action_space", None)
+            sys.modules.pop("rfr.search.common.action_space", None)
         else:
-            sys.modules["blb_stage2_rl.action_space"] = original_action_space
+            sys.modules["rfr.search.common.action_space"] = original_action_space
 
 
 class BlbMakeRunManifestTest(unittest.TestCase):

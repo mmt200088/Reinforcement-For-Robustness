@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("torch")
 
 try:
-    from blb_stage2_rl.eval_metrics import finalize_probe_trial_metrics
+    from rfr.search.common.eval_metrics import finalize_probe_trial_metrics
 except Exception as exc:  # pragma: no cover - torch-free local environments
     pytest.skip(f"Stage-2 probe modules are unavailable: {exc}", allow_module_level=True)
 

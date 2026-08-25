@@ -19,7 +19,7 @@ from rfr.preparation.rescale.bridge import (
     sync_block5_aux_fresh_binding,
 )
 
-from blb_stage2_rl.action_space import (
+from rfr.search.common.action_space import (
     ActionDecodeResult,
     MaxSFsTable,
     action_vector_to_cfgs,
@@ -528,7 +528,7 @@ def evaluate_action_for_cost(
         attn_degree=attn_degree,
     )
     if boosted_overrides:
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             _block_default_N,
             _degree_for_layer,
             build_block_cfg_from_field_values,

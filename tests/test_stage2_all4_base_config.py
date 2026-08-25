@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 
-from blb_stage2_rl.action_space import step_schedule
+from rfr.search.common.action_space import step_schedule
 from layer_importance_evaluator import LayerImportanceEvaluator
 
 

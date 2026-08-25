@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .action_space import make_all_max_action_vector
-from .layerwise_action import (
+from rfr.search.common.action_space import make_all_max_action_vector
+from rfr.search.common.layerwise_action import (
     LAYERWISE_SLOT_NAMES,
     LayerwiseDecodedAction,
     LayerwiseStepSpec,
@@ -18,7 +18,7 @@ from .layerwise_action import (
     compute_variable_cost,
     layerwise_schedule,
 )
-from .precision_presets import validate_communication_importance_ratio
+from rfr.search.common.precision_presets import validate_communication_importance_ratio
 from rfr.preparation.rescale.block_materialization import (
     BlockRuntimeResult,
     evaluate_block_from_full_vector,

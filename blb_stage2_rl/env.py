@@ -20,7 +20,7 @@ import torch
 from blb_rl_bridge import BLBNoiseRLBridge
 from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
 
-from .action_space import (
+from rfr.search.common.action_space import (
     K_LEVELS,
     MaxSFsTable,
     action_dims_for_config,
@@ -28,7 +28,7 @@ from .action_space import (
     make_all_max_action_vector,
     validate_action_vector,
 )
-from .candidate_store import action_hash
+from rfr.search.common.candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
 from rfr.preparation.rescale.optimizer_cost import materialize_action_for_model
 from .probe_runner import (
@@ -43,7 +43,7 @@ from .reward import (
     RewardWeights,
     compute_reward,
 )
-from .statistical_constraints import TrialSeries, assess_candidate
+from rfr.search.common.statistical_constraints import TrialSeries, assess_candidate
 
 
 _NULL_CTX = contextlib.nullcontext()

@@ -57,7 +57,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         )
 
     def test_probe_batch_metrics_are_sample_weighted_with_tail_batch(self):
-        from blb_stage2_rl.eval_metrics import weighted_probe_batch_means
+        from rfr.search.common.eval_metrics import weighted_probe_batch_means
 
         loss, m1, m2 = weighted_probe_batch_means(
             losses=[0.0, 10.0],
@@ -70,7 +70,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertAlmostEqual(m2, 0.8)
 
     def test_mrpc_metric2_is_weighted_f1_not_accuracy(self):
-        from blb_stage2_rl.eval_metrics import finalize_probe_trial_metrics
+        from rfr.search.common.eval_metrics import finalize_probe_trial_metrics
         from blb_stage2_rl.inference_eval import run_installed_probe_trial
         import blb_stage2_rl.probe_runner as probe_mod
 

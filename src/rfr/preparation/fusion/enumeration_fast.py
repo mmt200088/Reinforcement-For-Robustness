@@ -48,7 +48,7 @@ import numpy as np
 from . import count_map as fcm
 from . import enumeration as fusion_enum
 
-import noise_tables
+from rfr.search.common import noise_tables
 
 InstalledNoisePoint = fcm.InstalledNoisePoint
 EvaluatedConfig = fusion_enum.EvaluatedConfig
@@ -354,7 +354,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
     ``sync_block*`` functions. Raises on any wiring that does not behave as
     an exact identity map of the decoded SF.
     """
-    from blb_stage2_rl.action_space import (
+    from rfr.search.common.action_space import (
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _BLOCK_SPECS,
         _field_level_values,

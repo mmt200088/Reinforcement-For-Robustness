@@ -9,7 +9,7 @@ try:
 except ImportError:  # pragma: no cover - exercised on dependency-light clients
     torch = None
 
-from blb_stage2_rl.layerwise_action import LayerwiseStepSpec
+from rfr.search.common.layerwise_action import LayerwiseStepSpec
 
 
 @unittest.skipIf(torch is None, "torch is required for layerwise policy tests")
@@ -827,7 +827,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(advantages_t, torch.full((12,), 2.0))
 
     def test_factorized_ppo_converges_both_resource_families_on_contextual_bandit(self):
-        from blb_stage2_rl.layerwise_action import (
+        from rfr.search.common.layerwise_action import (
             compute_variable_cost_from_action_matrix,
         )
         from blb_stage2_rl.sequential_policy import (

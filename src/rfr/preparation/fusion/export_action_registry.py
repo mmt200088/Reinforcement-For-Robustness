@@ -34,7 +34,7 @@ def _load_action_space_deps() -> Dict[str, Any]:
     """Import action-space helpers only when registry generation needs them."""
     global _ACTION_SPACE_DEPS
     if _ACTION_SPACE_DEPS is None:
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             K_LEVELS,
             describe_action_vector,
             load_max_sfs,
@@ -266,7 +266,7 @@ def _registry_record(record: Dict[str, Any], *, k_levels: Sequence[int] | None =
         "N_source": "block default N / degree-aware action_space rule",
         "rotation_dependency": None,
         "notes": note,
-        "source": "blb_stage2_rl.action_space.describe_action_vector",
+        "source": "rfr.search.common.action_space.describe_action_vector",
     }
 
 

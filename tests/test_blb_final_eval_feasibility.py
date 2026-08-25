@@ -5,7 +5,7 @@ from pathlib import Path
 
 class BLBFinalEvalFeasibilityTests(unittest.TestCase):
     def test_loss_is_report_only_for_feasible_result(self):
-        from blb_stage2_rl.feasibility import build_final_eval_feasibility
+        from rfr.search.common.feasibility import build_final_eval_feasibility
 
         report = build_final_eval_feasibility(
             optimizer_valid=True,
@@ -30,7 +30,7 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
         self.assertTrue(report["strict_feasible"])
 
     def test_unknown_threshold_source_never_claims_feasibility(self):
-        from blb_stage2_rl.feasibility import build_final_eval_feasibility
+        from rfr.search.common.feasibility import build_final_eval_feasibility
 
         report = build_final_eval_feasibility(
             optimizer_valid=True,
@@ -56,7 +56,7 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
         )
 
     def test_feasibility_report_writes_json_and_markdown(self):
-        from blb_stage2_rl.feasibility import (
+        from rfr.search.common.feasibility import (
             build_final_eval_feasibility,
             write_final_eval_feasibility_report,
         )
@@ -84,7 +84,7 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
             self.assertIn("strict_z", text)
 
     def test_feasibility_report_uses_shared_json_writer(self):
-        source = (Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "feasibility.py").read_text(
+        source = (Path(__file__).resolve().parents[1] / "src/rfr/search/common/feasibility.py").read_text(
             encoding="utf-8"
         )
 

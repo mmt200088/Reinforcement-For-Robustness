@@ -88,24 +88,16 @@ from dataclasses import dataclass, field, fields as dataclass_fields
 import heapq
 import json
 from numbers import Integral
-import os
-import sys
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO, Tuple
 
 import numpy as np
 
-from rl_data_points import _strict_jsonable
+from rfr.search.common.data_points import _strict_jsonable
 from rfr.common.jsonl_utils import iter_jsonl, recover_jsonl_file
 from rfr.common.stats_utils import mean_or_default
 
-try:
-    from .candidate_store import action_hash
-except Exception:
-    _HERE = os.path.dirname(os.path.abspath(__file__))
-    if _HERE not in sys.path:
-        sys.path.insert(0, _HERE)
-    from candidate_store import action_hash
+from .candidate_store import action_hash
 
 
 @dataclass
@@ -359,7 +351,7 @@ class RLDiagnosticsRecorder:
                 the human-readable slot list (label + scaling_factor /
                 truncation_bits). Injected by the caller so this module
                 stays standalone — typical wiring uses
-                :func:`blb_stage2_rl.action_io.action_vec_to_slots_list`.
+                :func:`rfr.search.common.action_io.action_vec_to_slots_list`.
             schema_version: emitted in ``best_action_vec.json`` so future
                 Paean parsers can pick the right reader.
             history_window: optional maximum retained episode rows for rolling

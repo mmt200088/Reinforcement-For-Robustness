@@ -25,7 +25,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
     def test_layer0_block1_k_is_materialized_installed_and_verified(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         action_space = (
-            repo / "blb_stage2_rl" / "action_space.py"
+            repo / "src/rfr/search/common/action_space.py"
         ).read_text(encoding="utf-8")
         bridge = (repo / "blb_rl_bridge.py").read_text(encoding="utf-8")
         paean = (
@@ -50,7 +50,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_training_diagnostics_persist_post_replan_install_identity(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        diagnostics = (repo / "blb_stage2_rl" / "diagnostics.py").read_text(
+        diagnostics = (repo / "src/rfr/search/common/diagnostics.py").read_text(
             encoding="utf-8"
         )
         sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
@@ -172,7 +172,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
         final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
-        eval_metrics = (repo / "blb_stage2_rl" / "eval_metrics.py").read_text(encoding="utf-8")
+        eval_metrics = (repo / "src/rfr/search/common/eval_metrics.py").read_text(encoding="utf-8")
 
         self.assertIn("def pack_repeat_evaluation(", eval_metrics)
         self.assertIn("pack_repeat_evaluation", paean)
@@ -193,7 +193,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
     def test_stable_json_hash_callers_use_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        candidate_store = (repo / "blb_stage2_rl" / "candidate_store.py").read_text(encoding="utf-8")
+        candidate_store = (repo / "src/rfr/search/common/candidate_store.py").read_text(encoding="utf-8")
         registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
 
         self.assertRegex(candidate_store, r"from rfr.common.json_utils import .*\bstable_json_hash\b")

@@ -14,6 +14,7 @@ import unittest
 import numpy as np
 
 from rfr.preparation.fusion import count_map as fusion_count_map
+from rfr.search.common import layerwise_action
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -42,7 +43,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             return module
 
         cls.fcm = fusion_count_map
-        cls.layerwise = load(f"{pkg_name}.layerwise_action", BLB_DIR / "layerwise_action.py")
+        cls.layerwise = layerwise_action
 
         action_space = types.ModuleType(f"{pkg_name}.action_space")
 
@@ -568,9 +569,7 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             return module
 
         cls.fcm = fusion_count_map
-        cls.layerwise_action = load(
-            f"{pkg_name}.layerwise_action", BLB_DIR / "layerwise_action.py",
-        )
+        cls.layerwise_action = layerwise_action
 
         action_space = types.ModuleType(f"{pkg_name}.action_space")
         action_space._BLOCK_SPECS = {

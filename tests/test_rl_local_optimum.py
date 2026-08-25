@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import rl_local_optimum as rlo
+from rfr.search.common import local_optimum as rlo
 
 
 class RLLocalOptimumStreamingInputTest(unittest.TestCase):

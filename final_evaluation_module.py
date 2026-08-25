@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
-from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
+from rfr.search.common.eval_metrics import pack_repeat_evaluation
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT, TRAIN_PROBE_SPLIT
 from rfr.common.json_utils import read_json_file, to_jsonable
 

@@ -3,14 +3,14 @@ from unittest import mock
 
 
 def load_candidate_store_module():
-    from blb_stage2_rl import candidate_store
+    from rfr.search.common import candidate_store
 
     return candidate_store
 
 
 class BLBCostSemanticsTests(unittest.TestCase):
     def test_avg_truncation_k_uses_direct_sum_without_numpy_mean(self):
-        from blb_stage2_rl import action_space
+        from rfr.search.common import action_space
 
         num_layers = 2
         action = action_space.make_all_max_action_vector(num_layers=num_layers)
@@ -23,7 +23,7 @@ class BLBCostSemanticsTests(unittest.TestCase):
         self.assertAlmostEqual(actual, expected)
 
     def test_truncation_k_helpers_accumulate_without_gather_list(self):
-        from blb_stage2_rl import action_space
+        from rfr.search.common import action_space
 
         num_layers = 3
         action = action_space.make_all_min_action_vector(num_layers=num_layers)

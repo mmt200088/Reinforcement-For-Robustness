@@ -144,7 +144,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         "torch required for calibrated action decode",
     )
     def test_calibrated_action_context_matches_mrpc_block3_static_baseline(self):
-        from blb_stage2_rl.action_space import action_vector_to_cfgs
+        from rfr.search.common.action_space import action_vector_to_cfgs
         from rfr.preparation.rescale.baseline_bootstrap import (
             load_calibrated_stage2_action_context,
         )
@@ -177,7 +177,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         )
 
     def test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs(self):
-        from blb_stage2_rl.action_space import describe_action_vector
+        from rfr.search.common.action_space import describe_action_vector
 
         gelu = [1, 4]
         softmax = [2, 5]
@@ -248,7 +248,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         "torch required for action-vector decode",
     )
     def test_static_skeletons_block4_wo_rescale_uses_rl_field_name(self):
-        from blb_stage2_rl.action_space import describe_action_vector
+        from rfr.search.common.action_space import describe_action_vector
 
         baseline = StaticSkeletonsBaseline(
             dataset="mrpc",

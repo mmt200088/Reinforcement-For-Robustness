@@ -6,7 +6,7 @@ from unittest import mock
 import numpy as np
 
 import blb_stage2_rl.search_baselines as search_baselines_module
-from blb_stage2_rl.layerwise_action import (
+from rfr.search.common.layerwise_action import (
     decode_layer_gene,
     decode_layerwise_action_genes,
     encode_layer_gene,

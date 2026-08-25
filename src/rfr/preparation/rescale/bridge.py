@@ -665,7 +665,7 @@ def _derive_t_new_table_from_invoker(invoker: Any) -> Dict[str, Tuple[_SkelEntry
     if not archive:
         return {}
     try:
-        from blb_stage2_rl import skeleton_stage_map as _ssm
+        from rfr.search.common import skeleton_stage_map as _ssm
     except Exception:
         return {}
     out: Dict[str, Tuple[_SkelEntry, ...]] = {}

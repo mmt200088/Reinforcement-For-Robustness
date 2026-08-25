@@ -5,7 +5,7 @@ Two layers of checks:
 * ``Block3RuntimeSourceTest`` -- torch-free source-text guarantees (always run,
   locally + CI).
 * ``Block3RuntimeBehaviorTest`` -- behavioral checks that import
-  ``blb_stage2_rl.action_space``. The package ``__init__`` imports torch, so
+  ``rfr.search.common.action_space``. The package ``__init__`` imports torch, so
   these run in CI / on the server (torch installed) and skip cleanly on a
   torch-free dev box.
 """
@@ -18,12 +18,12 @@ class Block3RuntimeSourceTest(unittest.TestCase):
     """Static guarantees for baseline-owned SFs plus runtime-owned K."""
 
     def test_block_order_tuples_exclude_block3(self):
-        text = source_text("blb_stage2_rl/action_space.py")
+        text = source_text("src/rfr/search/common/action_space.py")
         self.assertIn("_LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 4, 5)", text)
         self.assertIn("_LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 4, 5)", text)
 
     def test_horizon_formula_drops_block3(self):
-        text = source_text("blb_stage2_rl/action_space.py")
+        text = source_text("src/rfr/search/common/action_space.py")
 
         self.assertIn("return 3 + (L - 1) * 4", text)
         self.assertNotIn("return 4 + (L - 1) * 5", text)
@@ -31,7 +31,7 @@ class Block3RuntimeSourceTest(unittest.TestCase):
     def test_block3_field_table_still_defined(self):
 
 
-        text = source_text("blb_stage2_rl/action_space.py")
+        text = source_text("src/rfr/search/common/action_space.py")
         self.assertIn("_BLOCK3_FIELDS", text)
         self.assertIn("3: _BLOCK3_FIELDS", text)
 
@@ -41,7 +41,7 @@ class Block3RuntimeSourceTest(unittest.TestCase):
         self.assertIn("self._pending_full_vec = self._baseline_action_vec.copy()", text)
 
     def test_optimizer_requests_do_not_skip_block3(self):
-        text = source_text("blb_stage2_rl/action_space.py")
+        text = source_text("src/rfr/search/common/action_space.py")
         start = text.index("def build_optimizer_requests(")
         end = text.index("\n    return out", start) + len("\n    return out")
         body = text[start:end]
@@ -58,9 +58,9 @@ class Block3RuntimeBehaviorTest(unittest.TestCase):
 
     def setUp(self):
         try:
-            from blb_stage2_rl import action_space as A
+            from rfr.search.common import action_space as A
         except Exception as exc:
-            self.skipTest(f"blb_stage2_rl.action_space unimportable: {exc}")
+            self.skipTest(f"rfr.search.common.action_space unimportable: {exc}")
         self.A = A
 
     def test_step_schedule_has_47_steps_no_block3(self):

@@ -12,7 +12,7 @@ import torch
 
 from blb_rl_bridge import BLBNoiseRLBridge
 from function_handler import reseed_noise_rng
-from blb_stage2_rl.action_space import (
+from rfr.search.common.action_space import (
     ActionDecodeResult,
     _block_default_N,
     _decode_block_field_values,
@@ -27,8 +27,8 @@ from blb_stage2_rl.action_space import (
 from rfr.preparation.rescale.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
 )
-from blb_stage2_rl.feasibility import build_final_eval_feasibility
-from blb_stage2_rl.eval_metrics import (
+from rfr.search.common.feasibility import build_final_eval_feasibility
+from rfr.search.common.eval_metrics import (
     pack_repeat_evaluation,
     summarize_selected_vs_random_results,
 )

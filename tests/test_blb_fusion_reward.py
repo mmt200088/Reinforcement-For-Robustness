@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import unittest
 
-from blb_stage2_rl import action_space as _asp
+from rfr.search.common import action_space as _asp
 from rfr.preparation.fusion import cost as fusion_cost
 from rfr.preparation.fusion import count_map as fcm
 from rfr.preparation.fusion import enumeration as fusion_enum
-from blb_stage2_rl import layerwise_action
+from rfr.search.common import layerwise_action
 from blb_stage2_rl import reward as rwd
 
 
@@ -23,7 +23,7 @@ class _Sig:
 
 
 def _layerwise_actions(*, block4_fusion=0, preset_index=0):
-    from blb_stage2_rl.precision_presets import PRECISION_PRESETS
+    from rfr.search.common.precision_presets import PRECISION_PRESETS
 
     preset = PRECISION_PRESETS[preset_index]
     actions = []

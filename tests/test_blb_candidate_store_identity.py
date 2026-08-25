@@ -11,7 +11,7 @@ from unittest import mock
 class BLBCandidateStoreIdentityTests(unittest.TestCase):
     @staticmethod
     def _representative_compact_fixture():
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [
             (action_idx * 5 + 1) % 6
@@ -179,7 +179,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         }
 
     def test_flat_action_normalization_avoids_per_item_nested_checks(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         class IntLike:
             def __init__(self, value):
@@ -208,7 +208,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
     def test_normalize_action_indices_accepts_ndarray_without_tolist_materialization(self):
         import numpy as np
 
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         class NoToListArray(np.ndarray):
             def tolist(self):
@@ -218,7 +218,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(store_mod.normalize_action_indices(action), [1, 2, 3, 4])
 
     def test_nested_one_shot_action_iterator_is_not_partially_consumed(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         action = (item for item in (1, [2, 3], 4))
 
@@ -232,7 +232,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         )
 
     def test_action_hash_caches_by_normalized_action_tuple(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         action = [1, 2, 3]
         original_dumps = store_mod.json.dumps
@@ -255,7 +255,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(dumps_calls, 0)
 
     def test_read_all_skips_blank_lines_without_strip_copy(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         class NoStripLine(str):
             def strip(self, *_args, **_kwargs):
@@ -292,7 +292,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual([record["action_indices"] for record in records], [[1], [2]])
 
     def test_append_writes_each_jsonl_record_as_one_complete_row(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -323,7 +323,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(json.loads(row)["action_indices"], [1, 2, 3])
 
     def test_first_append_fsyncs_row_and_parent_directory(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -346,7 +346,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             )
 
     def test_recovery_marker_is_fsynced_before_return(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -361,7 +361,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             fsync.assert_called_once()
 
     def test_malformed_tail_repair_is_fsynced_before_read_returns(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -375,7 +375,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertEqual([row["action_indices"] for row in records], [[1]])
 
     def test_complete_tail_newline_repair_is_fsynced_before_read_returns(self):
-        from blb_stage2_rl import candidate_store as store_mod
+        from rfr.search.common import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -389,7 +389,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertEqual([row["action_indices"] for row in records], [[1]])
 
     def test_read_all_discards_only_a_malformed_unterminated_tail(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -407,7 +407,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertNotIn("candidate_trial_group_v1", repaired)
 
     def test_read_all_preserves_a_complete_unterminated_tail(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -424,7 +424,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertTrue(path.read_bytes().endswith(b"\n"))
 
     def test_read_all_still_rejects_newline_terminated_corruption(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
@@ -437,7 +437,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 CandidateStore(path).read_all()
 
     def test_candidate_key_binds_action_and_context_hashes(self):
-        from blb_stage2_rl.candidate_store import (
+        from rfr.search.common.candidate_store import (
             build_candidate_identity_context,
             candidate_key,
         )
@@ -466,7 +466,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertNotEqual(candidate_key(action, base), candidate_key(action, same_action_different_registry))
 
     def test_candidate_identity_uses_phase1_canonical_context_fields(self):
-        from blb_stage2_rl.candidate_store import build_candidate_identity_context, candidate_key
+        from rfr.search.common.candidate_store import build_candidate_identity_context, candidate_key
 
         action = [4, 4, 3, 2]
         base = build_candidate_identity_context(
@@ -498,7 +498,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertNotEqual(candidate_key(action, base), candidate_key(action, changed_fidelity))
 
     def test_context_lookup_excludes_action_hash_only_legacy_records(self):
-        from blb_stage2_rl.candidate_store import (
+        from rfr.search.common.candidate_store import (
             CandidateStore,
             build_candidate_identity_context,
         )
@@ -538,7 +538,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertFalse(store.should_evaluate(action, "F1", identity_context=ctx))
 
     def test_context_lookup_with_legacy_fallback_reads_store_once(self):
-        from blb_stage2_rl.candidate_store import (
+        from rfr.search.common.candidate_store import (
             CandidateStore,
             action_hash,
             build_candidate_identity_context,
@@ -582,7 +582,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         store.read_all.assert_called_once_with()
 
     def test_store_records_raw_and_effective_action_identity(self):
-        from blb_stage2_rl.candidate_store import (
+        from rfr.search.common.candidate_store import (
             CandidateStore,
             action_hash,
             build_candidate_identity_context,
@@ -623,8 +623,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertEqual(saved["candidate_key_basis"], "effective_action_hash + identity_context")
 
     def test_trial_groups_pool_raw_evidence_by_canonical_action_and_context(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -670,8 +670,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertIsNone(isolated)
 
     def test_trial_group_rejects_missing_and_duplicate_seeds_for_same_identity(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -704,8 +704,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 )
 
     def test_exact_trial_group_replay_is_idempotent_after_checkpoint_resume(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -752,8 +752,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(evidence.trials.seeds, (11, 12))
 
     def test_legacy_out_of_range_loss_replay_is_normalized_and_idempotent(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -791,8 +791,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(evidence.trials.loss, (100.0,))
 
     def test_trial_group_replay_rejects_changed_metadata(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -828,8 +828,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 )
 
     def test_trial_group_replay_rejects_changed_values_after_reopen(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [3, 2, 1, 0]
         context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
@@ -858,8 +858,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 )
 
     def test_legacy_f1_replay_uses_compact_metadata_normalization_strictly(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action = fixture["action"]
@@ -922,8 +922,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertEqual(compact_first_path.stat().st_size, compact_size)
 
     def test_trial_index_streams_and_keeps_only_offsets_and_seed_sets(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -983,8 +983,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertNotIn("_bounded_evidence_cache", store.__dict__)
 
     def test_checkpoint_recovery_preserves_complete_rows_and_hides_orphan_tail(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -1046,8 +1046,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(evidence_after_replacement.trials.seeds, (1, 2, 3, 4))
 
     def test_repeated_checkpoint_recovery_never_revives_old_orphan_rows(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -1103,8 +1103,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(evidence_after_reusing_orphan_seed.trials.seeds, (1, 3, 2))
 
     def test_warm_trial_index_refreshes_after_external_checkpoint_recovery(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -1133,8 +1133,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             )
 
     def test_trial_evidence_index_avoids_read_all_and_tracks_new_appends(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -1172,8 +1172,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         read_all.assert_not_called()
 
     def test_repeated_appends_do_not_rescan_the_recovery_layout(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1"}
@@ -1214,8 +1214,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(recovery_layout_scans, 0)
 
     def test_fresh_append_checks_only_new_seeds_without_scanning_full_seed_index(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         class NoIterationSet(set):
             def __iter__(self):
@@ -1251,8 +1251,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(store.trial_count_for_action(action, context), 4)
 
     def test_unlinked_compact_store_keeps_read_cache_but_rebuilds_before_write(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1", "fidelity": "F1"}
@@ -1294,8 +1294,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         )
 
     def test_compact_index_append_and_evidence_avoid_full_record_hydration(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [idx % 6 for idx in range(73 * 12 + 1)]
         context = {"action_space_version": "layerwise-v1", "fidelity": "F1"}
@@ -1332,7 +1332,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         hydrate.assert_not_called()
 
     def test_compact_and_legacy_candidate_store_have_identical_logical_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
 
         fixture = self._representative_compact_fixture()
         with tempfile.TemporaryDirectory() as td:
@@ -1393,7 +1393,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertTrue(f4_evidence.promoted)
 
     def test_compact_candidate_store_physical_rows_intern_context_and_omit_derivable_f1_data(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, sha256_json
+        from rfr.search.common.candidate_store import CandidateStore, sha256_json
 
         fixture = self._representative_compact_fixture()
         with tempfile.TemporaryDirectory() as td:
@@ -1484,7 +1484,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             )
 
     def test_compact_f1_candidate_store_row_is_less_than_half_legacy_bytes(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         fixture = self._representative_compact_fixture()
         with tempfile.TemporaryDirectory() as td:
@@ -1509,7 +1509,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertLess(len(compact_line), len(legacy_line) / 2)
 
     def test_compact_candidate_store_hydrates_copies_and_fails_closed_on_bad_context(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         fixture = self._representative_compact_fixture()
         with tempfile.TemporaryDirectory() as td:
@@ -1569,8 +1569,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                         CandidateStore(bad_path).read_all()
 
     def test_legacy_candidate_store_rejects_cross_candidate_identity_splice(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action_a = list(fixture["action"])
@@ -1619,8 +1619,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 CandidateStore(path).trial_evidence_for_action(action_b, context)
 
     def test_legacy_candidate_store_rejects_self_consistent_effective_splice(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action_a = list(fixture["action"])
@@ -1674,7 +1674,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 CandidateStore(path).trial_evidence_for_action(action_b, context)
 
     def test_legacy_best_lookup_validates_persisted_candidate_key(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
 
         fixture = self._representative_compact_fixture()
         action_a = list(fixture["action"])
@@ -1716,8 +1716,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                         operation(CandidateStore(path))
 
     def test_compact_candidate_store_rejects_cross_candidate_identity_splice(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action_a = list(fixture["action"])
@@ -1768,7 +1768,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 CandidateStore(path).trial_evidence_for_action(action_b, context)
 
     def test_append_rejects_conflicting_derived_candidate_identity_fields(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
 
         fixture = self._representative_compact_fixture()
         action = fixture["action"]
@@ -1802,8 +1802,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                         })
 
     def test_mixed_store_random_offsets_pool_in_order_and_share_v1_duplicate_rules(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action = fixture["action"]
@@ -1895,9 +1895,9 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         )
 
     def test_mixed_store_recovery_preserves_compact_replay_fingerprints_and_offsets(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key, sha256_json
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key, sha256_json
         from blb_stage2_rl.layerwise_runner import checkpoint_file_fingerprints
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         fixture = self._representative_compact_fixture()
         action = fixture["action"]
@@ -2001,8 +2001,8 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         )
 
     def test_store_is_path_backed_and_reopens_ordinary_trial_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = [1, 2, 3]
         context = {"action_space_version": "layerwise-v1", "fidelity": "F4"}

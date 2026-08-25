@@ -18,7 +18,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from sklearn.metrics import accuracy_score, f1_score
-from blb_stage2_rl.eval_metrics import (
+from rfr.search.common.eval_metrics import (
     summarize_eval_trials,
 )
 from blb_stage2_rl.inference_eval import (
@@ -62,7 +62,7 @@ from elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
-from rl_data_points import (
+from rfr.search.common.data_points import (
     RLDataPointWriter,
     make_unique_run_id,
     write_dataset_protocol,
@@ -521,7 +521,7 @@ PPO_ENTROPY_START = 0.05
 PPO_ENTROPY_END = 0.001
 
 
-from rl_local_optimum import detect_rl_local_optimum  # noqa: E402,F401
+from rfr.search.common.local_optimum import detect_rl_local_optimum  # noqa: E402,F401
 
 
 class RunningMeanStd:
@@ -1615,7 +1615,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage2_stability_multiplier = float(stage2_stability_multiplier)
         if self.stage2_stability_multiplier <= 0.0:
             raise ValueError("stage2_stability_multiplier must be positive")
-        from blb_stage2_rl.precision_presets import (
+        from rfr.search.common.precision_presets import (
             validate_communication_importance_ratio,
         )
 

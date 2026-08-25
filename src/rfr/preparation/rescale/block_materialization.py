@@ -9,7 +9,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
-from blb_stage2_rl.action_space import (
+from rfr.search.common.action_space import (
     _BLOCK_SPECS,
     _block_default_N,
     _degree_for_layer,

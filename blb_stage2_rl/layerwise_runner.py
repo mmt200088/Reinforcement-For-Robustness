@@ -16,24 +16,24 @@ import numpy as np
 import torch
 from rfr.preparation.data.protocol import validate_dataset_protocol_binding
 
-from .candidate_store import (
+from rfr.search.common.candidate_store import (
     CandidateStore,
     CandidateTrialEvidence,
     candidate_key,
     sha256_json,
 )
-from .layerwise_action import (
+from rfr.search.common.layerwise_action import (
     LAYERWISE_SLOT_NAMES,
     compute_variable_cost_from_action_matrix,
     describe_layerwise_action_matrix,
     materialize_layerwise_counterfactuals,
 )
-from .precision_presets import (
+from rfr.search.common.precision_presets import (
     allocated_precision_tolerances,
     network_axis_weights,
     validate_communication_importance_ratio,
 )
-from .statistical_constraints import (
+from rfr.search.common.statistical_constraints import (
     ConstraintAssessment,
     TrialSeries,
     assess_candidate,
@@ -42,7 +42,7 @@ from .statistical_constraints import (
     retarget_constraint_assessment,
     retarget_precision_tolerance,
 )
-from .truncation_levels import LEVELS_K
+from rfr.search.common.truncation_levels import LEVELS_K
 
 
 _PROBABILITY_FIELDS = (

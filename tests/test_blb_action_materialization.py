@@ -98,7 +98,7 @@ def _reject_invalid_raw_action(action_vec, *_args, **_kwargs):
 @contextmanager
 def _stubbed_action_space():
     package = importlib.import_module("blb_stage2_rl")
-    module_name = "blb_stage2_rl.action_space"
+    module_name = "rfr.search.common.action_space"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_space", _MISSING)
 
@@ -157,7 +157,7 @@ def _stubbed_action_space():
 @contextmanager
 def _stubbed_action_io():
     package = importlib.import_module("blb_stage2_rl")
-    module_name = "blb_stage2_rl.action_io"
+    module_name = "rfr.search.common.action_io"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_io", _MISSING)
 
@@ -268,7 +268,7 @@ class ActionVectorBoundsTests(unittest.TestCase):
 
     def test_action_io_preserves_invalid_raw_action_for_shared_validation(self):
         action_vec_to_slots_list = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "action_vec_to_slots_list",
             np=__import__("numpy"),
             describe_action_vector=_reject_invalid_raw_action,
@@ -336,18 +336,18 @@ class ActionVectorBoundsTests(unittest.TestCase):
     def test_k_coercion_accepts_k6_and_k7(self):
         np = __import__("numpy")
         normalize_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_normalize_truncation_bits",
             np=np,
             operator=__import__("operator"),
         )
         nearest_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_nearest_action_index_from_k",
             K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
         )
         coerce_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_coerce_action_index_from_k",
             _normalize_truncation_bits=normalize_k,
             _nearest_action_index_from_k=nearest_k,
@@ -359,18 +359,18 @@ class ActionVectorBoundsTests(unittest.TestCase):
     def test_k_coercion_rejects_non_integral_and_boolean_values(self):
         np = __import__("numpy")
         normalize_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_normalize_truncation_bits",
             np=np,
             operator=__import__("operator"),
         )
         nearest_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_nearest_action_index_from_k",
             K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
         )
         coerce_k = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "_coerce_action_index_from_k",
             _normalize_truncation_bits=normalize_k,
             _nearest_action_index_from_k=nearest_k,
@@ -430,7 +430,7 @@ class ActionVectorBoundsTests(unittest.TestCase):
 
     def test_action_payload_preserves_invalid_raw_action_for_shared_validation(self):
         slots_payload_to_action_vec = _load_function_standalone(
-            "blb_stage2_rl/action_io.py",
+            "src/rfr/search/common/action_io.py",
             "slots_payload_to_action_vec",
             Mapping=__import__("collections.abc").abc.Mapping,
             np=__import__("numpy"),
@@ -643,7 +643,7 @@ class ActionMaterializationTests(unittest.TestCase):
             )
 
     def test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             load_max_sfs,
             make_all_max_action_vector,
         )
@@ -714,7 +714,7 @@ class ActionMaterializationTests(unittest.TestCase):
         self.assertRegex(result.final_config_fingerprint, r"^[0-9a-f]{64}$")
 
     def test_real_mrpc_k6_materializes_all_blocks_including_layer0(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             K_LEVELS,
             load_max_sfs,
             make_all_max_action_vector,

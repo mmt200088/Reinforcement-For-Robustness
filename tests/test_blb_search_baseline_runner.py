@@ -11,13 +11,13 @@ from unittest.mock import patch
 
 import numpy as np
 
-from blb_stage2_rl.candidate_store import action_hash, candidate_key
+from rfr.search.common.candidate_store import action_hash, candidate_key
 from rfr.preparation.fusion.count_map import FusionCountMap
-from blb_stage2_rl.layerwise_action import (
+from rfr.search.common.layerwise_action import (
     layerwise_schedule,
     materialize_layerwise_counterfactuals,
 )
-from blb_stage2_rl.precision_presets import allocated_precision_tolerances
+from rfr.search.common.precision_presets import allocated_precision_tolerances
 from blb_stage2_rl.reward import EpisodeMetrics
 import blb_stage2_rl.search_baseline_runner as search_runner_module
 from blb_stage2_rl.search_baseline_runner import (

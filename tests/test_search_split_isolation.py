@@ -15,7 +15,7 @@ from rfr.preparation.data.protocol import (
 from rfr.common.json_utils import read_json_file
 from layer_importance_evaluator import LayerImportanceEvaluator
 from final_evaluation_module import require_final_evaluation_protocol
-from rl_data_points import write_dataset_protocol
+from rfr.search.common.data_points import write_dataset_protocol
 
 
 def _identity(dataset="mrpc"):

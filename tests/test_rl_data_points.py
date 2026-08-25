@@ -11,7 +11,7 @@ from unittest import mock
 
 import numpy as np
 
-import rl_data_points
+from rfr.search.common import data_points as rl_data_points
 from rfr.common.json_utils import (
     json_default,
     read_json_file,
@@ -20,7 +20,7 @@ from rfr.common.json_utils import (
     to_jsonable as shared_to_jsonable,
     write_json_file,
 )
-from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
+from rfr.search.common.data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

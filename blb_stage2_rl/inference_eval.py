@@ -15,7 +15,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from .eval_metrics import (
+from rfr.search.common.eval_metrics import (
     finalize_probe_trial_metrics,
     metric_pair_for_dataset,
     probe_batch_sample_count,

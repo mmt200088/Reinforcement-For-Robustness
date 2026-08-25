@@ -28,7 +28,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from blb_stage2_rl import precision_boost as pb
+from rfr.search.common import precision_boost as pb
 
 
 def _topo():

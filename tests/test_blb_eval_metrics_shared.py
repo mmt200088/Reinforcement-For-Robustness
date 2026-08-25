@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from blb_stage2_rl import eval_metrics
+from rfr.search.common import eval_metrics
 
 
 class SharedEvalMetricsTest(unittest.TestCase):

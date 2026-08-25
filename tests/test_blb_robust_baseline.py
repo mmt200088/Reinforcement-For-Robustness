@@ -6,7 +6,7 @@ import pytest
 
 from blb_stage2_rl.reward import EpisodeMetrics
 from blb_stage2_rl.seed_utils import derive_baseline_group_probe_seed
-from blb_stage2_rl.statistical_constraints import DegenerateBaselineVariance
+from rfr.search.common.statistical_constraints import DegenerateBaselineVariance
 
 
 class FakeBaseEnv:
@@ -303,7 +303,7 @@ def test_collection_does_not_bypass_unknown_reward_design():
 
 def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate():
     from blb_stage2_rl import env as env_module
-    from blb_stage2_rl.action_space import make_all_max_action_vector
+    from rfr.search.common.action_space import make_all_max_action_vector
     from blb_stage2_rl.env import BLBStage2Env
     from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
     from blb_stage2_rl.sequential_runner import _collect_robust_baseline_reference

@@ -126,7 +126,7 @@ def action_vec_to_slots_list(
         ) -> List[Dict[str, Any]]:
     """Return a list of human-readable slot dicts for ``action_vec``.
 
-    Wraps :func:`blb_stage2_rl.action_space.describe_action_vector` and
+    Wraps :func:`rfr.search.common.action_space.describe_action_vector` and
     renames its fields for end-user clarity (``value`` → ``scaling_factor``
     or ``truncation_bits`` depending on kind).
     """

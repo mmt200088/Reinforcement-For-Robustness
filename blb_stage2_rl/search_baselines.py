@@ -18,14 +18,14 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequenc
 
 import numpy as np
 
-from .layerwise_action import (
+from rfr.search.common.layerwise_action import (
     LAYER_GENE_CARDINALITY,
     compute_variable_cost_from_action_matrix,
     decode_layer_gene,
     decode_layerwise_action_genes,
     encode_layerwise_action_matrix,
 )
-from .precision_presets import validate_communication_importance_ratio
+from rfr.search.common.precision_presets import validate_communication_importance_ratio
 
 
 ActionMatrix = tuple[tuple[int, int], ...]

@@ -10,7 +10,7 @@ shouldn't crash training. But during debugging it's invaluable to
 
 Usage::
 
-    from blb_stage2_rl.strict import swallow
+    from rfr.search.common.strict import swallow
 
     @swallow(reason="optional diagnostic write")
     def _flush_some_artifact():
@@ -44,7 +44,7 @@ from typing import Any, Callable, Optional, TypeVar
 
 
 _ENV = "BLB_STRICT"
-_LOGGER = logging.getLogger("blb_stage2_rl.strict")
+_LOGGER = logging.getLogger("rfr.search.common.strict")
 
 F = TypeVar("F", bound=Callable[..., Any])
 

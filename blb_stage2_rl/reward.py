@@ -12,7 +12,7 @@ from typing import Any, Mapping, Optional, Tuple
 
 import numpy as np
 
-from .truncation_levels import K_MAX_BITS, K_MIN_BITS
+from rfr.search.common.truncation_levels import K_MAX_BITS, K_MIN_BITS
 
 
 DEFAULT_REWARD_CLIP_MIN = -5.0

@@ -5,7 +5,7 @@ import types
 import unittest
 from unittest import mock
 
-from blb_stage2_rl import truncation_levels
+from rfr.search.common import truncation_levels
 
 
 _MISSING = object()
@@ -14,7 +14,7 @@ _MISSING = object()
 @contextmanager
 def _stubbed_action_space():
     package = importlib.import_module("blb_stage2_rl")
-    module_name = "blb_stage2_rl.action_space"
+    module_name = "rfr.search.common.action_space"
     module_before = sys.modules.get(module_name, _MISSING)
     attribute_before = package.__dict__.get("action_space", _MISSING)
 
@@ -185,7 +185,7 @@ class TruncationLevelsTest(unittest.TestCase):
     def test_consumers_share_the_canonical_k_levels(self):
         with _stubbed_action_space() as action_space:
             layerwise_action = importlib.import_module(
-                "blb_stage2_rl.layerwise_action"
+                "rfr.search.common.layerwise_action"
             )
 
             self.assertEqual(action_space.K_LEVELS, truncation_levels.K_LEVELS)
@@ -194,7 +194,7 @@ class TruncationLevelsTest(unittest.TestCase):
 
     def test_action_space_stub_restores_global_module_state(self):
         package = importlib.import_module("blb_stage2_rl")
-        module_name = "blb_stage2_rl.action_space"
+        module_name = "rfr.search.common.action_space"
         original_module = sys.modules.get(module_name, _MISSING)
         original_attribute = package.__dict__.get("action_space", _MISSING)
         try:

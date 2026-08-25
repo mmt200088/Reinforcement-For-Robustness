@@ -674,7 +674,7 @@ def train(
     stage2_stability_multiplier = float(stage2_stability_multiplier)
     if stage2_stability_multiplier <= 0.0:
         raise ValueError("stage2_stability_multiplier must be positive")
-    from blb_stage2_rl.precision_presets import (
+    from rfr.search.common.precision_presets import (
         validate_communication_importance_ratio,
     )
     stage2_communication_importance_ratio = (

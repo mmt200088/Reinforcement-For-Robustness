@@ -12,7 +12,7 @@ from rfr.preparation.data.protocol import SUPPORTED_DATASETS
 
 class SupportedMetricContractTest(unittest.TestCase):
     def test_all_supported_tasks_use_accuracy_and_weighted_f1(self):
-        from blb_stage2_rl.eval_metrics import metric_pair_for_dataset
+        from rfr.search.common.eval_metrics import metric_pair_for_dataset
 
         labels = np.asarray([0, 0, 1, 1])
         predictions = np.asarray([0, 1, 1, 1])
@@ -32,7 +32,7 @@ class SupportedMetricContractTest(unittest.TestCase):
                 )
 
     def test_unsupported_metric_profile_fails_closed(self):
-        from blb_stage2_rl.eval_metrics import metric_pair_for_dataset
+        from rfr.search.common.eval_metrics import metric_pair_for_dataset
 
         with self.assertRaisesRegex(ValueError, "unsupported dataset"):
             metric_pair_for_dataset("stsb", [0, 1], [0, 1], predictions_are_classes=True)
@@ -178,7 +178,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         import torch
         import torch.nn.functional as F
 
-        from blb_stage2_rl.eval_metrics import metric_pair_for_dataset, sample_weighted_mean
+        from rfr.search.common.eval_metrics import metric_pair_for_dataset, sample_weighted_mean
         from blb_stage2_rl.inference_eval import (
             run_installed_model_on_dataloader,
             run_installed_probe_trial,

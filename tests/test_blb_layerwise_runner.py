@@ -106,7 +106,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         from blb_stage2_rl.layerwise_runner import (
             _assess_pooled_online_trials,
         )
-        from blb_stage2_rl.statistical_constraints import (
+        from rfr.search.common.statistical_constraints import (
             ConstraintAssessment,
             TrialSeries,
             assess_candidate,
@@ -297,7 +297,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             _evaluate_axis_counterfactual_banks,
         )
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed
-        from blb_stage2_rl.statistical_constraints import (
+        from rfr.search.common.statistical_constraints import (
             TrialSeries,
             build_baseline_reference,
         )
@@ -434,7 +434,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 side_effect=collect,
             ),
         ):
-            from blb_stage2_rl.candidate_store import CandidateStore
+            from rfr.search.common.candidate_store import CandidateStore
 
             result, fresh_count = _evaluate_axis_counterfactual_banks(
                 env=types.SimpleNamespace(
@@ -495,8 +495,8 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_validation_bank_accepts_immutable_materialized_overrides(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_action import LayerwiseMaterialization
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.layerwise_action import LayerwiseMaterialization
         from blb_stage2_rl.layerwise_runner import (
             _collect_fixed_validation_bank,
         )
@@ -582,7 +582,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_three_validation_banks_are_disjoint_and_pool_in_order(self):
         import blb_stage2_rl.layerwise_runner as layerwise_runner
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         required = ("LayerwiseValidationBank", "LayerwiseValidationBanks")
         for name in required:
@@ -683,7 +683,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             LayerwiseValidationBanks,
         )
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed
-        from blb_stage2_rl.statistical_constraints import (
+        from rfr.search.common.statistical_constraints import (
             TrialSeries,
             build_baseline_reference,
         )
@@ -864,7 +864,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(snapshot["k_slot_count"], 1)
 
     def test_evidence_identity_context_separates_probe_and_full_validation(self):
-        from blb_stage2_rl.candidate_store import candidate_key
+        from rfr.search.common.candidate_store import candidate_key
         from blb_stage2_rl.layerwise_runner import evidence_identity_context
 
         base = {
@@ -1587,7 +1587,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.selected_action_identity, "candidate-a")
 
     def test_diagnostics_best_snapshot_can_be_reconciled_without_episode_append(self):
-        from blb_stage2_rl.diagnostics import EpisodeStats, RLDiagnosticsRecorder
+        from rfr.search.common.diagnostics import EpisodeStats, RLDiagnosticsRecorder
 
         with tempfile.TemporaryDirectory() as td:
             recorder = RLDiagnosticsRecorder(
@@ -1934,7 +1934,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("static_skeletons_baseline_to_action(", runner_source)
 
     def test_layerwise_candidate_identity_binds_k_level_order(self):
-        from blb_stage2_rl.candidate_store import candidate_key
+        from rfr.search.common.candidate_store import candidate_key
         from blb_stage2_rl import layerwise_runner
 
         binder = getattr(
@@ -1962,7 +1962,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotEqual(candidate_key([0], first), candidate_key([0], second))
 
     def test_layerwise_candidate_identity_binds_every_resource_contract_field(self):
-        from blb_stage2_rl.candidate_store import candidate_key
+        from rfr.search.common.candidate_store import candidate_key
         from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
 
         contract = {
@@ -2004,7 +2004,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             )
 
     def test_layerwise_candidate_identity_binds_plain_stage1_selection(self):
-        from blb_stage2_rl.candidate_store import candidate_key
+        from rfr.search.common.candidate_store import candidate_key
         from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
 
         stage1_binding = {
@@ -2276,8 +2276,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
     def test_old_six_level_checkpoint_is_rejected_by_current_layerwise_context(self):
-        from blb_stage2_rl.candidate_store import candidate_key, sha256_json
-        from blb_stage2_rl.layerwise_action import (
+        from rfr.search.common.candidate_store import candidate_key, sha256_json
+        from rfr.search.common.layerwise_action import (
             K_LEVELS,
             LAYERWISE_COST_MODEL_REVISION,
             layerwise_action_space_version,
@@ -3084,7 +3084,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("if episode_records:\n        fusion_counts", branch_source)
 
     def test_initial_probabilities_use_decoded_k_values_and_disable_epsilon(self):
-        from blb_stage2_rl.layerwise_action import K_LEVELS
+        from rfr.search.common.layerwise_action import K_LEVELS
         from blb_stage2_rl.layerwise_runner import initialize_layerwise_policy
 
         class FakePolicy:
@@ -3262,7 +3262,7 @@ class _FakeLayerwiseEnv:
         }
         if self._evidence_mode != "missing":
             self.runtime_terminal_info["statistical_trials"] = statistical_trials
-        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+        from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
 
         objective = compute_variable_cost_from_action_matrix(self.actions)
         resource_objective = {
@@ -3382,7 +3382,7 @@ def _three_validation_banks():
         LayerwiseValidationBanks,
     )
     from blb_stage2_rl.seed_utils import derive_probe_trial_seed
-    from blb_stage2_rl.statistical_constraints import TrialSeries
+    from rfr.search.common.statistical_constraints import TrialSeries
 
     def reference(probe_seeds):
         seeds = tuple(
@@ -3419,7 +3419,7 @@ def _three_validation_banks():
 
 
 def _resource_objective_for_matrix(action_matrix):
-    from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+    from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
 
     objective = compute_variable_cost_from_action_matrix(action_matrix)
     return {
@@ -3483,7 +3483,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(resolve_exact_terminal_batch_size(1, 5, 4), 1)
 
     def test_default_step_adapter_accepts_precision_preset_level_count(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         source = Path("blb_stage2_rl/sequential_policy.py").read_text(
@@ -3551,7 +3551,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_grouped_terminal_probes_finalize_in_order_at_the_ppo_boundary(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
         from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
 
@@ -3598,7 +3598,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual([record.episode_index for record in summary["episode_records"]], [0, 1, 2, 3])
 
     def test_terminal_batch_rebalances_after_probe_pool_shrinks(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
         from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
 
@@ -3700,7 +3700,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_train_collects_exactly_12_terminal_credit_transitions(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.7)
@@ -3780,7 +3780,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertIsNone(summary["best_action"])
 
     def test_train_collects_all_24_bert_large_transitions(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.7, num_layers=24)
@@ -3816,7 +3816,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["episode_records"][0].step_count, 24)
 
     def test_max_episode_cap_still_runs_bank_c_and_keeps_resumable_result(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(probabilities=0.9)
@@ -3850,7 +3850,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(len(promotion_base.evaluate_calls), 3)
 
     def test_max_cap_falls_back_to_dominated_ab_candidate_when_winner_fails_c(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         high_matrix = _fake_policy_action_matrix()
@@ -3956,7 +3956,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertTrue(summary["strict_revalidation_passed"])
 
     def test_train_bounded_history_can_be_disabled_without_changing_callbacks(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         completed = []
@@ -3997,7 +3997,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_graceful_stop_waits_for_the_next_ppo_checkpoint_boundary(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         completed = []
@@ -4039,7 +4039,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_train_bounded_history_preserves_nonzero_resume_callback_identities(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=5, update_every=2)
@@ -4078,7 +4078,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(ppo_updates, [(42, 42), (44, 44), (45, 45)])
 
     def test_train_bounded_history_defaults_to_complete_direct_call_lists(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
@@ -4104,7 +4104,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(len(summary["ppo_metrics"]), 2)
 
     def test_exhaustive_c_fallback_reports_surviving_certified_tie_as_passed(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             _certify_strict_best_candidates,
         )
@@ -4194,7 +4194,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(candidates["a"]["final_revalidation_status"], "passed")
 
     def test_max_cap_does_not_export_an_uncertified_ab_candidate(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             promote_candidate_if_eligible,
             train_layerwise,
@@ -4254,7 +4254,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["strict_revalidation_status"], "failed_evaluation")
 
     def test_unbounded_training_stops_only_after_natural_convergence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         action_matrix = [[1, 2] for _ in range(12)]
@@ -4390,7 +4390,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_failed_strict_revalidation_removes_winner_before_continuing(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         frontier = {
@@ -4528,7 +4528,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["selected_action_identity"], "candidate-b")
 
     def test_transient_strict_revalidation_error_keeps_winner_and_retries(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         frontier = {
@@ -4663,7 +4663,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertNotIn("final_revalidation_failed", persisted)
 
     def test_positive_episode_budget_remains_a_bounded_smoke_run(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
@@ -4693,7 +4693,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_bounded_smoke_never_runs_natural_revalidation(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         frontier = {
@@ -4762,7 +4762,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_exhausted_bounded_resume_does_not_become_unbounded(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=0, update_every=1)
@@ -4791,7 +4791,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_nonfinite_restored_entropy_is_unavailable_not_fatal(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         config = self._train_cfg(total_episodes=0, update_every=1)
@@ -4823,7 +4823,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertIsNone(summary["k_entropy"])
 
     def test_nonfinite_skipped_update_does_not_advance_convergence_patience(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         action_matrix = [[1, 2] for _ in range(12)]
@@ -4894,7 +4894,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertFalse(summary["ppo_metrics"][0]["convergence_update_counted"])
 
     def test_adjacent_same_action_episodes_pool_ten_distinct_real_probe_seeds(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
@@ -4929,7 +4929,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(len(set(evidence.trials.seeds)), 10)
 
     def test_episode_record_labels_fresh_reward_and_f1_prefilter_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         with tempfile.TemporaryDirectory() as td:
@@ -4958,7 +4958,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(second.ranking_evidence, "F1_prefilter_only")
 
     def test_repeated_action_keeps_bootstrap_assessment_at_fixed_25_trial_budget(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
@@ -4996,7 +4996,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(assessed_trial_counts[-1], 25)
 
     def test_valid_terminal_requires_exact_aligned_raw_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         for evidence_mode, message in (
@@ -5024,7 +5024,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                         )
 
     def test_invalid_terminal_may_omit_raw_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         buffer = _FakeBuffer()
@@ -5059,7 +5059,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_infrastructure_terminal_failure_never_enters_ppo_rollout(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         env = _FakeLayerwiseEnv(evidence_mode="missing", invalid=True)
@@ -5111,13 +5111,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
             self.assertNotIn(retired, source)
 
     def test_zero_remaining_bounded_resume_preserves_frontier_without_convergence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
-        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -5211,12 +5211,12 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_promoted_reward_and_install_metadata_restore_from_promotion_record(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -5315,13 +5315,13 @@ class LayerwiseRolloutTests(unittest.TestCase):
         )
 
     def test_bounded_resume_clears_convergence_after_frontier_retraction(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+        from rfr.search.common.candidate_store import CandidateStore
+        from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -5391,12 +5391,12 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertFalse(summary["converged"])
 
     def test_ppo_update_exposes_current_strict_frontier_snapshot(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             train_layerwise,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -5696,9 +5696,9 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
     def _store_with_five(self, root, seeds=None):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import evidence_identity_context
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = evidence_identity_context(
             {"action_space_version": "layerwise-v1"}, "F4",
@@ -5769,7 +5769,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(metadata, {"generation": 2})
 
     def test_promotion_tops_up_five_to_25_through_real_chain_once(self):
-        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+        from rfr.search.common.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
 
         action_matrix = [[0] * 2 for _ in range(12)]
@@ -5822,7 +5822,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertTrue(base.evaluate_calls[0][1]["validation_required"])
 
     def test_three_bank_promotion_uses_a_then_b_point_gates_not_probability(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
 
         action = list(range(20))
@@ -5887,12 +5887,12 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
     def test_three_bank_promotion_resumes_from_complete_fixed_seed_groups(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         action = list(range(20))
         context = {"action_space_version": "layerwise-v1"}
@@ -5950,7 +5950,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
     def test_bank_c_certification_pools_75_trials_and_ignores_probability(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
@@ -6005,7 +6005,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
     def test_completed_bank_c_reuse_rejects_stale_final_config_fingerprint(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
@@ -6080,12 +6080,12 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(drifted.evaluate_calls, [])
 
     def test_restore_rejects_inconsistent_final_config_fingerprints(self):
-        from blb_stage2_rl.candidate_store import CandidateTrialEvidence
+        from rfr.search.common.candidate_store import CandidateTrialEvidence
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
         from rfr.common.json_utils import stable_json_hash
 
         action = tuple(range(20))
@@ -6140,7 +6140,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             )
 
     def test_bank_c_transient_failure_is_retryable_after_restore(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
@@ -6223,7 +6223,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(retried.trial_count, 75)
 
     def test_three_bank_restore_uses_point_gate_and_preserves_final_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
@@ -6287,7 +6287,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         ))
 
     def test_each_authoritative_point_gate_blocks_its_own_failure(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             certify_candidate_with_bank_c,
             promote_candidate_if_eligible,
@@ -6427,12 +6427,12 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(status_rows[-1]["identity_context"]["fidelity"], "F4")
 
     def test_promotion_collects_25_full_trials_without_pooling_five_probe_trials(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1", "fidelity": None}
         action = list(range(20))
@@ -6487,7 +6487,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -6537,7 +6537,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             evidence_identity_context,
             promote_candidate_if_eligible,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -6582,12 +6582,12 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(base.evaluate_calls, [])
 
     def test_restore_promoted_candidates_reassesses_persisted_frontier(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             restore_promoted_candidates,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
@@ -6647,13 +6647,13 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
     def test_final_revalidation_pass_restores_fresh_strict_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             _record_final_revalidation_outcome,
             evidence_identity_context,
             restore_promoted_candidates,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         base_context = evidence_identity_context(context, "F4")
@@ -6764,14 +6764,14 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(observed_assessments, [(31, 0.95, 123)])
 
     def test_final_revalidation_failure_remains_excluded_after_restore(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from rfr.search.common.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import (
             _record_final_revalidation_outcome,
             evidence_identity_context,
             promote_candidate_if_eligible,
             restore_promoted_candidates,
         )
-        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from rfr.search.common.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         base_context = evidence_identity_context(context, "F4")
@@ -6859,7 +6859,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(base.evaluate_calls, [])
 
     def test_promotion_selects_fresh_trial_seeds_disjoint_from_existing_evidence(self):
-        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+        from rfr.search.common.candidate_store import CandidateStore, candidate_key
         from blb_stage2_rl.layerwise_runner import (
             evidence_identity_context,
             promote_candidate_if_eligible,

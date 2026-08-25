@@ -20,7 +20,7 @@ for p in (str(_REPO), str(_REPO / "configs/preparation/rescale")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from blb_stage2_rl import precision_boost as pb  # noqa: E402
+from rfr.search.common import precision_boost as pb  # noqa: E402
 
 
 BASE2 = {
@@ -117,7 +117,7 @@ class BoostReplanTest(unittest.TestCase):
 
     @staticmethod
     def _noise_fn(slots, _probe):
-        import noise_tables
+        from rfr.search.common import noise_tables
         encs = ("gamma_sf", "wk_sf", "kt_mask1_sf", "kt_mask2_sf", "qkt_merge_mask_sf")
         v = noise_tables.variance(16384, slots["inv_std_fresh_sf"], "fresh")
         for k in encs:
@@ -235,7 +235,7 @@ class Block4BoostReplanTest(unittest.TestCase):
 
     @staticmethod
     def _noise_fn(slots, _probe):
-        import noise_tables
+        from rfr.search.common import noise_tables
         v = (
             noise_tables.variance(16384, slots["softmax_out_fresh_sf"], "fresh")
             + noise_tables.variance(16384, slots["v_fresh_sf"], "fresh")
@@ -355,7 +355,7 @@ class Block5N2BoostReplanTest(unittest.TestCase):
 
     @staticmethod
     def _noise_fn(slots, _probe):
-        import noise_tables
+        from rfr.search.common import noise_tables
         return sum(
             noise_tables.variance(16384, slots[k], "encoding")
             for k in ("gamma_sf", "wffn1_sf", "gelu_coeff_sf")
@@ -469,7 +469,7 @@ class Block5N4BoostReplanTest(unittest.TestCase):
 
     @staticmethod
     def _noise_fn(slots, _probe):
-        import noise_tables
+        from rfr.search.common import noise_tables
         return sum(
             noise_tables.variance(16384, slots[k], "encoding")
             for k in ("gamma_sf", "wffn1_sf", "gelu_coeff_sf")
@@ -531,7 +531,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     boosted option. torch + rescale_optimizer required (skipped locally)."""
 
     def _assert_sf_direct_matches(self, graph_key, block_idx, gelu_degree=4):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             _decode_block_field_values,
             action_vector_to_cfgs,
             build_block_cfg_from_field_values,
@@ -579,7 +579,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     def test_boosted_overrides_reach_the_installed_cfg(self):
 
 
-        from blb_stage2_rl.action_space import _decode_block_field_values
+        from rfr.search.common.action_space import _decode_block_field_values
         from rfr.preparation.fusion import enumeration as fusion_enum
         import numpy as np
         from rfr.preparation.rescale.optimizer_cost import evaluate_action_for_cost
@@ -650,7 +650,7 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
 
     def _assert_phase2(self, graph_key, block_idx, gelu_degree, expected_target, prior_prime):
         from rfr.preparation.fusion import enumeration as fusion_enum
-        from blb_stage2_rl import precision_boost as pbm
+        from rfr.search.common import precision_boost as pbm
         ctx, options = self._ctx_and_options(graph_key, block_idx, gelu_degree)
         boosted = fusion_enum.boost_options_for_block(ctx, options)
         nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]

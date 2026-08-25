@@ -10,14 +10,14 @@ from unittest import mock
 
 import numpy as np
 
-from blb_stage2_rl.truncation_levels import K_LEVELS
+from rfr.search.common.truncation_levels import K_LEVELS
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION_GRID_PATH = ROOT / "Paean" / "action_grid.py"
 
 
 def _load_action_grid_module():
-    stub = types.ModuleType("blb_stage2_rl.action_space")
+    stub = types.ModuleType("rfr.search.common.action_space")
     stub.K_LEVELS = K_LEVELS
     stub.NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {"K": len(stub.K_LEVELS), "x": 5}
     stub.action_dims_for_config = lambda *args, **kwargs: []
@@ -38,17 +38,17 @@ def _load_action_grid_module():
     spec = importlib.util.spec_from_file_location(name, ACTION_GRID_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
-    previous = sys.modules.get("blb_stage2_rl.action_space")
-    sys.modules["blb_stage2_rl.action_space"] = stub
+    previous = sys.modules.get("rfr.search.common.action_space")
+    sys.modules["rfr.search.common.action_space"] = stub
     sys.modules[name] = module
     try:
         spec.loader.exec_module(module)
     finally:
         sys.modules.pop(name, None)
         if previous is None:
-            sys.modules.pop("blb_stage2_rl.action_space", None)
+            sys.modules.pop("rfr.search.common.action_space", None)
         else:
-            sys.modules["blb_stage2_rl.action_space"] = previous
+            sys.modules["rfr.search.common.action_space"] = previous
     return module
 
 
@@ -354,9 +354,9 @@ class PaeanActionGridTest(unittest.TestCase):
 
         action_grid.load_max_sfs = counting_load_max_sfs
 
-        action_space_stub = types.ModuleType("blb_stage2_rl.action_space")
+        action_space_stub = types.ModuleType("rfr.search.common.action_space")
         action_space_stub.load_max_sfs = counting_load_max_sfs
-        action_io_stub = types.ModuleType("blb_stage2_rl.action_io")
+        action_io_stub = types.ModuleType("rfr.search.common.action_io")
 
         def slots_payload_to_action_vec(payload, *, max_sfs, num_layers, gelu_degree, attn_degree):
             self.assertEqual(max_sfs, {"profile": "mrpc"})
@@ -365,10 +365,10 @@ class PaeanActionGridTest(unittest.TestCase):
 
         action_io_stub.slots_payload_to_action_vec = slots_payload_to_action_vec
 
-        previous_action_space = sys.modules.get("blb_stage2_rl.action_space")
-        previous_action_io = sys.modules.get("blb_stage2_rl.action_io")
-        sys.modules["blb_stage2_rl.action_space"] = action_space_stub
-        sys.modules["blb_stage2_rl.action_io"] = action_io_stub
+        previous_action_space = sys.modules.get("rfr.search.common.action_space")
+        previous_action_io = sys.modules.get("rfr.search.common.action_io")
+        sys.modules["rfr.search.common.action_space"] = action_space_stub
+        sys.modules["rfr.search.common.action_io"] = action_io_stub
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
@@ -389,13 +389,13 @@ class PaeanActionGridTest(unittest.TestCase):
                 action_grid.load_action_grid_config(str(second_path))
         finally:
             if previous_action_space is None:
-                sys.modules.pop("blb_stage2_rl.action_space", None)
+                sys.modules.pop("rfr.search.common.action_space", None)
             else:
-                sys.modules["blb_stage2_rl.action_space"] = previous_action_space
+                sys.modules["rfr.search.common.action_space"] = previous_action_space
             if previous_action_io is None:
-                sys.modules.pop("blb_stage2_rl.action_io", None)
+                sys.modules.pop("rfr.search.common.action_io", None)
             else:
-                sys.modules["blb_stage2_rl.action_io"] = previous_action_io
+                sys.modules["rfr.search.common.action_io"] = previous_action_io
 
         self.assertEqual(load_calls, 1)
 
@@ -413,7 +413,7 @@ class PaeanActionGridTest(unittest.TestCase):
             raise AssertionError("profile-only max_sfs fallback must not run")
 
         action_grid.load_max_sfs = forbidden_profile_load
-        action_io_stub = types.ModuleType("blb_stage2_rl.action_io")
+        action_io_stub = types.ModuleType("rfr.search.common.action_io")
 
         def slots_payload_to_action_vec(
                 payload,
@@ -430,8 +430,8 @@ class PaeanActionGridTest(unittest.TestCase):
             return [0], []
 
         action_io_stub.slots_payload_to_action_vec = slots_payload_to_action_vec
-        previous_action_io = sys.modules.get("blb_stage2_rl.action_io")
-        sys.modules["blb_stage2_rl.action_io"] = action_io_stub
+        previous_action_io = sys.modules.get("rfr.search.common.action_io")
+        sys.modules["rfr.search.common.action_io"] = action_io_stub
         try:
             with tempfile.TemporaryDirectory() as td:
                 path = Path(td) / "candidate.json"
@@ -459,9 +459,9 @@ class PaeanActionGridTest(unittest.TestCase):
                 )
         finally:
             if previous_action_io is None:
-                sys.modules.pop("blb_stage2_rl.action_io", None)
+                sys.modules.pop("rfr.search.common.action_io", None)
             else:
-                sys.modules["blb_stage2_rl.action_io"] = previous_action_io
+                sys.modules["rfr.search.common.action_io"] = previous_action_io
 
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0].action_vec.tolist(), [0])

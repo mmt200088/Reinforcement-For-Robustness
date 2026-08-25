@@ -8,15 +8,16 @@ import types
 import unittest
 from unittest import mock
 
-import noise_tables
-from blb_stage2_rl import action_space as _aspace
+from rfr.search.common import noise_tables
+from rfr.search.common import action_space as _aspace
 from rfr.preparation.fusion import count_map as fcm
 from rfr.preparation.fusion import enumeration as fusion_enum
-from blb_stage2_rl import layerwise_action as layerwise
+from rfr.search.common import layerwise_action as layerwise
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
+_COMMON_DIR = _REPO_ROOT / "src/rfr/search/common"
 _RO_ROOT = _REPO_ROOT / "configs/preparation/rescale"
 _ASPACE_OK = True
 
@@ -32,7 +33,7 @@ def _function_region(source: str, name: str) -> str:
 
 class ActionSpaceSpliceSourceTest(unittest.TestCase):
     def test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization(self):
-        source = (_BLB_DIR / "action_space.py").read_text(encoding="utf-8")
+        source = (_COMMON_DIR / "action_space.py").read_text(encoding="utf-8")
         for name in (
             "splice_step_action_into_full_vec",
             "splice_fusion_step_into_full_vec",
@@ -289,7 +290,7 @@ class CheckKIndependenceTest(unittest.TestCase):
         samples = (cfg for cfg in ([0, 0], [1, 0]))
         with mock.patch.dict(
              sys.modules,
-             {"blb_stage2_rl.action_space": fake_action_space},
+             {"rfr.search.common.action_space": fake_action_space},
         ),\
              mock.patch.object(fusion_enum, "_eval_block", side_effect=fake_eval):
             result = fusion_enum.check_k_independence(Ctx(), sample_configs=samples)
@@ -310,7 +311,7 @@ class ActiveRescalePremiseTest(unittest.TestCase):
     def test_six_block_types_have_active_rescales(self):
         import json
 
-        from blb_stage2_rl import skeleton_stage_map as ssm
+        from rfr.search.common import skeleton_stage_map as ssm
 
         arch_path = _RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json"
         archive = json.loads(arch_path.read_text(encoding="utf-8"))

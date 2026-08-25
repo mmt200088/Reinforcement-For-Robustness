@@ -17,8 +17,8 @@ from rfr.preparation.data.protocol import (
 from rfr.common.json_utils import read_json_file, stable_json_hash, to_jsonable
 from rfr.common.jsonl_utils import read_jsonl, recover_jsonl_file
 
-from .candidate_store import CandidateStore, candidate_key
-from .layerwise_action import describe_layerwise_action_matrix
+from rfr.search.common.candidate_store import CandidateStore, candidate_key
+from rfr.search.common.layerwise_action import describe_layerwise_action_matrix
 from .search_baselines import (
     CONSTRAINT_NAMES,
     CONSTRAINT_PROBABILITY_NAMES,
@@ -1067,7 +1067,7 @@ def _prepare_strict_materialization_fingerprints(
         joint_action_indices: Sequence[int],
         joint_boosted_overrides: Mapping[Any, Any],
         ) -> dict[str, str]:
-    from .layerwise_action import materialize_layerwise_counterfactuals
+    from rfr.search.common.layerwise_action import materialize_layerwise_counterfactuals
 
     materializations = materialize_layerwise_counterfactuals(
         layerwise_env.baseline_full_vector,

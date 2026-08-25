@@ -12,10 +12,8 @@ exactly (``encoding=std_enc^2``, ``fresh=std_fresh^2``, ``rescale=std_rs^2``,
 ``rotation`` reuses the rescale column). Both read the single ``_NOISE_STD_RAW``
 literal, so there is no data drift.
 
-Placed at the repo root (not inside ``blb_stage2_rl/``) so importing it never
-triggers the package ``__init__`` (which pulls torch). The repo root is always on
-``sys.path`` (``PYTHONPATH=.`` for runs and tests), so ``import noise_tables``
-works in every context.
+The table stays in the torch-free common package. It reads the model-handler
+source without importing torch.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ import pathlib
 from typing import Dict, Tuple
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
-_FUNCTION_HANDLER = _THIS_DIR / "function_handler.py"
+_FUNCTION_HANDLER = _THIS_DIR.parents[3] / "function_handler.py"
 
 
 def _extract_noise_std_raw() -> Dict[int, Dict[int, Tuple[float, float, float]]]:

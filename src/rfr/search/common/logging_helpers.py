@@ -5,7 +5,7 @@ Replaces the mix of ``print()`` / bare ``logging.info`` / ``self.log`` /
 
 Usage::
 
-    from blb_stage2_rl.logging_helpers import get_logger
+    from rfr.search.common.logging_helpers import get_logger
     log = get_logger(__name__)
     log.info("training starts: episodes=%d", n)
     log.warning("skipped resume: %s", reason)

@@ -482,7 +482,7 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
 class FusionCountFixedActionDecodeTest(unittest.TestCase):
     def test_per_step_fusion_option_replay_preserves_rl_selected_k(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             K_LEVELS,
             load_max_sfs,
             make_all_max_action_vector,

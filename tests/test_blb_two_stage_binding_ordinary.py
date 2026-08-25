@@ -668,7 +668,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         }
         fusion_module = ModuleType("rfr.preparation.fusion.fixed_action")
         fusion_module.build_fusion_fixed_config = lambda *_args, **_kwargs: None
-        action_module = ModuleType("blb_stage2_rl.layerwise_action")
+        action_module = ModuleType("rfr.search.common.layerwise_action")
         action_module.describe_layerwise_action_matrix = lambda value: list(value)
         runner_module = ModuleType("blb_stage2_rl.training")
         runner_module._build_best_noise_config = lambda _value: {}
@@ -677,7 +677,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             sys.modules,
             {
                 "rfr.preparation.fusion.fixed_action": fusion_module,
-                "blb_stage2_rl.layerwise_action": action_module,
+                "rfr.search.common.layerwise_action": action_module,
                 "blb_stage2_rl.training": runner_module,
             },
         ):

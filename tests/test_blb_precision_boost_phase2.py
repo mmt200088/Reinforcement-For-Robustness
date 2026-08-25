@@ -27,8 +27,8 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import noise_tables as nt  # noqa: E402  (torch-free: parses function_handler text)
-from blb_stage2_rl import precision_boost as pb  # noqa: E402
+from rfr.search.common import noise_tables as nt  # noqa: E402  (torch-free: parses function_handler text)
+from rfr.search.common import precision_boost as pb  # noqa: E402
 
 _RO_ROOT = str(_REPO / "configs/preparation/rescale")
 
@@ -246,7 +246,7 @@ def _noise_fn_for(topology):
     """Deterministic installed-variance proxy over every named topology node
     (fresh/encode/rescale), mirroring the builder's SummedInstalledVariance so
     the driver's min-noise choice is well-defined for the test."""
-    import noise_tables
+    from rfr.search.common import noise_tables
     kd = {"fresh": "fresh", "encode": "encoding", "rescale": "rescale"}
     fields = [(n.cfg_field, kd[n.kind]) for n in topology.nodes if n.cfg_field and n.kind in kd]
 

@@ -132,7 +132,7 @@ class BLBStage2TrainConfig:
     convergence_patience_updates: int = 100
 
     def __post_init__(self) -> None:
-        from .precision_presets import validate_communication_importance_ratio
+        from rfr.search.common.precision_presets import validate_communication_importance_ratio
         from .search_baselines import normalize_search_backend
 
         self.search_backend = normalize_search_backend(self.search_backend)

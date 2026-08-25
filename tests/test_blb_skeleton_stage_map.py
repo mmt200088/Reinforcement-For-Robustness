@@ -1,6 +1,6 @@
 """Skeleton-driven stage-map derivation tests (torch-free).
 
-Pins the SSOT in ``blb_stage2_rl/skeleton_stage_map.py``: the ordered t_new
+Pins the SSOT in ``src/rfr/search/common/skeleton_stage_map.py``: the ordered t_new
 stages + active rescale slots must be DERIVED from the actual
 ``static_skeletons`` cut_point_sf, not hard-coded. This is the regression guard
 for the 2026 skeleton regen that silently drifted block2 / block4 / block5_n1.

@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from blb_stage2_rl.action_space import (
+from rfr.search.common.action_space import (
     K_LEVELS,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
     action_dims_for_config,
@@ -170,10 +170,10 @@ def load_action_grid_config(
     if (has_slots or has_overrides) and num_layers > 0:
 
         try:
-            from blb_stage2_rl.action_io import slots_payload_to_action_vec
+            from rfr.search.common.action_io import slots_payload_to_action_vec
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                f"slot-form action-config requires blb_stage2_rl.action_io; import failed: {exc}"
+                f"slot-form action-config requires rfr.search.common.action_io; import failed: {exc}"
             )
         cfg_profile = str(payload.get("profile") or profile or "default")
         cfg_gelu = payload.get("gelu_degree", gelu_degree)

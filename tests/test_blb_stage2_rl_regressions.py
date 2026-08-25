@@ -825,7 +825,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
     def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+        from rfr.search.common.action_space import load_max_sfs, make_all_max_action_vector
 
         class FakeEvaluator:
             total_layers = 1
@@ -900,7 +900,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
 class BLBTraceWriterRegressionTests(unittest.TestCase):
     def test_status_board_publishes_live_top_level_fields(self):
-        from blb_stage2_rl.persistence import BLBStatusBoard
+        from rfr.search.common.persistence import BLBStatusBoard
 
         with _workspace_tempdir() as td:
             board = BLBStatusBoard(td, total_episodes=240, profile="mrpc")
@@ -929,7 +929,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertIsNotNone(payload["updated_at"])
 
     def test_persistence_report_writers_stream_line_outputs(self):
-        from blb_stage2_rl import persistence
+        from rfr.search.common import persistence
 
         with _workspace_tempdir() as td:
             root = Path(td)
@@ -1012,7 +1012,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
             self.assertEqual(crash_path, str(root / persistence.BLB_ERROR_TXT))
 
     def test_trace_writer_appends_structured_rollout_rows(self):
-        from blb_stage2_rl.persistence import append_blb_episode_trace_row
+        from rfr.search.common.persistence import append_blb_episode_trace_row
 
         with _workspace_tempdir() as td:
             trace_path = append_blb_episode_trace_row(
@@ -1057,7 +1057,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertEqual(rows[1]["best_reward"], "0.0")
 
     def test_trace_writer_migrates_old_header_after_cost_probe_column_added(self):
-        from blb_stage2_rl.persistence import (
+        from rfr.search.common.persistence import (
             BLB_EPISODE_TRACE_CSV,
             BLB_TRACE_FIELDNAMES,
             append_blb_episode_trace_row,
@@ -1128,7 +1128,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertEqual(rows[2]["episode"], "640")
 
     def test_trace_writer_persists_rollout_eval_diagnostics(self):
-        from blb_stage2_rl.persistence import append_blb_episode_trace_row
+        from rfr.search.common.persistence import append_blb_episode_trace_row
 
         with _workspace_tempdir() as td:
             trace_path = append_blb_episode_trace_row(
@@ -1356,7 +1356,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(out.total_bits, 123)
 
     def test_env_all_max_action_uses_optimizer_baseline_scoring(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             avg_truncation_k_in_action,
             load_max_sfs,
             make_all_max_action_vector,
@@ -1471,7 +1471,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertLessEqual(reward, 5.0)
 
     def test_env_runs_forward_even_when_optimizer_invalid(self):
-        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+        from rfr.search.common.action_space import load_max_sfs, make_all_max_action_vector
         from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
         from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
         from rfr.preparation.rescale.bridge import RescaleOptimizerOutput
@@ -1544,7 +1544,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(info["reward_breakdown"].r_invalid, -30.0)
 
     def test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             action_vector_to_cfgs,
             build_optimizer_requests,
             load_max_sfs,
@@ -1586,7 +1586,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(signals.invalid_block_count, 0)
 
     def test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             action_vector_to_cfgs,
             build_optimizer_requests,
             load_max_sfs,
@@ -1629,7 +1629,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
 
 class BLBActionDescriptionRegressionTests(unittest.TestCase):
     def test_action_description_names_every_noise_point_and_truncation(self):
-        from blb_stage2_rl.action_space import (
+        from rfr.search.common.action_space import (
             describe_action_vector,
             load_max_sfs,
             make_all_max_action_vector,
@@ -1663,7 +1663,7 @@ class BLBActionDescriptionRegressionTests(unittest.TestCase):
 
 class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
     def test_candidate_store_hash_fidelity_and_rank_key_are_stable(self):
-        from blb_stage2_rl.candidate_store import (
+        from rfr.search.common.candidate_store import (
             CandidateStore,
             action_hash,
             candidate_rank_key,
@@ -1692,7 +1692,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             self.assertFalse(store.should_evaluate(action, "F4"))
 
     def test_candidate_action_hash_avoids_json_dumps_for_integer_vectors(self):
-        from blb_stage2_rl import candidate_store
+        from rfr.search.common import candidate_store
 
         action = [4, 3, 2, -1]
         expected = hashlib.sha256(b"[4,3,2,-1]").hexdigest()
@@ -1702,7 +1702,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
         self.assertNotIn("json.dumps", source)
 
     def test_registry_export_records_action_values_and_current_slot_count(self):
-        from blb_stage2_rl.action_space import K_LEVELS
+        from rfr.search.common.action_space import K_LEVELS
         from scripts.blb_export_action_registry import build_registry_payload
 
         payload = build_registry_payload(

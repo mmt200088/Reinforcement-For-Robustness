@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 class OptimizerCostImportTests(unittest.TestCase):
     def test_package_context_uses_package_action_space_with_legacy_path_present(self):
         code = """
-import blb_stage2_rl.action_space as package_action_space
+import rfr.search.common.action_space as package_action_space
 import rfr.preparation.rescale.optimizer_cost as optimizer_cost
 
 print(int(optimizer_cost.ActionDecodeResult is package_action_space.ActionDecodeResult))
