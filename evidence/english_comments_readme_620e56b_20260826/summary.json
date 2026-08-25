@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "task_id": "english-comments-readme-20260826",
+  "source_commit": "620e56b2a350dfd3fff43f3a3e60f934e8b78ea2",
+  "source_tree": "a185ba06a32115f775857d7aff1d6a41103c23f0",
+  "verification": {
+    "python_executable_ast_differences": 0,
+    "json_data_equal_without_comment": true,
+    "python_comments_scanned": 68,
+    "python_docstrings_scanned": 1065,
+    "non_english_comment_or_docstring_hits": 0,
+    "prompt_like_comment_or_docstring_hits": 0,
+    "python_modules_imported": 126,
+    "preset_files_validated": 14,
+    "rl_preset_dry_runs": 12,
+    "comparator_dry_runs": 3,
+    "preparation_help_commands": 2,
+    "final_evaluation_readme_command": "passed",
+    "compileall": "passed",
+    "shell_syntax": "passed",
+    "production_surface_guard": "passed"
+  },
+  "scientific_semantics": "unchanged",
+  "gpu_inference": "not required for documentation-only changes"
+}

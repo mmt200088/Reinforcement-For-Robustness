@@ -1,0 +1,10 @@
+python -m compileall -q src scripts
+bash -n run_search.sh scripts/*.sh .githooks/pre-push
+python -m rfr.cli.validate_preset configs/presets/*.conf configs/evaluation/presets/*.conf
+python scripts/production_surface_guard.py --json
+import every module under rfr
+scan Python comments, docstrings, and README for non-English and prompt-like text
+run all 12 RL presets with --dry-run
+run bo_rf, greedy, and coinn_ga with --dry-run
+run both preparation entrypoints with --help
+run final evaluation README command with --source search and --dry-run
