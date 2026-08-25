@@ -111,13 +111,17 @@ load_preset() {
 }
 
 normalize_algorithm() {
-  case "${1,,}" in
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     rl|ppo) printf 'rl\n' ;;
     bo|bo-rf|bo_rf|bayesian) printf 'bo_rf\n' ;;
     greedy|greedy-search|greedy_search) printf 'greedy\n' ;;
     coinn|coinn-ga|coinn_ga) printf 'coinn_ga\n' ;;
     *) fail "run supports rl, bo_rf, greedy, and coinn_ga" ;;
   esac
+}
+
+lowercase() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
 reject_comparator_overrides() {
@@ -331,11 +335,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-DATASET="${DATASET,,}"
-MODEL_TYPE="${MODEL_TYPE,,}"
-MODE="${MODE,,}"
-STAGE2_FIXED_CONFIG_SOURCE="${STAGE2_FIXED_CONFIG_SOURCE,,}"
-ELASTIC_GPU_MODE="${ELASTIC_GPU_MODE,,}"
+DATASET="$(lowercase "$DATASET")"
+MODEL_TYPE="$(lowercase "$MODEL_TYPE")"
+MODE="$(lowercase "$MODE")"
+STAGE2_FIXED_CONFIG_SOURCE="$(lowercase "$STAGE2_FIXED_CONFIG_SOURCE")"
+ELASTIC_GPU_MODE="$(lowercase "$ELASTIC_GPU_MODE")"
 
 case "$DATASET" in mrpc|rte|sst2) ;; *) fail "unsupported dataset: $DATASET" ;; esac
 case "$MODEL_TYPE" in bert-base|bert-large) ;; *) fail "unsupported model type: $MODEL_TYPE" ;; esac

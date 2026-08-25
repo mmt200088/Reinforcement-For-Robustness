@@ -99,6 +99,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
 
     def test_launcher_uses_one_training_entrypoint(self):
         source = LAUNCHER.read_text(encoding="utf-8")
+        self.assertNotIn(",,}", source)
         for removed in (
             "rl_tune_general.py",
             "rl_tune_genetic.py",
