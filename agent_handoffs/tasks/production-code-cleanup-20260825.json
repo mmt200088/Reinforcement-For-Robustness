@@ -1,0 +1,132 @@
+{
+  "aggregate_eligible": false,
+  "base_commit": "f86359bce6ac432cd7f431c21627efd5930f9e02",
+  "base_tree": "bd69827473598320bc013915fceee88a45f9aafd",
+  "branch": "codex/task-production-code-cleanup-20260825",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".gitmodules",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "Dockerfile",
+    "EzPC",
+    "LLM-Adapters",
+    "Makefile",
+    "Model_analysis",
+    "Paean",
+    "README.md",
+    "README_FOR_GPT55PRO.md",
+    "RESULT_CREDIBILITY_PAGE.md",
+    "Rescale_optimizer",
+    "SERVER_COMMAND.md",
+    "agent_handoffs",
+    "approximation.py",
+    "approximation_exp.py",
+    "bert-test.py",
+    "blb_rl_bridge.py",
+    "blb_stage2_rl",
+    "cli_parse_utils.py",
+    "commonsense_evaluate.py",
+    "config",
+    "distribution_stats.py",
+    "docs",
+    "experiment",
+    "experiments",
+    "final_evaluation_module.py",
+    "finish.md",
+    "fixtures",
+    "function_handler.py",
+    "general_policy_module.py",
+    "generate_glue_submission.py",
+    "genetic_search_module.py",
+    "glue_configs.json",
+    "glue_data_protocol.py",
+    "greedy_search_module.py",
+    "grpo_common.py",
+    "importance-aware-sparse-tuning-IST-paper",
+    "jsonl_utils.py",
+    "layer_importance_evaluator.py",
+    "llama_7B_LayerImportance.sh",
+    "moe_sample.py",
+    "noise_rl_module_v2.py",
+    "noise_tables.py",
+    "noise_targets_registry.py",
+    "presets",
+    "project_understanding_blb_stage2_rl.md",
+    "pyproject.toml",
+    "requirements.txt",
+    "rescale_optimizer_bridge.py",
+    "rl_data_points.py",
+    "rl_ga_compare_runner.py",
+    "rl_local_optimum.py",
+    "rl_tune.py",
+    "rl_tune_general.py",
+    "rl_tune_genetic.py",
+    "run_all_experiments.sh",
+    "run_gelu_analysis.sh",
+    "run_glue_submission.sh",
+    "run_noise_scaling_sweep.sh",
+    "scripts",
+    "stage1_rl",
+    "tests",
+    "text_utils.py",
+    "tools",
+    "training_curve_plot.py"
+  ],
+  "completed_at": null,
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "experiments/server_command_runs/production_code_cleanup_4a16e810_20260825/"
+  ],
+  "source_commit": "4a16e8102141d76bf90f7b138b091516c4b890df",
+  "source_tree": "8495914e749c0e44cc716a00aa8975f4bc913bbf",
+  "started_at": "2026-08-24T22:51:11+08:00",
+  "status": "in_progress",
+  "supersedes": [],
+  "task_id": "production-code-cleanup-20260825",
+  "verification": [
+    {
+      "command": "python scripts/production_surface_guard.py --json",
+      "evidence": "compact_evidence.json: ok=true; no forbidden paths or references",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m pytest -q <focused cleanup suites>",
+      "evidence": "focused.log: 126 passed, 1 CUDA skip, 26 subtests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m unittest discover -s tests -v",
+      "evidence": "unittest.log: 1508 tests passed, 14 CUDA skips",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m pytest -q",
+      "evidence": "pytest.log: 1646 passed, 14 CUDA skips, 267 subtests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "fixed-input execution snapshot comparison",
+      "evidence": "execution snapshots are byte-identical; SHA-256 68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7",
+      "outcome": "passed"
+    },
+    {
+      "command": "fixed-input scientific-state snapshot comparison",
+      "evidence": "reward, candidate, checkpoint and final-eval snapshots are byte-identical; SHA-256 0e42f6e55ed8c01a90dc776e9a2150f177f000535d9d97f8ebc6106b6accace8",
+      "outcome": "passed"
+    },
+    {
+      "command": "README Stage 1, Stage 2, comparator and final-eval dry-runs",
+      "evidence": "readme_dry_runs_with_env.log: all six entrypoints passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "nvidia-smi and torch CUDA availability gate",
+      "evidence": "gpu_status.log: NVML driver/library mismatch; nvidia-smi rc=18; torch CUDA error 803; zero visible devices",
+      "outcome": "failed"
+    }
+  ]
+}
