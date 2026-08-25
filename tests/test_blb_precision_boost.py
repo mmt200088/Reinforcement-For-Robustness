@@ -640,7 +640,11 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
             profile="mrpc", rescale_optimizer_root=str(_REPO / "configs/preparation/rescale"),
             num_layers=12, ref_layer=1,
         )
-        path = _REPO / "blb_stage2_rl" / "fusion_maps" / "mrpc" / f"{graph_key}.json"
+        path = (
+            _REPO
+            / "configs/preparation/fusion/maps/mrpc"
+            / f"{graph_key}.json"
+        )
         options = json.loads(path.read_text(encoding="utf-8"))["options"]
         return ctx, options
 
