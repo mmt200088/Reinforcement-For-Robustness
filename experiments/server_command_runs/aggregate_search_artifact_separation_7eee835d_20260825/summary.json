@@ -1,0 +1,43 @@
+{
+  "aggregate_commit": "7eee835d141ed41a1ab7cf81228fa9eae7fb4de3",
+  "aggregate_tree": "a960decbb0144c40d906d827e8bd815dd1dc54e1",
+  "all_head_review": {
+    "dispositions": {
+      "already_ancestor": 38,
+      "archive_only": 25,
+      "in_progress": 2,
+      "included": 1,
+      "rejected": 11,
+      "result_only": 29,
+      "superseded": 42
+    },
+    "head_count": 148,
+    "needs_review": 0
+  },
+  "gates": {
+    "bash_syntax": "passed",
+    "compileall": "passed",
+    "full_pytest": "1658 passed, 3 hardware-count skips, 267 subtests passed",
+    "full_unittest": "1509 tests, 3 hardware-count skips",
+    "production_surface": "passed"
+  },
+  "representative_log": {
+    "bytes": 6158778,
+    "rows": 600,
+    "sha256": "aa065bc468dfcf6a19396ffcca193fb40cf5a7325e3953a953bcdcad4cce8968"
+  },
+  "schema_version": "aggregate_search_artifact_separation_server_evidence_v1",
+  "scientific_result_equivalence": "Search, reward, action, evaluation, candidate, PPO, checkpoint, and final-configuration code paths were not changed; removed runtime behavior is limited to optional HTML rendering.",
+  "server_runtime": {
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "gpu_count": 1,
+    "python": "3.10.19",
+    "torch": "2.9.1+cu128"
+  },
+  "tracked_clean": true,
+  "tree": {
+    "tracked_bytes": 12541135,
+    "tracked_files": 394
+  }
+}
