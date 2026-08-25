@@ -11,6 +11,7 @@ from unittest import mock
 import numpy as np
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
 for _path in (str(_REPO_ROOT),):
     if _path not in sys.path:
         sys.path.insert(0, _path)
