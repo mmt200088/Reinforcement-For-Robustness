@@ -72,6 +72,14 @@ class PaeanConfigTest(unittest.TestCase):
         self.assertIn("from runtime_error_reporter import format_command", source)
         self.assertNotIn("def format_command(", source)
 
+    def test_checked_in_presets_parse_with_the_production_cli(self):
+        for name in ("default", "mrpc-final-eval-only"):
+            with self.subTest(name=name):
+                settings = paean_config.parse_final_eval_settings(
+                    ["--preset", name, "--dry-run"]
+                )
+                self.assertTrue(settings.dry_run)
+
 
 if __name__ == "__main__":
     unittest.main()
