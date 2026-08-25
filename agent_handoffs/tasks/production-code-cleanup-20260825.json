@@ -1,5 +1,5 @@
 {
-  "aggregate_eligible": false,
+  "aggregate_eligible": true,
   "base_commit": "f86359bce6ac432cd7f431c21627efd5930f9e02",
   "base_tree": "bd69827473598320bc013915fceee88a45f9aafd",
   "branch": "codex/task-production-code-cleanup-20260825",
@@ -74,38 +74,38 @@
     "tools",
     "training_curve_plot.py"
   ],
-  "completed_at": null,
+  "completed_at": "2026-08-25T17:03:50+08:00",
   "deployment_eligible": false,
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [
-    "experiments/server_command_runs/production_code_cleanup_4a16e810_20260825/"
+    "experiments/server_command_runs/production_code_cleanup_15877d6a_20260825/"
   ],
-  "source_commit": "4a16e8102141d76bf90f7b138b091516c4b890df",
-  "source_tree": "8495914e749c0e44cc716a00aa8975f4bc913bbf",
+  "source_commit": "15877d6ab94f07552da645c8d6ac916cfb0fee68",
+  "source_tree": "ed0d066e2a51678ea63fe44c4b4ff14ce76010b6",
   "started_at": "2026-08-24T22:51:11+08:00",
-  "status": "in_progress",
+  "status": "completed",
   "supersedes": [],
   "task_id": "production-code-cleanup-20260825",
   "verification": [
     {
       "command": "python scripts/production_surface_guard.py --json",
-      "evidence": "compact_evidence.json: ok=true; no forbidden paths or references",
+      "evidence": "compact_evidence.json: no forbidden runtime paths/references, prompt-style comments, personal source paths, unsupported runtime selectors, or non-result PDFs",
       "outcome": "passed"
     },
     {
-      "command": "python -m pytest -q <focused cleanup suites>",
-      "evidence": "focused.log: 126 passed, 1 CUDA skip, 26 subtests passed",
+      "command": "RED/GREEN regression gates for runtime cost maps, skipped-stage defaults, and Stage-2 lock suffix",
+      "evidence": "all three regressions failed for the observed production defects before the fixes and passed afterward",
       "outcome": "passed"
     },
     {
-      "command": "python -m unittest discover -s tests -v",
-      "evidence": "unittest.log: 1508 tests passed, 14 CUDA skips",
+      "command": "BLB_STAGE2_RUN_GPU_INTEGRATION=1 python -m unittest discover -s tests -v",
+      "evidence": "unittest_gpu.log: 1510 tests passed; 3 skips require unavailable 2-GPU or 5-GPU hardware",
       "outcome": "passed"
     },
     {
-      "command": "python -m pytest -q",
-      "evidence": "pytest.log: 1646 passed, 14 CUDA skips, 267 subtests passed",
+      "command": "BLB_STAGE2_RUN_GPU_INTEGRATION=1 python -m pytest -q",
+      "evidence": "pytest_gpu.log: 1659 passed, 3 hardware-count skips, 267 subtests passed",
       "outcome": "passed"
     },
     {
@@ -120,13 +120,28 @@
     },
     {
       "command": "README Stage 1, Stage 2, comparator and final-eval dry-runs",
-      "evidence": "readme_dry_runs_with_env.log: all six entrypoints passed",
+      "evidence": "static_readme.log: all six documented entrypoints passed",
       "outcome": "passed"
     },
     {
-      "command": "nvidia-smi and torch CUDA availability gate",
-      "evidence": "gpu_status.log: NVML driver/library mismatch; nvidia-smi rc=18; torch CUDA error 803; zero visible devices",
-      "outcome": "failed"
+      "command": "matching-driver nvidia-smi, torch CUDA tensor gate, fused CUDA tests and full GPU suite",
+      "evidence": "gpu_recovery.log and full suites: one RTX 4090, driver 580.173.02, torch 2.9.1+cu128, CUDA tensor result verified",
+      "outcome": "passed"
+    },
+    {
+      "command": "six-profile Stage-1/Stage-2 and three-comparator real-model smoke",
+      "evidence": "15 cases accounted for: 13 completed; base SST-2 and large MRPC failed closed on zero metric variance exactly as at source ad593728",
+      "outcome": "passed"
+    },
+    {
+      "command": "protected result tree receipt comparison",
+      "evidence": "20 protected paths are object-identical; receipt SHA-256 fa8edaa198d45ab457b988df0e444adc3cef8bceffe976756672cb65ee6497bc",
+      "outcome": "passed"
+    },
+    {
+      "command": "repo_sync_guard.py result-check --require-remote",
+      "evidence": "result commit ac48b62cbccb9eb16185b17f802303a509c2ebdf; remote parity true; artifact-only path validation passed",
+      "outcome": "passed"
     }
   ]
 }
