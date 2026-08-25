@@ -142,7 +142,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             expected_helper = (
                 "materialize_action_for_model"
                 if path.name == "env.py"
-                else "apply_optimizer_outputs_to_cfgs"
+                else "materialize_decoded_action"
             )
             self.assertIn(expected_helper, text)
         self.assertEqual(offenders, [])
