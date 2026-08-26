@@ -371,6 +371,7 @@ class BLBActionFinalEvaluationModule:
             self.evaluator,
             search_results=(search_best_stage1, search_best_stage2),
             requested_split=FINAL_EVAL_SPLIT,
+            require_search_result=(self.config_source == "search"),
         )
         self.final_eval_split = protocol["split_name"]
         if self.random_enabled and self.action_ranges:

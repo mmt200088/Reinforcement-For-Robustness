@@ -74,6 +74,7 @@ def require_final_evaluation_protocol(
     *,
     search_results: Sequence[Any],
     requested_split: str = FINAL_EVAL_SPLIT,
+    require_search_result: bool = True,
 ) -> dict[str, Any]:
     if str(requested_split) != FINAL_EVAL_SPLIT:
         raise RuntimeError(
@@ -100,7 +101,7 @@ def require_final_evaluation_protocol(
         raise RuntimeError("final evaluation persisted protocol hash mismatch")
 
     provided_results = [result for result in search_results if result is not None]
-    if not provided_results:
+    if require_search_result and not provided_results:
         raise RuntimeError("final evaluation requires a persisted search result")
     for result in provided_results:
         result_hashes = _protocol_hashes(result)
@@ -216,6 +217,7 @@ class UnifiedFinalEvaluationModule:
             self.evaluator,
             search_results=(search_best_stage1, search_best_stage2),
             requested_split=FINAL_EVAL_SPLIT,
+            require_search_result=(self.config_source == "search"),
         )
         self.final_eval_split = protocol["split_name"]
         self.final_eval_protocol = protocol
