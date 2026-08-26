@@ -3790,6 +3790,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         stage1_best = {
                             "gelu": np.asarray(cfg["gelu"], dtype=int),
                             "softmax": np.asarray(cfg["softmax"], dtype=int),
+                            "dataset_protocol_hash": ckpt.get(
+                                "dataset_protocol_hash"
+                            ),
                         }
                         self.log(f"[final_eval_only] 加载 Stage-1 RL 最优配置: {s1_path}")
                 except Exception as exc:
@@ -3977,6 +3980,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                             )
                             out["blb_v3_fusion_count_action"] = bool(
                                 checkpoint.get("blb_v3_fusion_count_action", False)
+                            )
+                            out["dataset_protocol_hash"] = checkpoint.get(
+                                "dataset_protocol_hash"
                             )
                             if best_group is not None:
                                 out["blb_v3_best_action_group"] = copy.deepcopy(best_group)
