@@ -2339,6 +2339,7 @@ class BLBActionFinalEvaluationModule:
         return path
 
 
+    @staticmethod
     def _attach_relative_metrics(baseline, results):
         for result in results:
             result["delta_loss_vs_baseline"] = float(result["loss"] - baseline["loss"])
