@@ -107,14 +107,10 @@ and strict validation uses three 15-trial banks. Run only Stage 1 with:
 bash run_search.sh run bo_rf --comparator-stage1-only --fresh
 ```
 
-## Resume and Outputs
+## Search Outputs and Resume
 
-Send `SIGINT` to the recorded PID for a graceful stop. The current candidate,
-observation journal, checkpoint, and metadata are flushed before exit. Run the
-same command without `--fresh` to resume. Using `--fresh` again discards the
-existing output for that exact run contract.
-
-Outputs are grouped by algorithm:
+The launcher prints the exact run directory and records it in the adjacent
+`LATEST_RUN_DIR` file. Search outputs use these roots:
 
 ```text
 outputs/rl/<model>/<dataset>/stage1/<run>/
@@ -122,20 +118,90 @@ outputs/rl/<model>/<dataset>/stage2/<run>/
 outputs/<bo_rf|greedy|coinn_ga>/bert-base/mrpc/two_stage/<run>/
 ```
 
-Each run directory contains logs, durable search state, selected
-configurations, structured observations, and validation artifacts.
+Stage 1 RL stores `stage1_rl_checkpoint.pt`, `stage1_policy.pt`, curves, logs,
+and chunked episode details in its run directory. Raw records are under
+`records/stage1/<model>/<dataset>/<run-id>/`. On completion, the selected
+degrees are archived separately as:
 
-## Final Evaluation
+```text
+outputs/rl/<model>/<dataset>/stage1/record/<record-id>/final_config.json
+```
 
-Evaluate a completed search result on the full validation split:
+Stage 2 RL stores its durable state under `<run>/stage2/progress/`. The main
+files are `layerwise_summary.json`, `candidate_store.jsonl`,
+`blb_stage2_rl_checkpoint_live.pt`, and the JSONL files in `diagnostics/` and
+`records/stage2/`. A strictly accepted candidate is exported as
+`diagnostics/best_action_vec.json`. A short or interrupted run can have a valid
+checkpoint and summary without this file; that state is resumable, but it is
+not a final search result.
+
+Comparator runs use the following result files:
+
+```text
+<run>/stage1_comparator/<algorithm>/result.json
+<run>/stage2/progress/search_<algorithm>/final_selected_configuration.json
+<run>/two_stage_result.json
+```
+
+`two_stage_result.json` is the final two-stage summary and binds the selected
+Stage 1 result to the Stage 2 selection. The Stage 1 and Stage 2 directories
+also retain observations, histories, checkpoints, manifests, and summaries.
+
+Send `SIGINT` to the PID printed by the launcher for a graceful stop. Run the
+same command without `--fresh` to resume. Using `--fresh` again discards the
+existing output for that exact run contract.
+
+## Validation Evaluation
+
+Validation evaluation is independent of search and never updates the search
+policy or candidate state. It always evaluates the full GLUE validation split
+and verifies the persisted data-protocol identity.
+
+Evaluate a completed search run:
 
 ```bash
 bash run_search.sh eval \
-  --preset mrpc-final-eval-only \
+  --dataset mrpc \
+  --model-type bert-base \
+  --algorithm rl \
   --source search \
   --resume-from outputs/rl/bert-base/mrpc/stage2/<run> \
+  --output-root outputs/evaluation \
+  --run-name final-mrpc \
+  --repeat 1 \
+  --cost-match-count 0 \
   --foreground
 ```
+
+To evaluate a hand-edited configuration, edit `configs/reference/rl.json` for
+the Stage 1 degrees and edit or copy one of the action templates under
+`configs/evaluation/actions/` for Stage 2:
+
+```bash
+bash run_search.sh eval \
+  --dataset mrpc \
+  --model-type bert-base \
+  --algorithm rl \
+  --source json \
+  --config configs/reference/rl.json \
+  --action-config configs/evaluation/actions/manual_blb_v3_overrides_template.json \
+  --output-root outputs/evaluation \
+  --run-name manual-mrpc \
+  --repeat 1 \
+  --cost-match-count 0 \
+  --foreground
+```
+
+Evaluation results are written under:
+
+```text
+outputs/evaluation/<algorithm>/<model>/<dataset>/<run-name>/evaluation/
+```
+
+BLB action evaluation writes `blb_action_final_eval_results_<dataset>.json`, a
+Markdown report, and comparison plots. Legacy scaling-factor evaluation writes
+`final_eval_results_<dataset>.json`. Omit `--foreground` to run in the
+background with a PID file and log directory.
 
 Use `--dry-run` with any search or evaluation command to inspect the resolved
 configuration without starting model inference.
