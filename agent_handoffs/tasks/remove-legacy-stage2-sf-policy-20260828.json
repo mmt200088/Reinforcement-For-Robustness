@@ -1,0 +1,60 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "14f5de72e64702a5a9bba6f34eb16aeb5c6ec3d5",
+  "base_tree": "8820b87ad1015af0ac0841e275d575a0aa109bc3",
+  "branch": "codex/task-remove-legacy-stage2-sf-policy-20260828",
+  "branch_role": "task",
+  "changed_scopes": [
+    "docs/superpowers/plans/2026-08-26-search-structure-reorganization.md",
+    "src/rfr/evaluation/action_eval.py",
+    "src/rfr/preparation/fusion/fixed_action.py",
+    "src/rfr/search/common/action_space.py",
+    "src/rfr/search/common/layerwise_action.py",
+    "src/rfr/search/rl/stage2"
+  ],
+  "completed_at": "2026-08-28T00:47:09+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-remove-legacy-stage2-sf-policy-20260828:evidence/remove_legacy_stage2_sf_policy_9392938_20260828/"
+  ],
+  "source_commit": "9392938c9797ece3010e3341d6e1d9e68eef478f",
+  "source_tree": "03280802257da4d1f67d7cb241854f5dab69e0fa",
+  "started_at": "2026-08-27T23:50:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "remove-legacy-stage2-sf-policy-20260828",
+  "verification": [
+    {
+      "command": "static call-graph audit, Python compileall, Git diff checks, and removed-symbol scan",
+      "evidence": "the production path resolves to one 12-layer x 2-action policy; legacy BlockStepSpec, FusionStepSpec, 47-step per-block schedule, per-SF splice APIs, old Stage-2 wrapper, and sequential policy/runner modules are absent",
+      "outcome": "passed"
+    },
+    {
+      "command": "matched old/new policy initialization and forward snapshot",
+      "evidence": "parameter count 692615; state dict, logits, value, deterministic action, joint log probability, and per-slot log probabilities matched byte-for-byte; snapshot SHA-256 c70932a3092d5b62843e786e0db20b7c113607ccff56594fc424a44958c8025d",
+      "outcome": "passed"
+    },
+    {
+      "command": "matched six-profile full-action materialization and final-evaluation replay",
+      "evidence": "12 representative BERT-base/large MRPC/RTE/SST-2 cases matched for full vector, option_by_step, boosted overrides, reconstructed fusion group, and K summary; snapshot SHA-256 3e91e7dfab34f3ef0539517d9c64449b7b18e192f1694e06d970faa82406b396",
+      "outcome": "passed"
+    },
+    {
+      "command": "matched 1440-transition factorized PPO update",
+      "evidence": "old/new metrics and post-update policy state matched byte-for-byte; snapshot SHA-256 47fb40a8bc9f5ad7c5e183acc25115c7fc4fedffccf1bf1538459a7ee697ae7d",
+      "outcome": "passed"
+    },
+    {
+      "command": "real BERT-base MRPC CUDA Stage-2 run on exact source",
+      "evidence": "RTX 4090 run loaded the 256-example train probe and formal Rescale baseline, reported horizon=12 and max_step_dim=2, exercised online and strict terminal probes, and wrote 662 candidate records across 117 candidates (45 F1, 613 F4, 4 metadata rows); the test was stopped after explicit graceful-stop verification and left no process",
+      "outcome": "passed"
+    },
+    {
+      "command": "exact-source server static, launcher, artifact integrity, and remote result checks",
+      "evidence": "source 9392938c/tree 03280802 was tracked-clean; compileall, Bash syntax, production-surface guard, and Stage-2 launcher dry-run passed; result commit 1c96fc39b6eee87f4e444741ccd5c2a9199a2fa0/tree 7a73163d99bf4dab25f5ca2040fd3231d07019d6 passed result-check with remote parity and SHA256SUMS verification",
+      "outcome": "passed"
+    }
+  ]
+}
