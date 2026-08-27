@@ -867,37 +867,15 @@ def _resource_fields_from_action_matrix(
 
 def _candidate_resource_fields(candidate: Any) -> dict[str, Any]:
     action_matrix = _field(candidate, "action_matrix")
-    if action_matrix is not None:
-        return _resource_fields_from_action_matrix(
-            action_matrix,
-            _finite(
-                _field(candidate, "communication_importance_ratio", 1.0),
-                name="communication_importance_ratio",
-            ),
-        )
-    compute = _field(candidate, "compute_saving")
-    communication = _field(candidate, "communication_saving")
-    if compute is None or communication is None:
-
-
-        legacy = _finite(_field(candidate, "variable_cost"), name="variable_cost")
-        compute = communication = legacy
-    compute_value = _finite(compute, name="compute_saving")
-    communication_value = _finite(communication, name="communication_saving")
-    if not 0.0 <= compute_value <= 1.0 or not 0.0 <= communication_value <= 1.0:
-        raise ValueError("resource savings must be in [0, 1]")
-    return {
-        "compute_saving": compute_value,
-        "communication_saving": communication_value,
-        "robust_floor": min(compute_value, communication_value),
-        "secondary_progress": 0.5 * (compute_value + communication_value),
-        "ppo_resource_score": _finite(
-            _field(candidate, "ppo_resource_score", 0.5 * (
-                compute_value + communication_value
-            )),
-            name="ppo_resource_score",
+    if action_matrix is None:
+        raise ValueError("candidate resource ranking requires action_matrix")
+    return _resource_fields_from_action_matrix(
+        action_matrix,
+        _finite(
+            _field(candidate, "communication_importance_ratio", 1.0),
+            name="communication_importance_ratio",
         ),
-    }
+    )
 
 
 def strict_rank_key(candidate: Any) -> tuple[float, ...]:
@@ -1545,148 +1523,20 @@ def restore_promoted_candidates(
         *,
         candidate_store: CandidateStore,
         identity_context: Mapping[str, Any],
-        statistical_reference: Any,
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
         promotion_probability: float = 0.80,
-        assessment_trial_limit: int = 25,
         final_probability: float = 0.95,
-        final_assessment_trial_limit: int = 25,
-        validation_banks: Optional[LayerwiseValidationBanks] = None,
+        validation_banks: LayerwiseValidationBanks,
         ) -> dict[str, dict[str, Any]]:
-    """Rebuild the current promoted frontier from append-only raw evidence."""
-    if validation_banks is not None:
-        return _restore_three_bank_candidates(
-            candidate_store=candidate_store,
-            identity_context=identity_context,
-            assess_candidate_fn=assess_candidate_fn,
-            promotion_probability=promotion_probability,
-            final_probability=final_probability,
-            validation_banks=validation_banks,
-        )
-    full_identity_context = evidence_identity_context(identity_context, "F4")
-    latest_status: dict[
-        str, tuple[str, tuple[int, ...], dict[str, Any]]
-    ] = {}
-    wanted_context_hash = sha256_json(full_identity_context)
-    for record in candidate_store.iter_active_records():
-        if record.get("record_type") != "candidate_promotion_status_v2":
-            continue
-        if str(record.get("identity_context_hash", "")) != wanted_context_hash:
-            continue
-        key = str(record.get("candidate_key", ""))
-        if not key:
-            continue
-        latest_status[key] = (
-            str(record.get("promotion_status", "")),
-            tuple(int(value) for value in record.get("action_indices", ())),
-            dict(record.get("promotion_metadata") or {}),
-        )
-
-    restored: dict[str, dict[str, Any]] = {}
-    for key, (status, action_indices, promotion_metadata) in latest_status.items():
-        if status not in ("promoted", _FINAL_REVALIDATION_PASSED) or not action_indices:
-            continue
-        final_revalidated = status == _FINAL_REVALIDATION_PASSED
-        evidence_context = full_identity_context
-        gate_probability = float(promotion_probability)
-        trial_limit = int(assessment_trial_limit)
-        if final_revalidated:
-            raw_context = promotion_metadata.get(
-                "final_revalidation_identity_context",
-            )
-            if not isinstance(raw_context, Mapping):
-                continue
-            evidence_context = dict(raw_context)
-            gate_probability = float(final_probability)
-            trial_limit = int(final_assessment_trial_limit)
-            stored_probability = float(
-                promotion_metadata.get(
-                    "final_revalidation_probability", gate_probability,
-                )
-            )
-            stored_trial_count = int(
-                promotion_metadata.get(
-                    "final_revalidation_trial_count", trial_limit,
-                )
-            )
-            if not math.isclose(
-                    stored_probability, gate_probability,
-                    rel_tol=0.0, abs_tol=1.0e-12,
-            ):
-                raise ValueError("final revalidation probability changed across resume")
-            if stored_trial_count != trial_limit:
-                raise ValueError("final revalidation trial count changed across resume")
-        evidence = candidate_store.trial_evidence_for_action(
-            action_indices, evidence_context,
-            max_trials=trial_limit,
-        )
-        if evidence is None or not evidence.promoted:
-            continue
-        metadata: dict[str, Any] = {}
-        for group in evidence.groups:
-            for name in (
-                    "action_matrix", "variable_cost", "episode_reward",
-                    "assessment_bootstrap_seed", "boosted_overrides",
-            ):
-                if name in group:
-                    metadata[name] = group[name]
-        for name in (
-                "action_matrix", "variable_cost", "episode_reward",
-                "assessment_bootstrap_seed", "boosted_overrides",
-        ):
-            if name in promotion_metadata:
-                metadata[name] = promotion_metadata[name]
-        if not all(name in metadata for name in (
-                "action_matrix", "boosted_overrides",
-        )):
-            continue
-        assessment = assess_candidate_fn(
-            evidence.trials,
-            statistical_reference,
-            gate_probability=gate_probability,
-            bootstrap_seed=int(metadata.get("assessment_bootstrap_seed", 0)),
-        )
-        if not _assessment_passes(assessment, gate_probability):
-            continue
-        action_matrix = tuple(
-            tuple(int(value) for value in row)
-            for row in metadata["action_matrix"]
-        )
-        if not action_matrix or any(
-                len(row) != len(LAYERWISE_SLOT_NAMES) for row in action_matrix
-        ):
-            raise ValueError(
-                "persisted layerwise action_matrix must be a nonempty Nx2 matrix"
-            )
-        resource = _resource_fields_from_action_matrix(
-            action_matrix,
-            float(metadata.get("communication_importance_ratio", 1.0)),
-        )
-        reward = metadata.get("episode_reward")
-        restored_metrics = _metrics_from_trials(evidence.trials)
-        restored[key] = {
-            **resource,
-            "variable_cost": float(resource["ppo_resource_score"]),
-            "assessment": assessment,
-            "metrics": restored_metrics,
-            "constraint_safety_margins": normalized_constraint_safety_margins(
-                restored_metrics, statistical_reference,
-            ),
-            "action_matrix": action_matrix,
-            "full_vector": tuple(action_indices),
-            "boosted_overrides": _deserialize_boosted_overrides(
-                metadata["boosted_overrides"]
-            ),
-            "reward": None if reward is None else _finite(reward, name="episode_reward"),
-            "promotion_trials": evidence.trials,
-            "final_revalidation_status": (
-                "passed" if final_revalidated else "not_run"
-            ),
-            "axis_counterfactuals": copy.deepcopy(
-                promotion_metadata.get("axis_counterfactuals")
-            ),
-        }
-    return restored
+    """Rebuild the A/B/C-certified frontier from current evidence records."""
+    return _restore_three_bank_candidates(
+        candidate_store=candidate_store,
+        identity_context=identity_context,
+        assess_candidate_fn=assess_candidate_fn,
+        promotion_probability=promotion_probability,
+        final_probability=final_probability,
+        validation_banks=validation_banks,
+    )
 
 
 def _promotion_probe_seed(
@@ -2234,9 +2084,7 @@ def _promote_candidate_through_validation_banks(
         action_matrix: Sequence[Sequence[int]],
         assessment: Any,
         priority: int,
-        variable_cost: Optional[float],
-        frontier_cost: Optional[float],
-        frontier_candidates: Optional[Mapping[str, Mapping[str, Any]]],
+        frontier_candidates: Mapping[str, Mapping[str, Any]],
         boosted_overrides: Mapping[Any, Any],
         bootstrap_seed: int,
         episode_reward: Optional[float],
@@ -2321,32 +2169,23 @@ def _promote_candidate_through_validation_banks(
         action_matrix,
         float(getattr(env, "communication_importance_ratio", 1.0)),
     )
-    dominated = False
-    if frontier_candidates is not None:
-        compute = float(resource["compute_saving"])
-        communication = float(resource["communication_saving"])
-        dominated = any(
-            other["compute_saving"] >= compute - 1.0e-12
-            and other["communication_saving"] >= communication - 1.0e-12
-            and (
-                other["compute_saving"] > compute + 1.0e-12
-                or other["communication_saving"] > communication + 1.0e-12
-            )
-            for other in (
-                _candidate_resource_fields(candidate)
-                for candidate in frontier_candidates.values()
-            )
+    compute = float(resource["compute_saving"])
+    communication = float(resource["communication_saving"])
+    dominated = any(
+        other["compute_saving"] >= compute - 1.0e-12
+        and other["communication_saving"] >= communication - 1.0e-12
+        and (
+            other["compute_saving"] > compute + 1.0e-12
+            or other["communication_saving"] > communication + 1.0e-12
         )
-    elif frontier_cost is not None:
-        legacy_cost = _finite(variable_cost, name="variable_cost")
-        dominated = legacy_cost < float(frontier_cost) - 1.0e-12
+        for other in (
+            _candidate_resource_fields(candidate)
+            for candidate in frontier_candidates.values()
+        )
+    )
     if dominated:
         return PromotionResult(
-            (
-                "resource_dominated"
-                if frontier_candidates is not None
-                else "not_frontier_improvement"
-            ),
+            "resource_dominated",
             trial_count, 0, evidence, assessment, None,
         )
 
@@ -2503,283 +2342,38 @@ def _promote_candidate_through_validation_banks(
 def promote_candidate_if_eligible(
         *,
         env: Any,
-        promotion_base_env: Optional[Any] = None,
+        promotion_base_env: Optional[Any],
         candidate_store: CandidateStore,
         action_indices: Sequence[int],
         identity_context: Mapping[str, Any],
         action_matrix: Sequence[Sequence[int]],
         assessment: Any,
         priority: int,
-        variable_cost: Optional[float],
-        frontier_cost: Optional[float],
-        frontier_candidates: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        frontier_candidates: Mapping[str, Mapping[str, Any]],
         boosted_overrides: Mapping[Any, Any],
         bootstrap_seed: int,
-        episode_reward: Optional[float] = None,
-        assess_candidate_fn: Callable[..., Any] = assess_candidate,
-        prefilter_probability: Optional[float] = None,
-        promotion_probability: float = 0.80,
-        target_trial_count: int = 25,
-        validation_banks: Optional[LayerwiseValidationBanks] = None,
+        episode_reward: Optional[float],
+        assess_candidate_fn: Callable[..., Any],
+        promotion_probability: float,
+        validation_banks: LayerwiseValidationBanks,
         ) -> PromotionResult:
-    """Promote one robust frontier improvement using fresh real probes."""
-    if validation_banks is not None:
-        return _promote_candidate_through_validation_banks(
-            env=env,
-            promotion_base_env=promotion_base_env,
-            candidate_store=candidate_store,
-            action_indices=action_indices,
-            identity_context=identity_context,
-            action_matrix=action_matrix,
-            assessment=assessment,
-            priority=priority,
-            variable_cost=variable_cost,
-            frontier_cost=frontier_cost,
-            frontier_candidates=frontier_candidates,
-            boosted_overrides=boosted_overrides,
-            bootstrap_seed=bootstrap_seed,
-            episode_reward=episode_reward,
-            assess_candidate_fn=assess_candidate_fn,
-            promotion_probability=promotion_probability,
-            validation_banks=validation_banks,
-        )
-    full_identity_context = evidence_identity_context(identity_context, "F4")
-    full_base_env = promotion_base_env or env.base
-    evidence = candidate_store.trial_evidence_for_action(
-        action_indices, full_identity_context,
-        max_trials=int(target_trial_count),
-    )
-    trial_count = candidate_store.trial_count_for_action(
-        action_indices, full_identity_context,
-    )
-    pooled_metrics = _metrics_from_trials(evidence.trials) if evidence is not None else None
-    if evidence is not None and evidence.promoted:
-        authoritative_assessment = assess_candidate_fn(
-            evidence.trials,
-            full_base_env.statistical_reference,
-            gate_probability=float(promotion_probability),
-            bootstrap_seed=int(bootstrap_seed),
-        )
-        return PromotionResult(
-            "already_promoted",
-            trial_count,
-            0,
-            evidence,
-            authoritative_assessment,
-            pooled_metrics,
-        )
-    if int(priority) != 3:
-        return PromotionResult(
-            "priority_not_p3", trial_count, 0, evidence, assessment, pooled_metrics,
-        )
-    prefilter_gate = (
-        float(promotion_probability)
-        if prefilter_probability is None else float(prefilter_probability)
-    )
-    if not 0.0 < prefilter_gate <= float(promotion_probability):
-        raise ValueError(
-            "prefilter_probability must be in (0, promotion_probability]"
-        )
-    if not _assessment_passes(assessment, prefilter_gate):
-        return PromotionResult(
-            "promotion_probability_below_gate", trial_count, 0,
-            evidence, assessment, pooled_metrics,
-        )
-    resource = _resource_fields_from_action_matrix(
-        action_matrix,
-        float(getattr(env, "communication_importance_ratio", 1.0)),
-    )
-    cost = float(resource["ppo_resource_score"])
-    dominated = False
-    if frontier_candidates is not None:
-        compute = float(resource["compute_saving"])
-        communication = float(resource["communication_saving"])
-        dominated = any(
-            other["compute_saving"] >= compute - 1.0e-12
-            and other["communication_saving"] >= communication - 1.0e-12
-            and (
-                other["compute_saving"] > compute + 1.0e-12
-                or other["communication_saving"] > communication + 1.0e-12
-            )
-            for other in (
-                _candidate_resource_fields(candidate)
-                for candidate in frontier_candidates.values()
-            )
-        )
-    elif frontier_cost is not None:
-
-
-        legacy_cost = _finite(variable_cost, name="variable_cost")
-        dominated = legacy_cost < float(frontier_cost) - 1.0e-12
-    if dominated:
-        return PromotionResult(
-            (
-                "resource_dominated"
-                if frontier_candidates is not None
-                else "not_frontier_improvement"
-            ),
-            trial_count, 0,
-            evidence, assessment, pooled_metrics,
-        )
-    target = int(target_trial_count)
-    if target <= 0:
-        raise ValueError("target_trial_count must be positive")
-    pending_reassessment = bool(
-        evidence is not None
-        and evidence.promotion_attempted
-        and not evidence.promotion_status
-        and trial_count >= target
-    )
-    if evidence is not None and evidence.promotion_attempted and not pending_reassessment:
-        return PromotionResult(
-            "promotion_already_attempted", trial_count, 0,
-            evidence, assessment, pooled_metrics,
-        )
-
-    fresh_count = max(0, target - trial_count)
-    status_metadata = {
-        "existing_trial_count": int(trial_count),
-        "requested_fresh_trial_count": int(fresh_count),
-        **resource,
-        "variable_cost": float(cost),
-        "assessment_bootstrap_seed": int(bootstrap_seed),
-        "action_matrix": [list(map(int, row)) for row in action_matrix],
-        "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
-    }
-    if episode_reward is not None:
-        status_metadata["episode_reward"] = float(episode_reward)
-    promotion_probe_seed: Optional[int] = None
-    predicted_trial_seeds: tuple[int, ...] = ()
-    if fresh_count:
-        promotion_probe_seed, predicted_trial_seeds = _promotion_probe_seed(
-            (
-                evidence.candidate_key
-                if evidence is not None
-                else candidate_key(action_indices, full_identity_context)
-            ),
-            bootstrap_seed,
-            trial_count,
-            (() if evidence is None else evidence.trials.seeds),
-            fresh_count,
-        )
-    try:
-        if fresh_count:
-            online_clear = getattr(env.base, "clear_installed_blb", None)
-            if full_base_env is not env.base and callable(online_clear):
-                online_clear()
-                env.base._installed_config_fingerprint = None
-                env.base._installed_action_hash = None
-            previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
-            full_base_env.probe_noise_seed = promotion_probe_seed
-            try:
-                prepared = full_base_env.prepare_action_for_terminal_probe(
-                    list(action_indices),
-                    external_cost_score=cost,
-                    external_cost_rank=cost,
-                    external_resource_objective=resource,
-                    boosted_overrides=_copy_boosted_overrides(
-                        boosted_overrides
-                    ),
-                )
-                evaluated = full_base_env.evaluate_prepared_terminal_batch(
-                    [prepared],
-                    num_trials_per_action=fresh_count,
-                    validation_required=True,
-                )
-            finally:
-                full_base_env.probe_noise_seed = previous_probe_seed
-                if full_base_env is not env.base:
-                    full_clear = getattr(full_base_env, "clear_installed_blb", None)
-                    if callable(full_clear):
-                        full_clear()
-                    full_base_env._installed_config_fingerprint = None
-                    full_base_env._installed_action_hash = None
-                    if callable(online_clear):
-                        online_clear()
-                    env.base._installed_config_fingerprint = None
-                    env.base._installed_action_hash = None
-            if len(evaluated) != 1:
-                raise RuntimeError(
-                    f"promotion expected one terminal result, received {len(evaluated)}"
-                )
-            terminal_info = evaluated[0][3]
-            if not isinstance(terminal_info, Mapping) or bool(terminal_info.get("invalid", False)):
-                raise RuntimeError("promotion terminal evaluation was invalid")
-            fresh_trials = _trial_series_from_info(
-                terminal_info,
-                required=True,
-                expected_count=fresh_count,
-                context="promotion terminal",
-            )
-            if tuple(fresh_trials.seeds) != predicted_trial_seeds:
-                raise RuntimeError(
-                    "promotion terminal trial seeds did not match the predicted fresh set"
-                )
-            candidate_store.append_trial_group(
-                action_indices,
-                fresh_trials,
-                {
-                    "identity_context": full_identity_context,
-                    "fidelity": "F4",
-                    **resource,
-                    "variable_cost": float(cost),
-                    "action_matrix": [list(map(int, row)) for row in action_matrix],
-                    "boosted_overrides_hash": sha256_json(boosted_overrides),
-                    "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
-                    "boosted_overrides_provenance": "layerwise_env",
-                    "assessment_bootstrap_seed": int(bootstrap_seed),
-                    "promotion_marker": "fresh_top_up",
-                    "promotion_status": "pending_reassessment",
-                },
-            )
-        evidence = candidate_store.trial_evidence_for_action(
-            action_indices, full_identity_context,
-            max_trials=target,
-        )
-        trial_count = candidate_store.trial_count_for_action(
-            action_indices, full_identity_context,
-        )
-        if evidence is None or trial_count < target:
-            raise RuntimeError(
-                f"promotion evidence count {trial_count} "
-                f"is below target {target}"
-            )
-        pooled_assessment = assess_candidate_fn(
-            evidence.trials,
-            full_base_env.statistical_reference,
-            gate_probability=float(promotion_probability),
-            bootstrap_seed=int(bootstrap_seed),
-        )
-        promotion_status = (
-            "promoted" if _assessment_passes(pooled_assessment, promotion_probability)
-            else "failed_probability_gate"
-        )
-    except Exception as exc:
-        promotion_status = "failed_evaluation"
-        pooled_assessment = assessment
-        status_metadata["error"] = str(exc)
-
-    _append_promotion_status(
-        candidate_store,
-        action_indices,
-        full_identity_context,
-        status=promotion_status,
-        metadata=status_metadata,
-    )
-    evidence = candidate_store.trial_evidence_for_action(
-        action_indices, full_identity_context,
-        max_trials=target,
-    )
-    total_trial_count = candidate_store.trial_count_for_action(
-        action_indices, full_identity_context,
-    )
-    return PromotionResult(
-        status=promotion_status,
-        trial_count=total_trial_count,
-        fresh_trial_count=(fresh_count if evidence is not None and total_trial_count >= target else 0),
-        evidence=evidence,
-        assessment=pooled_assessment,
-        metrics=(_metrics_from_trials(evidence.trials) if evidence is not None else pooled_metrics),
+    """Promote one candidate through the authoritative A/B validation banks."""
+    return _promote_candidate_through_validation_banks(
+        env=env,
+        promotion_base_env=promotion_base_env,
+        candidate_store=candidate_store,
+        action_indices=action_indices,
+        identity_context=identity_context,
+        action_matrix=action_matrix,
+        assessment=assessment,
+        priority=priority,
+        frontier_candidates=frontier_candidates,
+        boosted_overrides=boosted_overrides,
+        bootstrap_seed=bootstrap_seed,
+        episode_reward=episode_reward,
+        assess_candidate_fn=assess_candidate_fn,
+        promotion_probability=promotion_probability,
+        validation_banks=validation_banks,
     )
 
 
@@ -3365,9 +2959,9 @@ def train_layerwise(
         policy: Any,
         train_cfg: Any,
         candidate_store: CandidateStore,
-        identity_context: Optional[Mapping[str, Any]] = None,
+        identity_context: Mapping[str, Any],
         promotion_base_env: Optional[Any] = None,
-        validation_banks: Optional[LayerwiseValidationBanks] = None,
+        validation_banks: LayerwiseValidationBanks,
         on_episode_end: Optional[Callable[[LayerwiseEpisodeRecord], None]] = None,
         on_ppo_update_end: Optional[
             Callable[[Mapping[str, Any], int, LayerwiseEpisodeRecord], None]
@@ -3382,8 +2976,6 @@ def train_layerwise(
         retain_history: bool = True,
         ) -> dict[str, Any]:
     """Collect layerwise episodes and update the shared PPO policy."""
-    if identity_context is None:
-        raise ValueError("layerwise training requires a CandidateStore identity_context")
     probe_identity_context = evidence_identity_context(identity_context, "F1")
     authoritative_base_env = promotion_base_env or env.base
     horizon = int(getattr(env, "horizon", 0))
@@ -3486,25 +3078,14 @@ def train_layerwise(
             "constraint probabilities must satisfy "
             "0 < online <= promotion <= final <= 1"
         )
-    if validation_banks is not None:
-        if promotion_trials != validation_banks.bank_a.trial_count:
-            raise ValueError(
-                "promotion_validation_trials must equal each A/B bank trial count"
-            )
-        if final_validation_trials != validation_banks.bank_c.trial_count:
-            raise ValueError(
-                "final_selection_validation_trials must equal Bank C trial count"
-            )
-    else:
-        if promotion_trials < expected_online_trials:
-            raise ValueError(
-                "promotion_validation_trials must cover the online trial group"
-            )
-        if final_validation_trials < promotion_trials:
-            raise ValueError(
-                "final_selection_validation_trials must be at least "
-                "promotion_validation_trials"
-            )
+    if promotion_trials != validation_banks.bank_a.trial_count:
+        raise ValueError(
+            "promotion_validation_trials must equal each A/B bank trial count"
+        )
+    if final_validation_trials != validation_banks.bank_c.trial_count:
+        raise ValueError(
+            "final_selection_validation_trials must equal Bank C trial count"
+        )
     policy.eval()
 
     records: list[LayerwiseEpisodeRecord] = []
@@ -3513,12 +3094,9 @@ def train_layerwise(
     accepted_candidates = restore_promoted_candidates(
         candidate_store=candidate_store,
         identity_context=identity_context,
-        statistical_reference=authoritative_base_env.statistical_reference,
         assess_candidate_fn=assess_candidate_fn,
         promotion_probability=promotion_probability,
-        assessment_trial_limit=promotion_trials,
         final_probability=final_probability,
-        final_assessment_trial_limit=final_validation_trials,
         validation_banks=validation_banks,
     )
     strict_revalidation_status = "not_due"
@@ -3863,16 +3441,12 @@ def train_layerwise(
                 action_matrix=action_matrix,
                 assessment=pooled_assessment,
                 priority=priority,
-                variable_cost=variable_cost,
-                frontier_cost=None,
                 frontier_candidates=accepted_candidates,
                 boosted_overrides=episode_boosted_overrides,
                 bootstrap_seed=bootstrap_seed,
                 episode_reward=episode_reward,
                 assess_candidate_fn=assess_candidate_fn,
-                prefilter_probability=online_probability,
                 promotion_probability=promotion_probability,
-                target_trial_count=promotion_trials,
                 validation_banks=validation_banks,
             )
             promotion_evidence = promotion.evidence or evidence
@@ -3880,23 +3454,11 @@ def train_layerwise(
             promotion_passed = bool(
                 promotion.evidence is not None
                 and promotion.evidence.promoted
-                and (
-                    (
-                        validation_banks is not None
-                        and promotion_evidence.trial_count
-                        >= validation_banks.promotion_trial_count
-                        and point_constraints_pass(
-                            promotion.metrics or {},
-                            validation_banks.promotion_reference,
-                        )
-                    )
-                    or (
-                        validation_banks is None
-                        and promotion_evidence.trial_count >= promotion_trials
-                        and _assessment_passes(
-                            promotion.assessment, promotion_probability,
-                        )
-                    )
+                and promotion_evidence.trial_count
+                >= validation_banks.promotion_trial_count
+                and point_constraints_pass(
+                    promotion.metrics or {},
+                    validation_banks.promotion_reference,
                 )
             )
             if promotion_passed:
@@ -3909,11 +3471,7 @@ def train_layerwise(
                     "constraint_safety_margins": (
                         normalized_constraint_safety_margins(
                             promotion.metrics or {},
-                            (
-                                validation_banks.promotion_reference
-                                if validation_banks is not None
-                                else authoritative_base_env.statistical_reference
-                            ),
+                            validation_banks.promotion_reference,
                         )
                     ),
                     "action_matrix": action_matrix,
@@ -3968,7 +3526,7 @@ def train_layerwise(
                     else int(planned_total_episodes)
                 )
             )
-            if validation_banks is not None and maximum_reached:
+            if maximum_reached:
                 strict_revalidation_status, strict_best_snapshot = (
                     _certify_strict_best_candidates(
                         env=env,
@@ -3985,8 +3543,6 @@ def train_layerwise(
                         exhaustive_fallback=True,
                     )
                 )
-            elif maximum_reached:
-                strict_revalidation_status = "not_applicable"
             ppo_metrics.update({
                 "completed_episodes": absolute_start + completed,
                 "block4_entropy": latest_block4_entropy,
@@ -4119,11 +3675,7 @@ def train_layerwise(
             else int(planned_total_episodes)
         )
     )
-    if (
-            validation_banks is not None
-            and maximum_boundary_reached
-            and strict_revalidation_status != "passed"
-    ):
+    if maximum_boundary_reached and strict_revalidation_status != "passed":
         strict_revalidation_status, _strict_best = (
             _certify_strict_best_candidates(
                 env=env,
@@ -4140,9 +3692,6 @@ def train_layerwise(
                 exhaustive_fallback=True,
             )
         )
-    elif validation_banks is None:
-        strict_revalidation_status = "not_applicable"
-
     termination_reason = (
         "graceful_stop" if graceful_stopped else "maximum_episodes"
     )
