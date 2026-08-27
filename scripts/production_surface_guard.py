@@ -200,6 +200,15 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "two_stage_result.json",
     "mrpc_validation_v1.json",
     "canonical_rows",
+    "evaluate_model_with_attention_noise",
+    "replace_layer_input_noise",
+    "candidate_trial_group_v1",
+    "candidate_promotion_status_v1",
+    "allow_legacy",
+    "_COMPAT_EXTRA_FIELDS",
+    "select_fusion_eval_metadata",
+    "best_noise_config",
+    "stable_search_best_noise_config",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}
