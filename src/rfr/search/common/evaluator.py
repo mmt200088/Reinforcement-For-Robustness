@@ -3046,10 +3046,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         inline in ``on_evaluate`` (baseline_metrics, base_tot_c, constraint
         limits, proxy prev metrics for the differential reward chain).
         """
-        from rfr.search.rl.stage1.parallel_runner import (
-            build_stage1_parallel_runner,
-            parse_device_ids,
-        )
+        from rfr.search.rl.stage1.parallel_runner import build_stage1_parallel_runner
+        from rfr.search.runtime.device_utils import parse_device_ids
 
         device_ids = parse_device_ids(self.stage1_rl_devices)
         if len(device_ids) < 1:
