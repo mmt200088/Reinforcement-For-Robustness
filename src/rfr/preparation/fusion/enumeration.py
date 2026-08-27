@@ -834,65 +834,6 @@ def enumerate_shard(
     return reducer.results(), reducer.num_valid
 
 
-def degeneracy_probe(
-    ctx: BlockTypeBuildContext,
-    *,
-    num_random: int = 2000,
-    seed: int = 0,
-) -> Dict[str, Any]:
-    """Cheap evidence that a block-type is fusion-degenerate over its enumerated
-    grid — for blocks too large to enumerate fully.
-
-    The (fusion, total_bits) classification deliberately over-enumerates encodes
-    that move bits but not fusion (e.g. block4's ~1e6 encode combos that, per the
-    near-exhaustive committed map, never fuse). When such a block exceeds the build
-    budget, this probe decides whether the all-max baseline is its only option.
-
-    Evaluates the all-MIN-SF corner (the maximally-fused config under the monotone
-    "lower SF => more fusion" structure of rescale fusion — pulling EVERY lever to
-    its deepest level) plus ``num_random`` uniform samples of the enumerated
-    cartesian product. ``degenerate`` is True iff every valid probe keeps the
-    baseline ``fusion_count``. A True result is strong (the corner maximally fuses);
-    a False result is conclusive (a concrete fusing config exists) and must block
-    any degenerate shortcut.
-    """
-    base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
-    base_res = _eval_block(ctx, base_block)
-    base_fc = int(base_res["fusion_count"]) if base_res.get("valid") else None
-
-    def _with(combo: Sequence[int]) -> np.ndarray:
-        blk = base_block.copy()
-        for pos, lvl in zip(ctx.enum_positions, combo):
-            blk[pos] = int(lvl)
-        return blk
-
-    corner = [ch[0] for ch in ctx.enum_choices]
-    corner_res = _eval_block(ctx, _with(corner))
-    rng = np.random.default_rng(int(seed))
-
-    fusion_seen: set = set()
-    checked = 0
-    if corner_res.get("valid"):
-        fusion_seen.add(int(corner_res["fusion_count"]))
-        checked += 1
-    for _ in range(int(num_random)):
-        combo = [int(rng.choice(ch)) for ch in ctx.enum_choices]
-        r = _eval_block(ctx, _with(combo))
-        if r.get("valid"):
-            fusion_seen.add(int(r["fusion_count"]))
-            checked += 1
-    degenerate = (base_fc is not None) and fusion_seen.issubset({base_fc})
-    return {
-        "degenerate": bool(degenerate),
-        "base_fc": base_fc,
-        "fusion_seen": sorted(fusion_seen),
-        "corner_valid": bool(corner_res.get("valid")),
-        "corner_fusion": int(corner_res["fusion_count"]) if corner_res.get("valid") else None,
-        "samples_checked": int(checked),
-        "num_random": int(num_random),
-    }
-
-
 def check_k_independence(
     ctx: BlockTypeBuildContext,
     *,
