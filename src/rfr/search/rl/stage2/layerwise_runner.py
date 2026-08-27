@@ -19,7 +19,6 @@ from rfr.preparation.data.protocol import validate_dataset_protocol_binding
 from rfr.search.common.candidate_store import (
     CandidateStore,
     CandidateTrialEvidence,
-    candidate_key,
     sha256_json,
 )
 from rfr.search.common.layerwise_action import (
