@@ -70,6 +70,14 @@ import random
 import hashlib
 
 
+GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
+GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
+STAGE1_GELU_ACTION_MASK = np.array([True, True, True, False], dtype=bool)
+SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
+FIXED_SOFTMAX_DEGREE = 6
+STAGE1_ORIGINAL_FUNCTION_DEGREE = -1
+
+
 def _stage1_changed_layer_indices(current_degrees, previous_degrees):
     if previous_degrees is None or len(previous_degrees) != len(current_degrees):
         return range(len(current_degrees))
