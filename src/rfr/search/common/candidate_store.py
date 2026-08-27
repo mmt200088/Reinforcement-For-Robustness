@@ -544,7 +544,6 @@ class CandidateStore:
             payload["trial_group_metadata"] = metadata
         return payload
 
-    @staticmethod
     def _load_recovery_layout(self) -> None:
         self._refresh_external_storage()
         self._repair_unterminated_tail()
