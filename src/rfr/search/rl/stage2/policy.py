@@ -1,22 +1,9 @@
-"""Sequential PPO actor-critic + rollout buffer for the per-block env.
+"""Layerwise PPO actor-critic and rollout storage for Stage 2.
 
-Three pieces:
-  1. :class:`BLBStage2SequentialPolicy` -- shared trunk + vectorized per-slot
-     heads sized to ``step_schedule_max_dim`` (24 for the current L=12 action
-     space).
-     At each step the env tells the policy which slots are *active* (a
-     boolean mask of length max_step_dim, padding suppressed via -inf logits)
-     and what the per-slot ``num_levels`` are (so logits beyond that get
-     masked out as well).
-
-  2. :class:`SequentialRolloutBuffer` -- stores per-step
-     (state, action, log_prob, value, reward, done, slot_mask,
-     action_level_mask) tuples organised by episode. ``compute_gae(...)``
-     produces λ-returns and advantages over the horizon.
-
-  3. :func:`sequential_ppo_update` -- standard PPO-clip update over the
-     buffered transitions. Aware of variable per-step action width via
-     the slot_mask.
+Each Transformer layer contributes exactly two categorical actions: Block 4
+fusion count and the H/M/L truncation precision preset. The shared GTrXL trunk,
+factorized actor heads, critic, rollout buffer, and PPO update all operate on
+that fixed contract.
 """
 from __future__ import annotations
 
@@ -33,22 +20,14 @@ from rfr.search.rl.stage2.policy_network import POLICY_ARCHITECTURE, POLICY_NETW
 
 
 @dataclass
-class SequentialPolicyConfig:
-    """Hyper-params for the sequential actor-critic.
+class LayerwisePolicyConfig:
+    """Network dimensions for the two-action layerwise actor-critic."""
 
-    The head outputs ``max_step_dim * max_num_levels`` logits. At sample /
-    evaluate time we pick the first ``len(active_slots)`` rows and within each
-    row the first ``num_levels[k]`` columns. Padding is implemented with
-    -inf masks so the categorical never assigns probability to invalid slots.
-    """
     state_dim: int
     max_step_dim: int
-    max_num_levels: int = 6
-    d_hidden: int = 256
-    d_step_embed: int = 32
-    horizon: int = 59
-    block_count: int = 5
-    num_layers: int = 12
+    max_num_levels: int
+    horizon: int
+    num_layers: int
     d_model: int = 128
     n_heads: int = 4
     n_layers: int = 2
@@ -62,48 +41,24 @@ class SequentialPolicyConfig:
     actor_dim: int = 64
     critic_dim: int = 64
     default_prior_scale: float = 0.0
-    metadata_width: int = 6
-    signal_width: int = 3
-    step_layer_indices: Optional[Sequence[int]] = None
-    step_block_indices: Optional[Sequence[int]] = None
 
     def __post_init__(self) -> None:
-        if (self.step_layer_indices is None) != (self.step_block_indices is None):
-            raise ValueError(
-                "step_layer_indices and step_block_indices must be supplied together"
-            )
-        if int(self.metadata_width) < 0:
-            raise ValueError("metadata_width must be nonnegative")
-        if int(self.signal_width) <= 0:
-            raise ValueError("signal_width must be positive")
-        self.metadata_width = int(self.metadata_width)
-        self.signal_width = int(self.signal_width)
         for key, value in POLICY_ARCHITECTURE.items():
             setattr(self, key, int(value))
-        if self.step_layer_indices is None:
-            return
-        layer_indices = tuple(int(value) for value in self.step_layer_indices)
-        block_indices = tuple(int(value) for value in self.step_block_indices)
-        if len(layer_indices) != int(self.horizon):
+        if int(self.max_step_dim) != 2:
             raise ValueError(
-                f"step_layer_indices has {len(layer_indices)} values, "
-                f"expected horizon={self.horizon}"
+                f"layerwise policy requires max_step_dim=2, got {self.max_step_dim}"
             )
-        if len(block_indices) != int(self.horizon):
+        if int(self.max_num_levels) != 3:
             raise ValueError(
-                f"step_block_indices has {len(block_indices)} values, "
-                f"expected horizon={self.horizon}"
+                "layerwise policy requires three precision levels, got "
+                f"{self.max_num_levels}"
             )
-        if any(value < 0 or value >= int(self.num_layers) for value in layer_indices):
+        if int(self.horizon) != int(self.num_layers) or int(self.horizon) < 1:
             raise ValueError(
-                f"step_layer_indices values must be in [0, {self.num_layers})"
+                "layerwise policy requires one step per model layer: "
+                f"horizon={self.horizon}, num_layers={self.num_layers}"
             )
-        if any(value < 0 or value >= int(self.block_count) for value in block_indices):
-            raise ValueError(
-                f"step_block_indices values must be in [0, {self.block_count})"
-            )
-        self.step_layer_indices = layer_indices
-        self.step_block_indices = block_indices
 
 
 class RunningMeanStd:
@@ -194,7 +149,7 @@ class GRUGate(nn.Module):
         return (1.0 - z) * x + z * h
 
 
-class SequentialGTrXLBlock(nn.Module):
+class LayerwiseGTrXLBlock(nn.Module):
     """Pre-LN causal self-attention + gated residual FFN block."""
 
     def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
@@ -225,23 +180,20 @@ class SequentialGTrXLBlock(nn.Module):
         return self.gate2(x, ff_out)
 
 
-class BLBStage2SequentialPolicy(nn.Module):
-    """v2-scale GTrXL actor + critic over per-step decisions.
+class BLBStage2LayerwisePolicy(nn.Module):
+    """GTrXL actor and critic over per-layer fusion/precision decisions.
 
     Forward signature:
         ``state``: ``[B, state_dim]``
-        Returns ``logits[B, max_step_dim, max_num_levels]`` and ``value[B]``.
-
-    Sampling and log-prob evaluation accept an additional ``slot_mask`` and
-    ``per_slot_num_levels`` so the same head can serve every step type.
+        Returns ``logits[B, 2, 3]`` and ``value[B]``.
     """
 
-    def __init__(self, cfg: SequentialPolicyConfig):
+    def __init__(self, cfg: LayerwisePolicyConfig):
         super().__init__()
         self.cfg = cfg
         self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
         self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
-        self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
+        self.embed_block = nn.Embedding(5, cfg.block_embed_dim)
 
 
         self.prev_action_embedding = nn.Embedding(
@@ -259,24 +211,22 @@ class BLBStage2SequentialPolicy(nn.Module):
             persistent=False,
         )
         action_decode_scales = torch.full(
-            (cfg.max_step_dim,), 8.0, dtype=torch.float32,
+            (cfg.max_step_dim,),
+            float(cfg.max_num_levels - 1),
+            dtype=torch.float32,
         )
-        if cfg.metadata_width == 0 and cfg.signal_width == 4:
-
-
-            action_decode_scales.fill_(float(max(1, cfg.max_num_levels - 1)))
-            action_decode_scales[0] = 1.0
+        action_decode_scales[0] = 1.0
         self.register_buffer(
             "_action_history_decode_scales",
             action_decode_scales,
             persistent=False,
         )
-        steps, layers, blocks = self._make_step_layer_block_indices(cfg)
+        steps, layers, blocks = self._make_layerwise_indices(cfg)
         self.register_buffer("_step_indices", steps, persistent=False)
         self.register_buffer("_layer_indices", layers, persistent=False)
         self.register_buffer("_block_indices", blocks, persistent=False)
         self.fc_continuous = nn.Sequential(
-            nn.Linear(4 + cfg.signal_width + 1, cfg.cont_proj_dim),
+            nn.Linear(9, cfg.cont_proj_dim),
             nn.LayerNorm(cfg.cont_proj_dim),
             nn.SiLU(),
         )
@@ -293,7 +243,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             else nn.Linear(token_input_dim, cfg.d_model)
         )
         self.gtrxl_blocks = nn.ModuleList([
-            SequentialGTrXLBlock(
+            LayerwiseGTrXLBlock(
                 cfg.d_model,
                 cfg.n_heads,
                 cfg.d_ff,
@@ -432,25 +382,12 @@ class BLBStage2SequentialPolicy(nn.Module):
 
 
     @staticmethod
-    def _make_step_layer_block_indices(
-            cfg: SequentialPolicyConfig,
+    def _make_layerwise_indices(
+            cfg: LayerwisePolicyConfig,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         steps = torch.arange(cfg.horizon, dtype=torch.long)
-        if cfg.step_layer_indices is not None:
-            return (
-                steps,
-                torch.as_tensor(cfg.step_layer_indices, dtype=torch.long),
-                torch.as_tensor(cfg.step_block_indices, dtype=torch.long),
-            )
-        layers = torch.where(
-            steps < 4,
-            torch.zeros_like(steps),
-            1 + torch.div(steps - 4, 5, rounding_mode="floor"),
-        )
-        blocks = torch.where(steps < 4, steps + 1, torch.remainder(steps - 4, 5))
-        layers = torch.clamp(layers, min=0, max=max(0, cfg.num_layers - 1))
-        blocks = torch.clamp(blocks, min=0, max=max(0, cfg.block_count - 1))
-        return steps, layers, blocks
+        blocks = torch.full_like(steps, 3)
+        return steps, steps, blocks
 
     def _step_layer_block_indices(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return self._step_indices, self._layer_indices, self._block_indices
@@ -476,7 +413,6 @@ class BLBStage2SequentialPolicy(nn.Module):
             step_oh = state[:, cursor: cursor + H]
             current_step = torch.argmax(step_oh, dim=-1).long()
         cursor += H
-        cursor += int(self.cfg.metadata_width)
         seq_len = H
         if bool(truncate_to_current) and B == 1:
             if truncate_seq_len is not None:
@@ -484,7 +420,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             else:
                 seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
         prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
-        signal_width = int(self.cfg.signal_width)
+        signal_width = 4
         prev_signals = torch.zeros(
             B, seq_len, signal_width, dtype=state.dtype, device=device,
         )
@@ -1002,7 +938,7 @@ class BLBStage2SequentialPolicy(nn.Module):
 
 
 @dataclass
-class SequentialTransition:
+class LayerwiseTransition:
     state: np.ndarray
     action: np.ndarray
     slot_mask: np.ndarray
@@ -1044,7 +980,7 @@ def _compute_gae_from_arrays(
 
 
 def _pack_transition_scalar_tensors(
-        transitions: Sequence[SequentialTransition],
+        transitions: Sequence[LayerwiseTransition],
         field_name: str,
         device: torch.device,
         ) -> torch.Tensor:
@@ -1096,15 +1032,15 @@ def _compute_gae_from_tensors(
     return returns, advantages
 
 
-class SequentialRolloutBuffer:
+class LayerwiseRolloutBuffer:
     """Stores transitions across multiple horizon-N episodes; computes GAE.
 
-    Layout: a flat list of ``SequentialTransition``. Episodes are separated
+    Layout: a flat list of ``LayerwiseTransition``. Episodes are separated
     by ``done=True`` markers (the transition ON which the episode ended).
     """
 
     def __init__(self):
-        self._buf: List[SequentialTransition] = []
+        self._buf: List[LayerwiseTransition] = []
 
     def __len__(self) -> int:
         return len(self._buf)
@@ -1151,7 +1087,7 @@ class SequentialRolloutBuffer:
                         "per-slot behavior log probability shape must match action shape"
                     )
                 behavior_log_prob_per_slot = behavior_log_prob_per_slot.copy()
-        self._buf.append(SequentialTransition(
+        self._buf.append(LayerwiseTransition(
             state=np.asarray(state, dtype=np.float32),
             action=action_array,
             slot_mask=np.asarray(slot_mask, dtype=bool),
@@ -1319,7 +1255,7 @@ class SequentialRolloutBuffer:
             old_log_probs, old_values, returns, advantages, baseline_prior_scales
         """
         if not self._buf:
-            raise RuntimeError("SequentialRolloutBuffer is empty")
+            raise RuntimeError("LayerwiseRolloutBuffer is empty")
         (
             states,
             actions,
@@ -1371,7 +1307,7 @@ class SequentialRolloutBuffer:
             ]:
         buf = self._buf
         if not buf:
-            raise RuntimeError("SequentialRolloutBuffer is empty")
+            raise RuntimeError("LayerwiseRolloutBuffer is empty")
         n = len(buf)
         first = buf[0]
         states = np.empty((n,) + tuple(first.state.shape), dtype=np.float32)
@@ -1412,7 +1348,7 @@ class SequentialRolloutBuffer:
 
 
 @dataclass
-class SequentialPPOConfig:
+class LayerwisePPOConfig:
     lr: float = 5e-5
     clip_range: float = 0.2
     n_epochs: int = 4
@@ -1533,9 +1469,9 @@ def _robust_normalize_advantages(
 
 
 def _apply_adaptive_kl_lr(
-        policy: BLBStage2SequentialPolicy,
+        policy: BLBStage2LayerwisePolicy,
         optimizer: torch.optim.Optimizer,
-        cfg: SequentialPPOConfig,
+        cfg: LayerwisePPOConfig,
         ) -> Tuple[float, float]:
     if not bool(getattr(cfg, "adaptive_lr_kl", True)):
         policy._ppo_lr_scale = 1.0
@@ -1580,7 +1516,7 @@ def _value_fit_diagnostics(
 
 
 def _shared_gradient_diagnostics(
-        policy: BLBStage2SequentialPolicy,
+        policy: BLBStage2LayerwisePolicy,
         actor_loss: torch.Tensor,
         critic_loss: torch.Tensor,
         ) -> Dict[str, Optional[float]]:
@@ -1668,11 +1604,11 @@ def _raw_per_slot_advantage_diagnostics(
     return result
 
 
-def sequential_ppo_update(
-        policy: BLBStage2SequentialPolicy,
+def layerwise_ppo_update(
+        policy: BLBStage2LayerwisePolicy,
         optimizer: torch.optim.Optimizer,
-        buffer: SequentialRolloutBuffer,
-        cfg: SequentialPPOConfig,
+        buffer: LayerwiseRolloutBuffer,
+        cfg: LayerwisePPOConfig,
         device: torch.device,
         ent_coef_override: Optional[float] = None,
         ) -> dict:
@@ -1680,7 +1616,7 @@ def sequential_ppo_update(
 
     ``ent_coef_override``: if not None, replace ``cfg.ent_coef`` for THIS
     update only. Used by the entropy-schedule mechanism in
-    :func:`train_sequential` to ramp ent_coef from 0 (anchor) to the target
+    :func:`train_layerwise` to ramp ent_coef from 0 (anchor) to the target
     value (steady). The zero-entropy anchor prevents the entropy bonus from
     undoing the warm-start bias before normal sampling begins.
     """
@@ -2183,47 +2119,24 @@ def sequential_ppo_update(
     }
 
 
-def _spec_slot_num_levels(spec) -> list:
-    """Per-slot legal level counts for one step, for either spec type.
-
-    Fusion mode: a FusionStepSpec has 2 slots = (fusion option, K). Full-vector
-    per-slot mode: a BlockStepSpec exposes per-slot ``slot_dims``.
-    """
-    if hasattr(spec, "fusion_num_options"):
-        return [int(spec.fusion_num_options), int(spec.k_num_levels)]
-    return [int(d) for d in spec.slot_dims]
-
-
-def step_to_mask_and_levels(
+def layer_action_mask_and_levels(
         spec,
         max_step_dim: int,
         max_num_levels: int,
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (slot_mask[max_step_dim] bool, per_slot_num_levels[max_step_dim] int).
-
-    Active slots = this spec's slot levels, padded to max_step_dim with zeros.
-    Per-slot num_levels = each slot's level count (must be <= max_num_levels).
-    """
-    per_slot = _spec_slot_num_levels(spec)
-    n = len(per_slot)
-    if n > max_step_dim:
-        raise ValueError(f"step has {n} slots > max_step_dim={max_step_dim}")
-    slot_mask = np.zeros(max_step_dim, dtype=bool)
-    explicit_slot_mask = getattr(spec, "slot_mask", None)
-    if explicit_slot_mask is None:
-        slot_mask[:n] = True
-    else:
-        explicit_slot_mask = tuple(bool(value) for value in explicit_slot_mask)
-        if len(explicit_slot_mask) != n:
-            raise ValueError(
-                f"step slot_mask has {len(explicit_slot_mask)} values for {n} slots"
-            )
-        slot_mask[:n] = explicit_slot_mask
-    levels = np.zeros(max_step_dim, dtype=np.int64)
-    for i, d in enumerate(per_slot):
-        if int(d) > max_num_levels:
-            raise ValueError(
-                f"slot {i} has {d} levels > max_num_levels={max_num_levels}"
-            )
-        levels[i] = int(d)
-    return slot_mask, levels
+    """Return masks for one fixed fusion/precision layer action."""
+    if int(max_step_dim) != 2 or int(max_num_levels) != 3:
+        raise ValueError(
+            "layerwise action mask requires max_step_dim=2 and max_num_levels=3"
+        )
+    per_slot = tuple(int(value) for value in spec.slot_dims)
+    slot_mask = tuple(bool(value) for value in spec.slot_mask)
+    if per_slot != (2, 3) or slot_mask != (True, True):
+        raise ValueError(
+            "layerwise action spec must expose fusion levels (2) and "
+            "precision levels (3)"
+        )
+    return (
+        np.asarray(slot_mask, dtype=bool),
+        np.asarray(per_slot, dtype=np.int64),
+    )

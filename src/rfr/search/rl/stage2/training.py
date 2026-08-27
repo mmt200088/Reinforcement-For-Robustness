@@ -19,7 +19,7 @@ from rfr.preparation.rescale.bridge import (
 )
 
 from rfr.search.rl.stage2.env import ProbeBatch
-from rfr.search.rl.stage2.sequential_policy import SequentialPPOConfig
+from rfr.search.rl.stage2.policy import LayerwisePPOConfig
 
 
 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_live.pt"
@@ -89,7 +89,7 @@ class BLBStage2TrainConfig:
     profile: str = "default"
     acc_threshold: float = 0.0
     stab_threshold: float = float("inf")
-    ppo: SequentialPPOConfig = field(default_factory=SequentialPPOConfig)
+    ppo: LayerwisePPOConfig = field(default_factory=LayerwisePPOConfig)
 
     search_backend: str = "ppo"
     search_evaluation_budget: int = 0
@@ -242,10 +242,10 @@ class BLBStage2RLRunner:
         fixed_source: str,
         resume_checkpoint_path: Optional[str] = None,
     ) -> dict[str, Any]:
-        from rfr.search.rl.stage2.sequential_runner import run_sequential_via_runner
+        from rfr.search.rl.stage2.runner import run_layerwise_via_runner
 
         self.evaluator.activate_stage2_inference_batch_size()
-        return run_sequential_via_runner(
+        return run_layerwise_via_runner(
             runner=self,
             train_cfg=config,
             fixed_gelu=fixed_gelu,
@@ -447,18 +447,3 @@ class BLBStage2RLRunner:
                 return log_fn(safe)
 
         return safe_log
-
-
-def run_stage2_search(
-    evaluator: Any,
-    fixed_stage1: Mapping[str, Any],
-    config: BLBStage2TrainConfig,
-) -> dict[str, Any]:
-    """Execute the production Stage-2 path from an explicit fixed Stage-1 result."""
-    return BLBStage2RLRunner(evaluator)._run_with_config(
-        config,
-        fixed_gelu=fixed_stage1["gelu"],
-        fixed_softmax=fixed_stage1["softmax"],
-        fixed_label=str(fixed_stage1.get("label", "Stage-1 result")),
-        fixed_source=str(fixed_stage1.get("source", "stage1_result")),
-    )

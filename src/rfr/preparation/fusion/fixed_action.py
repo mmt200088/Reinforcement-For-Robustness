@@ -79,20 +79,21 @@ def reconstruct_fusion_group(
         gelu: Sequence[int],
         softmax: Sequence[int],
         ) -> Dict[str, Any]:
-    """Walk the Stage-2 step schedule and recover the per-step fusion selection.
+    """Recover persisted fusion selections from the full action vector.
 
     Returns ``{"option_by_step", "choices_by_step", "summary"}``. ``option_by_step``
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    from rfr.search.common.action_space import K_LEVELS, step_schedule
+    from rfr.search.common.action_space import K_LEVELS, block_dims
+    from rfr.search.common.layerwise_action import fusion_materialization_blocks
 
+    del softmax
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    schedule = step_schedule(
+    blocks = fusion_materialization_blocks(
         int(num_layers),
         profile=str(profile),
-        attn_degree_per_layer=[int(x) for x in softmax],
-        gelu_degree_per_layer=[int(x) for x in gelu],
+        gelu_degrees=[int(x) for x in gelu],
     )
 
     option_by_step: Dict[str, int] = {}
@@ -101,37 +102,35 @@ def reconstruct_fusion_group(
     k_values: List[int] = []
     boosted_count = 0
 
-    for step in schedule:
-        graph_key = str(step.graph_key_suffix)
+    for block in blocks:
+        graph_key = str(block.graph_key)
         graph = fusion_map.graphs.get(graph_key)
         if graph is None:
-
-
-            if int(step.block_idx) in (1, 3):
+            if int(block.block_idx) == 1:
                 continue
             raise KeyError(f"fusion map missing graph {graph_key!r}")
-        action_slice = action_arr[list(step.full_vec_offsets)]
+        action_slice = action_arr[list(block.full_vec_offsets)]
         option_id = match_option_id(
             action_slice=action_slice,
             graph=graph,
             graph_key=graph_key,
-            slot_dims=getattr(step, "slot_dims", None),
+            slot_dims=block_dims(block.block_idx),
         )
         option = next(o for o in graph.options if int(o.option_id) == int(option_id))
         k_index = int(action_slice[int(graph.k_slot_index)])
         if not (0 <= k_index < len(K_LEVELS)):
             raise ValueError(
-                f"step {step.step_idx} graph={graph_key} has invalid K index {k_index}"
+                f"block {block.artifact_index} graph={graph_key} has invalid K index {k_index}"
             )
         k_value = int(K_LEVELS[k_index])
-        option_by_step[str(int(step.step_idx))] = int(option_id)
+        option_by_step[str(int(block.artifact_index))] = int(option_id)
         total_fusion += int(option.fusion_count)
         k_values.append(k_value)
         boosted_count += int(bool(getattr(option, "boosted", False)))
         choices.append({
-            "step_idx": int(step.step_idx),
-            "layer": int(step.layer_idx),
-            "block": int(step.block_idx),
+            "step_idx": int(block.artifact_index),
+            "layer": int(block.layer_idx),
+            "block": int(block.block_idx),
             "graph_key": graph_key,
             "option_id": int(option_id),
             "fusion_count": int(option.fusion_count),
@@ -144,7 +143,7 @@ def reconstruct_fusion_group(
         "option_by_step": option_by_step,
         "choices_by_step": choices,
         "summary": {
-            "step_count": int(len(schedule)),
+            "step_count": int(len(blocks)),
             "total_fusion_count": int(total_fusion),
             "boosted_option_count": int(boosted_count),
             "avg_k": float(sum(k_values) / len(k_values)) if k_values else 0.0,
@@ -181,11 +180,12 @@ def build_boosted_overrides_from_group(
     if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
         raise ValueError("fusion group requires option_by_step or option_by_graph")
 
-    from rfr.search.common.action_space import K_LEVELS, step_schedule
+    from rfr.search.common.action_space import K_LEVELS, block_field_names
+    from rfr.search.common.layerwise_action import fusion_materialization_blocks
 
+    del softmax
     action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
     gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
-    softmax_arr = np.asarray(softmax, dtype=int).reshape(-1)
     option_by_graph = {
         str(k): int(v)
         for k, v in dict(raw_option_by_graph or {}).items()
@@ -194,17 +194,16 @@ def build_boosted_overrides_from_group(
         str(k): int(v)
         for k, v in dict(raw_option_by_step or {}).items()
     }
-    schedule = step_schedule(
+    blocks = fusion_materialization_blocks(
         int(num_layers),
         profile=str(profile),
-        attn_degree_per_layer=softmax_arr.tolist(),
-        gelu_degree_per_layer=gelu_arr.tolist(),
+        gelu_degrees=gelu_arr.tolist(),
     )
 
     overrides: Dict[Tuple[int, int], Dict[str, int]] = {}
-    for step in schedule:
-        graph_key = str(step.graph_key_suffix)
-        step_key = str(int(step.step_idx))
+    for block in blocks:
+        graph_key = str(block.graph_key)
+        step_key = str(int(block.artifact_index))
         if step_key in option_by_step:
             option_id = int(option_by_step[step_key])
         elif graph_key in option_by_graph:
@@ -224,22 +223,23 @@ def build_boosted_overrides_from_group(
         if not (bool(getattr(option, "boosted", False)) and option.explicit_field_values):
             continue
 
-        action_slice = action_arr[list(step.full_vec_offsets)]
+        action_slice = action_arr[list(block.full_vec_offsets)]
         k_slot = int(graph.k_slot_index)
         if not (0 <= k_slot < action_slice.size):
             raise ValueError(f"graph {graph_key!r} K slot {k_slot} out of action slice")
         k_index = int(action_slice[k_slot])
         if not (0 <= k_index < len(K_LEVELS)):
             raise ValueError(f"graph {graph_key!r} has invalid K index {k_index}")
-        if not (0 <= k_slot < len(step.slot_field_names)):
+        field_names = block_field_names(block.block_idx)
+        if not (0 <= k_slot < len(field_names)):
             raise ValueError(f"graph {graph_key!r} K slot {k_slot} has no field name")
 
         field_values = {
             str(k): int(v)
             for k, v in dict(option.explicit_field_values).items()
         }
-        field_values[str(step.slot_field_names[k_slot])] = int(K_LEVELS[k_index])
-        overrides[(int(step.block_idx), int(step.layer_idx))] = field_values
+        field_values[str(field_names[k_slot])] = int(K_LEVELS[k_index])
+        overrides[(int(block.block_idx), int(block.layer_idx))] = field_values
     return overrides
 
 

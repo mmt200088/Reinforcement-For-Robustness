@@ -81,8 +81,8 @@
   `seed_utils.py` to `src/rfr/search/rl/stage1/`.
 - Move Stage-2 RL files to `src/rfr/search/rl/stage2/`:
   `env.py`, `layerwise_env.py`, `layerwise_runner.py`, `policy_network.py`,
-  `reward.py`, `seed_utils.py`, `sequential_policy.py`,
-  `sequential_runner.py`, and `training.py`.
+  `reward.py`, `seed_utils.py`, `policy.py`,
+  `runner.py`, and `training.py`.
 
 ### Comparator packages
 

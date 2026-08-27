@@ -29,10 +29,10 @@ from rfr.search.common.data_points import (
 
 from rfr.search.common.action_space import K_LEVELS
 from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_model_type
-from rfr.search.rl.stage2.sequential_policy import (
-    BLBStage2SequentialPolicy,
-    SequentialPolicyConfig,
-    SequentialPPOConfig,
+from rfr.search.rl.stage2.policy import (
+    BLBStage2LayerwisePolicy,
+    LayerwisePolicyConfig,
+    LayerwisePPOConfig,
 )
 from rfr.search.common.truncation_levels import (
     validate_exact_k_domain,
@@ -126,12 +126,12 @@ def resolve_resumed_best_reward(
 
 
 @dataclass
-class SequentialTrainConfig:
+class LayerwiseTrainConfig:
     total_episodes: int = 100
     update_every_n_episodes: int = 4
     log_every_n_episodes: int = 4
     seed: Optional[int] = None
-    ppo: SequentialPPOConfig = field(default_factory=SequentialPPOConfig)
+    ppo: LayerwisePPOConfig = field(default_factory=LayerwisePPOConfig)
     absolute_episode_start: int = 0
     planned_total_episodes: Optional[int] = None
     convergence_resume_state: Optional[Mapping[str, Any]] = None
@@ -1447,19 +1447,15 @@ def _run_layerwise_training_branch(
                 "artifact_paths": search_run["artifact_paths"],
             },
         }
-    policy_cfg = SequentialPolicyConfig(
+    policy_cfg = LayerwisePolicyConfig(
         state_dim=int(layerwise_env.state_dim),
         max_step_dim=len(LAYERWISE_SLOT_NAMES),
         max_num_levels=max(2, len(PRECISION_PRESETS)),
         horizon=layerwise_horizon,
         num_layers=layerwise_horizon,
-        metadata_width=0,
-        signal_width=4,
-        step_layer_indices=tuple(range(layerwise_horizon)),
-        step_block_indices=(3,) * layerwise_horizon,
         **policy_architecture,
     )
-    ppo = SequentialPPOConfig(
+    ppo = LayerwisePPOConfig(
         lr=float(train_cfg.ppo.lr),
         clip_range=float(train_cfg.ppo.clip_range),
         n_epochs=int(train_cfg.ppo.n_epochs),
@@ -1706,7 +1702,7 @@ def _run_layerwise_training_branch(
     np.random.seed(int(train_cfg.seed) % (2**32))
     random.seed(int(train_cfg.seed))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+    policy = BLBStage2LayerwisePolicy(policy_cfg).to(device)
     policy_network_summary = policy.network_parameter_summary()
     run_manifest["policy_network"] = policy_network_summary
     log(
@@ -1804,7 +1800,7 @@ def _run_layerwise_training_branch(
         requested_total_episodes,
         start_episode,
     )
-    layerwise_train_cfg = SequentialTrainConfig(
+    layerwise_train_cfg = LayerwiseTrainConfig(
         total_episodes=remaining_episode_budget,
         update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
@@ -3488,7 +3484,7 @@ def _validate_completed_search_resume_result(
     expected = to_jsonable(expected_result, stringify_unknown=True)
     if actual != expected:
         raise RuntimeError(
-            "Stage-2 sequential resume does not match the completed inner search"
+            "Stage-2 layerwise resume does not match the completed inner search"
         )
 
 
@@ -3752,7 +3748,7 @@ def _build_completed_search_resume_result(
 
 def _restore_search_resume_result(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
-        raise RuntimeError("Stage-2 sequential resume result is not an object")
+        raise RuntimeError("Stage-2 layerwise resume result is not an object")
     restored = dict(payload)
     for name in ("fixed_gelu", "fixed_softmax"):
         if name in restored:
@@ -4395,7 +4391,7 @@ class _ProbeRunnerOwnerHolder:
             self._owner.close()
 
 
-def run_sequential_via_runner(
+def run_layerwise_via_runner(
         *,
         runner,
         train_cfg,
@@ -4437,7 +4433,7 @@ def run_sequential_via_runner(
                     blb_progress_dir=blb_progress_dir,
                 )
             )
-            result = _run_sequential_via_runner_locked(
+            result = _run_layerwise_via_runner_locked(
                 runner=runner,
                 train_cfg=train_cfg,
                 fixed_gelu=fixed_gelu,
@@ -4478,7 +4474,7 @@ def run_sequential_via_runner(
             probe_runner_owner_holder.close()
 
 
-def _run_sequential_via_runner_locked(
+def _run_layerwise_via_runner_locked(
         *,
         runner,
         train_cfg,
@@ -4491,7 +4487,7 @@ def _run_sequential_via_runner_locked(
         probe_runner_owner_holder: _ProbeRunnerOwnerHolder,
         pending_strict_resume_context: Mapping[str, Any] | None = None,
         ) -> Dict[str, Any]:
-    """Drive the sequential RL pipeline using BLBStage2RLRunner's setup helpers.
+    """Drive the layerwise RL pipeline using BLBStage2RLRunner's setup helpers.
 
     Reuses the runner's probe, Rescale, baseline, and persistence owners so the
     policy and strict evaluation share one materialization path.

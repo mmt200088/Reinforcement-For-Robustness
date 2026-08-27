@@ -3788,17 +3788,17 @@ def train_layerwise(
             policy.parameters(), lr=float(getattr(train_cfg.ppo, "lr", 5.0e-5)),
         )
     if rollout_buffer is None:
-        from rfr.search.rl.stage2.sequential_policy import SequentialRolloutBuffer
+        from rfr.search.rl.stage2.policy import LayerwiseRolloutBuffer
 
-        rollout_buffer = SequentialRolloutBuffer()
+        rollout_buffer = LayerwiseRolloutBuffer()
     if ppo_update_fn is None:
-        from rfr.search.rl.stage2.sequential_policy import sequential_ppo_update
+        from rfr.search.rl.stage2.policy import layerwise_ppo_update
 
-        ppo_update_fn = sequential_ppo_update
+        ppo_update_fn = layerwise_ppo_update
     if step_adapter_fn is None:
-        from rfr.search.rl.stage2.sequential_policy import step_to_mask_and_levels
+        from rfr.search.rl.stage2.policy import layer_action_mask_and_levels
 
-        step_adapter_fn = step_to_mask_and_levels
+        step_adapter_fn = layer_action_mask_and_levels
 
     ppo_cfg = copy.copy(train_cfg.ppo)
     ppo_cfg.gamma = 1.0

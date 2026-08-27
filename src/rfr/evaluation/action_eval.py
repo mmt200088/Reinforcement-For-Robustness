@@ -18,12 +18,13 @@ from rfr.search.common.action_space import (
     _decode_block_field_values,
     action_vector_to_cfgs,
     avg_truncation_k_in_action,
+    block_field_names,
     build_block_cfg_from_field_values,
     build_optimizer_requests,
-    step_schedule,
     sum_truncation_k_in_action,
     validate_action_vector,
 )
+from rfr.search.common.layerwise_action import fusion_materialization_blocks
 from rfr.preparation.rescale.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
 )
@@ -1198,15 +1199,14 @@ class BLBActionFinalEvaluationModule:
             if isinstance(raw_option_by_step, Mapping)
             else {}
         )
-        schedule = step_schedule(
+        blocks = fusion_materialization_blocks(
             int(num_layers),
             profile=str(profile),
-            attn_degree_per_layer=softmax_arr.tolist(),
-            gelu_degree_per_layer=gelu_arr.tolist(),
+            gelu_degrees=gelu_arr.tolist(),
         )
-        for step in schedule:
-            graph_key = str(step.graph_key_suffix)
-            step_key = str(int(step.step_idx))
+        for block in blocks:
+            graph_key = str(block.graph_key)
+            step_key = str(int(block.artifact_index))
             if step_key in option_by_step:
                 option_id = int(option_by_step[step_key])
             elif graph_key in option_by_graph:
@@ -1224,10 +1224,10 @@ class BLBActionFinalEvaluationModule:
             if option is None:
                 raise KeyError(f"fusion map graph {graph_key!r} has no option {option_id}")
 
-            block_offsets = step.full_vec_offsets
+            block_offsets = block.full_vec_offsets
             action_slice = np.take(base_arr, block_offsets)
-            layer_idx = int(step.layer_idx)
-            block_idx = int(step.block_idx)
+            layer_idx = int(block.layer_idx)
+            block_idx = int(block.block_idx)
             gelu_degree = int(gelu_arr[layer_idx] if gelu_arr.size > 1 else gelu_arr[0])
             softmax_degree = int(softmax_arr[layer_idx] if softmax_arr.size > 1 else softmax_arr[0])
             field_values = _decode_block_field_values(
@@ -1244,7 +1244,7 @@ class BLBActionFinalEvaluationModule:
             if graph_meta is not None:
                 try:
                     k_field_name = str(
-                        step.slot_field_names[int(graph_meta.k_slot_index)]
+                        block_field_names(block_idx)[int(graph_meta.k_slot_index)]
                     )
                     selected_k_value = field_values.get(k_field_name)
                 except Exception:

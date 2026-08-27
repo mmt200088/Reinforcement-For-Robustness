@@ -533,7 +533,7 @@ class BLBStage2Env:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
 
         This mirrors the pre-forward part of :meth:`step` and exists so the
-        sequential trainer can batch several completed actions onto different
+        layerwise trainer can batch several completed actions onto different
         GPUs before running model-forward reward probes.
         """
         action_vec = validate_action_vector(action_vec, self.num_layers)

@@ -188,6 +188,17 @@ class LayerwiseStepSpec:
 
 
 @dataclass(frozen=True)
+class FusionMaterializationBlock:
+    """One mapped block in the persisted full-action representation."""
+
+    artifact_index: int
+    layer_idx: int
+    block_idx: int
+    graph_key: str
+    full_vec_offsets: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class LayerwiseDecodedAction:
     block4_fusion: int
     k_by_block: Mapping[int, int]
@@ -373,6 +384,39 @@ def _graph_keys(layer_idx: int, profile: str, gelu_degree: int) -> Tuple[Tuple[i
     return tuple(pairs)
 
 
+def fusion_materialization_blocks(
+        num_layers: int,
+        *,
+        profile: str = "mrpc",
+        gelu_degrees: Sequence[int] | None = None,
+        ) -> Tuple[FusionMaterializationBlock, ...]:
+    """Describe mapped blocks without exposing a policy decision schedule."""
+    layers = _validated_num_layers(num_layers)
+    if gelu_degrees is not None and len(gelu_degrees) != layers:
+        raise ValueError(
+            f"gelu_degrees has {len(gelu_degrees)} values, expected {layers}"
+        )
+
+    blocks = []
+    for layer_idx in range(layers):
+        gelu_degree = (
+            int(gelu_degrees[layer_idx])
+            if gelu_degrees is not None
+            else 4
+        )
+        graph_keys = dict(_graph_keys(layer_idx, str(profile), gelu_degree))
+        block_order = (2, 4, 5) if layer_idx == 0 else (1, 2, 4, 5)
+        for block_idx in block_order:
+            blocks.append(FusionMaterializationBlock(
+                artifact_index=len(blocks),
+                layer_idx=layer_idx,
+                block_idx=block_idx,
+                graph_key=graph_keys[block_idx],
+                full_vec_offsets=tuple(_block_offsets(layer_idx, block_idx)),
+            ))
+    return tuple(blocks)
+
+
 def _unique_option_for_fusion_count(fusion_map: Any, graph_key: str, fusion_count: int) -> Any:
     matches = [
         option for option in fusion_map.options(graph_key)
@@ -394,7 +438,8 @@ def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> 
         )
     if k_slot_index != expected_slots - 1:
         raise ValueError(
-            f"{graph_key}: K slot {k_slot_index} is not legacy slot {expected_slots - 1}"
+            f"{graph_key}: K slot {k_slot_index} is not the final slot "
+            f"{expected_slots - 1}"
         )
     option_ids = [int(option.option_id) for option in graph.options]
     if len(set(option_ids)) != len(option_ids):
@@ -474,9 +519,9 @@ def layerwise_fusion_option_by_step(
         ) -> Mapping[str, int]:
     """Project the compact action to the executable fusion-step map.
 
-    The step keys match :func:`action_space.step_schedule`: layer 0 owns
-    ``B2,B4,B5`` and later layers own ``B1,B2,B4,B5``. Comparator actions fix
-    Block 2 and Block 5 at fusion-count 1 while selecting Block 4 per layer.
+    Stable numeric keys preserve the full-action artifact format: layer 0 owns
+    ``B2,B4,B5`` and later layers own ``B1,B2,B4,B5``. Block 2 and Block 5 are
+    fixed at fusion-count 1 while Block 4 follows the policy action.
     """
     rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
     specs = tuple(schedule)
@@ -488,7 +533,7 @@ def layerwise_fusion_option_by_step(
         raise ValueError("action_matrix must have shape num_layers x 2")
 
     option_by_step: dict[str, int] = {}
-    legacy_step_idx = 0
+    artifact_index = 0
     for row, spec in zip(rows, specs):  # noqa: B905 - lengths checked above
         _validate_layer_action(row, spec)
         graph_keys = dict(spec.graph_keys_by_block)
@@ -502,8 +547,8 @@ def layerwise_fusion_option_by_step(
                     graph_key,
                     fusion_count,
                 )
-                option_by_step[str(legacy_step_idx)] = int(option.option_id)
-            legacy_step_idx += 1
+                option_by_step[str(artifact_index)] = int(option.option_id)
+            artifact_index += 1
     return MappingProxyType(option_by_step)
 
 
