@@ -57,7 +57,7 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
         str(settings.batch_size),
         "--final_eval_repeat_n",
         str(settings.repeat),
-        "--final_eval_random_seed",
+        "--random_seed",
         str(settings.random_seed),
         "--skip_stage1_rl",
         "true",

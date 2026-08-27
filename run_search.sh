@@ -234,7 +234,6 @@ ELASTIC_GPU_RECOVERY_INTERVAL="60"
 ELASTIC_GPU_MAX_RESTARTS="8"
 
 RANDOM_SEED="42"
-SKIP_FINAL_EVAL="true"
 COMPARATOR_STAGE1_ONLY="false"
 BO_STAGE1_NO_IMPROVEMENT="1000"
 BO_STAGE2_NO_IMPROVEMENT="2000"
@@ -301,7 +300,6 @@ while [ "$#" -gt 0 ]; do
     --elastic-gpu-recovery-interval) require_value "$@"; ELASTIC_GPU_RECOVERY_INTERVAL="$2"; shift 2 ;;
     --elastic-gpu-max-restarts) require_value "$@"; ELASTIC_GPU_MAX_RESTARTS="$2"; shift 2 ;;
     --random-seed) require_value "$@"; RANDOM_SEED="$2"; shift 2 ;;
-    --skip-final-eval) SKIP_FINAL_EVAL="true"; shift ;;
     --comparator-stage1-only) COMPARATOR_STAGE1_ONLY="true"; shift ;;
     --bo-stage1-no-improvement) require_value "$@"; BO_STAGE1_NO_IMPROVEMENT="$2"; shift 2 ;;
     --bo-stage2-no-improvement) require_value "$@"; BO_STAGE2_NO_IMPROVEMENT="$2"; shift 2 ;;
@@ -368,12 +366,10 @@ if [ "$ALGORITHM" = "rl" ]; then
   case "$MODE" in
     stage1-only)
       SKIP_STAGE2="true"
-      SKIP_FINAL_EVAL="true"
       STAGE2_EPISODES="0"
       ;;
     stage2-only)
       SKIP_STAGE1="true"
-      SKIP_FINAL_EVAL="true"
       STAGE1_EPISODES="51000"
       ;;
     *) fail "run rl requires --mode stage1-only or stage2-only" ;;
@@ -404,7 +400,6 @@ else
   esac
   if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
     SKIP_STAGE2="true"
-    SKIP_FINAL_EVAL="true"
     STAGE2_EPISODES="0"
   fi
 fi
@@ -498,7 +493,6 @@ CMD=(
   --ppo_update_interval "$PPO_UPDATE_INTERVAL"
   --skip_stage1_rl "$SKIP_STAGE1"
   --skip_noise_rl "$SKIP_STAGE2"
-  --skip_final_eval "$SKIP_FINAL_EVAL"
   --resume_run_dir "$RESUME_FROM"
   --stage1_best_config_path "$STAGE1_CONFIG"
   --stage1_rl_lr "$STAGE1_LR"
@@ -511,7 +505,7 @@ CMD=(
   --stage2_k_trials "$STAGE2_K_TRIALS"
   --stage2_probe_size "$STAGE2_PROBE_SIZE"
   --stage2_inference_batch_size "$STAGE2_INFERENCE_BATCH_SIZE"
-  --final_eval_random_seed "$RANDOM_SEED"
+  --random_seed "$RANDOM_SEED"
   --blb_v3_rollout_size "$STAGE2_ROLLOUT_SIZE"
   --blb_v3_save_interval "$STAGE2_SAVE_INTERVAL"
   --blb_v3_eval_interval "$STAGE2_EVAL_INTERVAL"

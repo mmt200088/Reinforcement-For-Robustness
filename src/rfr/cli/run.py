@@ -478,11 +478,11 @@ def train(
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         ppo_update_interval: int = 120,
-        final_eval_random_seed: int = 42,
+        random_seed: int = 42,
         final_eval_repeat_n: int = 1,
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
-        skip_final_eval: bool = False,
+        skip_final_eval: bool = True,
         final_eval_only: bool = False,
         resume_run_dir: str = "",
 
@@ -657,7 +657,7 @@ def train(
         else "./inference_output"
     )
     os.makedirs(trainer_output_dir, exist_ok=True)
-    seed_everything(final_eval_random_seed)
+    seed_everything(random_seed)
 
 
     device_map = "cuda"
@@ -716,11 +716,11 @@ def train(
         fixture=glue_fixture,
     )
     train_data = glue_views.train_full.shuffle(
-        seed=final_eval_random_seed
+        seed=random_seed
     ).map(tokenize_fn)
     train_probe_data = glue_views.train_probe.map(tokenize_fn)
     validation_source = glue_views.validation_full.shuffle(
-        seed=final_eval_random_seed
+        seed=random_seed
     )
     val_data = validation_source.map(tokenize_fn)
 
@@ -778,7 +778,7 @@ def train(
         stage1_best_config_path=stage1_best_config_path,
         search_best_config_path=search_best_config_path,
         run_output_dir=run_output_dir,
-        final_eval_random_seed=final_eval_random_seed,
+        random_seed=random_seed,
         final_eval_repeat_n=final_eval_repeat_n,
         skip_noise_rl=skip_noise_rl,
         skip_stage1_rl=skip_stage1_rl,

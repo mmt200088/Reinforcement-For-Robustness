@@ -1116,11 +1116,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                  run_output_dir='',
                  stage1_best_config_path='',
                  search_best_config_path='',
-                 final_eval_random_seed=42,
+                 random_seed=42,
                  final_eval_repeat_n=5,
                  skip_noise_rl=False,
                  skip_stage1_rl=False,
-                 skip_final_eval=False,
+                 skip_final_eval=True,
                  final_eval_only=False,
                  resume_run_dir='',
                  stage1_accuracy_tolerance=None,
@@ -1452,7 +1452,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.search_best_config_input_path = str(
             search_best_config_path or ""
         ).strip()
-        self.final_eval_random_seed = int(final_eval_random_seed)
+        self.random_seed = int(random_seed)
         self.final_eval_repeat_n = self._coerce_positive_int(
             final_eval_repeat_n, "final_eval_repeat_n",
         )
@@ -1679,7 +1679,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 raise ValueError(
                     "formal comparators require textattack BERT-base MRPC"
                 )
-            if int(self.final_eval_random_seed) != 42 or int(self.blb_v3_seed or 42) != 42:
+            if int(self.random_seed) != 42 or int(self.blb_v3_seed or 42) != 42:
                 raise ValueError("formal comparators require seed 42")
             if (
                 int(self.stage2_inference_batch_size or self.batch_size)
@@ -2978,7 +2978,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         trials = []
         try:
-            base_seed = int(getattr(self, "final_eval_random_seed", 42))
+            base_seed = int(getattr(self, "random_seed", 42))
             for trial_idx in range(repeats):
 
 
@@ -3212,7 +3212,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         runner = BLBActionFinalEvaluationModule(
             evaluator=self,
-            random_seed=self.final_eval_random_seed,
+            random_seed=self.random_seed,
             repeat_n=self.final_eval_repeat_n,
             results_dir=self.final_eval_dir,
         )
@@ -3372,7 +3372,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
         _u_seed = (
-            int(getattr(self, "final_eval_random_seed", 42))
+            int(getattr(self, "random_seed", 42))
             ^ (int(ppo_update_step) * 2654435761)
         ) & 0x7FFFFFFFFFFFFFFF
         torch.manual_seed(_u_seed)
@@ -4210,7 +4210,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "ppo_update_interval": int(PPO_UPDATE_INTERVAL),
                 "ppo_lr_initial": float(self.stage1_ppo_lr_initial),
                 "stage1_rl_devices": self.stage1_rl_devices,
-                "random_seed": int(getattr(self, "final_eval_random_seed", 42)),
+                "random_seed": int(getattr(self, "random_seed", 42)),
                 "baseline": {
                     "loss": float(base_loss),
                     "metric1": float(base_p),
@@ -4425,7 +4425,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             gtrxl_net=gtrxl_net,
                             total_episodes=_window_size,
                             window_idx=_window_idx_for_runner,
-                            base_seed=int(getattr(self, "final_eval_random_seed", 42)),
+                            base_seed=int(getattr(self, "random_seed", 42)),
                         )
                         _stage1_parallel_collect_seconds = (
                             time.time() - _stage1_parallel_collect_t0
