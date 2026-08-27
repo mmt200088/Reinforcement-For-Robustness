@@ -552,6 +552,8 @@ def train(
         base_model: str = "",
         data_path: str = "mrpc",
         output_dir: str = "./runs",
+        stage1_best_config_path: str = "",
+        search_best_config_path: str = "",
         glue_train_probe_fixture_path: str = "fixtures/reproducibility/glue_train_probe_v1.json",
         mrpc_reproducibility_fixture_path: str = "",
         batch_size: int = 128,
@@ -563,17 +565,12 @@ def train(
         stage2_rl_episodes: int = 0,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
-        stage1_entropy_stop_threshold: float = None,
         ppo_update_interval: int = 120,
         final_eval_config_source: str = "search",
         final_eval_config_path: str = "configs/reference/rl.json",
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",
         manual_stage2_noise: str = "",
-        stage2_fixed_config_source: str = "all4",
-        stage2_fixed_config_path: str = "",
-        stage2_manual_gelu: str = "",
-        stage2_manual_softmax: str = "",
         final_eval_random_seed: int = 42,
         final_eval_permutation_trials: int = 10,
         final_eval_cost_equivalent_trials: int = 10,
@@ -750,15 +747,6 @@ def train(
     ppo_update_interval = parse_positive_int(
         ppo_update_interval, "ppo_update_interval"
     )
-    stage1_entropy_stop_threshold = parse_optional_positive_float(
-        stage1_entropy_stop_threshold, "stage1_entropy_stop_threshold"
-    )
-    if stage1_rl_episodes <= 0 and stage1_entropy_stop_threshold is None:
-        raise ValueError(
-            "stage1_rl_episodes <= 0 means unbounded Stage-1 training and "
-            "requires stage1_entropy_stop_threshold"
-        )
-
     glue_fixture_path = Path(
         str(glue_train_probe_fixture_path or "").strip()
     ).expanduser()
@@ -919,8 +907,6 @@ def train(
     parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
     parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
     parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
-    parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
-    parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
     from rfr.search.common.evaluator import LayerImportanceEvaluator
 
     importance_evaluator = LayerImportanceEvaluator(
@@ -938,17 +924,14 @@ def train(
         stage2_rl_episodes=stage2_rl_episodes,
         stage1_rl_episodes_specified=stage1_rl_episodes_specified,
         stage2_rl_episodes_specified=stage2_rl_episodes_specified,
-        stage1_entropy_stop_threshold=stage1_entropy_stop_threshold,
+        stage1_best_config_path=stage1_best_config_path,
+        search_best_config_path=search_best_config_path,
         run_output_dir=run_output_dir,
         final_eval_config_source=final_eval_config_source,
         final_eval_config_path=final_eval_config_path,
         manual_stage1_gelu=parsed_manual_stage1_gelu,
         manual_stage1_softmax=parsed_manual_stage1_softmax,
         manual_stage2_noise=parsed_manual_stage2_noise,
-        stage2_fixed_config_source=stage2_fixed_config_source,
-        stage2_fixed_config_path=stage2_fixed_config_path,
-        stage2_manual_gelu=parsed_stage2_manual_gelu,
-        stage2_manual_softmax=parsed_stage2_manual_softmax,
         final_eval_random_seed=final_eval_random_seed,
         final_eval_permutation_trials=final_eval_permutation_trials,
         final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,

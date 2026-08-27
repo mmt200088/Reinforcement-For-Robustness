@@ -31,7 +31,6 @@ Run control:
 
 Stage 1 PPO:
   --stage1-search-episodes N
-  --stage1-entropy-stop-threshold FLOAT
   --stage1-search-lr FLOAT
   --ppo-update-interval N
   --stage1-accuracy-tolerance FLOAT
@@ -43,10 +42,7 @@ Stage 2 layerwise PPO:
   --stage2-rollout-size N
   --stage2-save-interval N
   --stage2-eval-interval N
-  --stage2-fixed-config-source all4|stage1_result|json|manual
-  --stage2-fixed-config PATH
-  --stage2-manual-gelu JSON_ARRAY
-  --stage2-manual-softmax JSON_ARRAY
+  --stage1-config PATH
   --stage2-limit-tolerance FLOAT
   --stage2-stability-multiplier FLOAT
   --stage2-k-trials N
@@ -138,7 +134,6 @@ reject_comparator_overrides() {
       --stage2-stability-multiplier|--stage2-stability-multiplier=*|\
       --stage2-k-trials|--stage2-k-trials=*|\
       --stage2-probe-size|--stage2-probe-size=*|\
-      --stage2-fixed-config-source|--stage2-fixed-config-source=*|\
       --blb-v3-search-backend|--blb-v3-search-backend=*|\
       --blb-v3-search-evaluation-budget|--blb-v3-search-evaluation-budget=*|\
       --blb-v3-search-initial-design-size|--blb-v3-search-initial-design-size=*|\
@@ -204,12 +199,11 @@ STAGE2_INFERENCE_BATCH_SIZE="64"
 PERSISTENT_ROOT="outputs"
 RUN_TAG=""
 RESUME_FROM=""
-STAGE1_RUN_ID=""
+STAGE1_CONFIG=""
 FRESH="false"
 DRY_RUN="false"
 
-STAGE1_EPISODES="0"
-STAGE1_ENTROPY_STOP_THRESHOLD="0.1"
+STAGE1_EPISODES="51000"
 STAGE1_LR="2e-5"
 PPO_UPDATE_INTERVAL="120"
 STAGE1_ACCURACY_TOLERANCE="0.001"
@@ -220,10 +214,6 @@ STAGE2_LR="5e-5"
 STAGE2_ROLLOUT_SIZE="120"
 STAGE2_SAVE_INTERVAL="200"
 STAGE2_EVAL_INTERVAL="100"
-STAGE2_FIXED_CONFIG_SOURCE="all4"
-STAGE2_FIXED_CONFIG=""
-STAGE2_MANUAL_GELU=""
-STAGE2_MANUAL_SOFTMAX=""
 STAGE2_LIMIT_TOLERANCE="0.001"
 STAGE2_STABILITY_TOLERANCE="1.2"
 STAGE2_STABILITY_MULTIPLIER="2.0"
@@ -279,12 +269,11 @@ while [ "$#" -gt 0 ]; do
     --persistent-root) require_value "$@"; PERSISTENT_ROOT="$2"; shift 2 ;;
     --run-tag) require_value "$@"; RUN_TAG="$2"; shift 2 ;;
     --resume-from) require_value "$@"; RESUME_FROM="$2"; shift 2 ;;
-    --stage1-run-id) require_value "$@"; STAGE1_RUN_ID="$2"; shift 2 ;;
+    --stage1-config) require_value "$@"; STAGE1_CONFIG="$2"; shift 2 ;;
     --fresh) FRESH="true"; shift ;;
     --fresh-start) FRESH="true"; shift ;;
     --dry-run) DRY_RUN="true"; shift ;;
     --stage1-search-episodes) require_value "$@"; STAGE1_EPISODES="$2"; shift 2 ;;
-    --stage1-entropy-stop-threshold) require_value "$@"; STAGE1_ENTROPY_STOP_THRESHOLD="$2"; shift 2 ;;
     --stage1-search-lr) require_value "$@"; STAGE1_LR="$2"; shift 2 ;;
     --ppo-update-interval) require_value "$@"; PPO_UPDATE_INTERVAL="$2"; shift 2 ;;
     --stage1-accuracy-tolerance) require_value "$@"; STAGE1_ACCURACY_TOLERANCE="$2"; shift 2 ;;
@@ -294,10 +283,6 @@ while [ "$#" -gt 0 ]; do
     --stage2-rollout-size) require_value "$@"; STAGE2_ROLLOUT_SIZE="$2"; shift 2 ;;
     --stage2-save-interval) require_value "$@"; STAGE2_SAVE_INTERVAL="$2"; shift 2 ;;
     --stage2-eval-interval) require_value "$@"; STAGE2_EVAL_INTERVAL="$2"; shift 2 ;;
-    --stage2-fixed-config-source) require_value "$@"; STAGE2_FIXED_CONFIG_SOURCE="$2"; shift 2 ;;
-    --stage2-fixed-config) require_value "$@"; STAGE2_FIXED_CONFIG="$2"; shift 2 ;;
-    --stage2-manual-gelu) require_value "$@"; STAGE2_MANUAL_GELU="$2"; shift 2 ;;
-    --stage2-manual-softmax) require_value "$@"; STAGE2_MANUAL_SOFTMAX="$2"; shift 2 ;;
     --stage2-limit-tolerance) require_value "$@"; STAGE2_LIMIT_TOLERANCE="$2"; shift 2 ;;
     --stage2-stability-tolerance) require_value "$@"; STAGE2_STABILITY_TOLERANCE="$2"; shift 2 ;;
     --stage2-stability-multiplier) require_value "$@"; STAGE2_STABILITY_MULTIPLIER="$2"; shift 2 ;;
@@ -339,12 +324,10 @@ done
 DATASET="$(lowercase "$DATASET")"
 MODEL_TYPE="$(lowercase "$MODEL_TYPE")"
 MODE="$(lowercase "$MODE")"
-STAGE2_FIXED_CONFIG_SOURCE="$(lowercase "$STAGE2_FIXED_CONFIG_SOURCE")"
 ELASTIC_GPU_MODE="$(lowercase "$ELASTIC_GPU_MODE")"
 
 case "$DATASET" in mrpc|rte|sst2) ;; *) fail "unsupported dataset: $DATASET" ;; esac
 case "$MODEL_TYPE" in bert-base|bert-large) ;; *) fail "unsupported model type: $MODEL_TYPE" ;; esac
-case "$STAGE2_FIXED_CONFIG_SOURCE" in all4|stage1_result|json|manual) ;; *) fail "unsupported Stage-2 fixed-config source" ;; esac
 case "$ELASTIC_GPU_MODE" in auto|off) ;; *) fail "elastic GPU mode must be auto or off" ;; esac
 
 for value in "$BATCH_SIZE" "$STAGE2_INFERENCE_BATCH_SIZE" "$PPO_UPDATE_INTERVAL" "$STAGE2_ROLLOUT_SIZE" "$STAGE2_SAVE_INTERVAL" "$STAGE2_EVAL_INTERVAL" "$STAGE2_K_TRIALS" "$STAGE2_PROBE_SIZE" "$ELASTIC_GPU_MAX_RESTARTS"; do
@@ -399,7 +382,6 @@ else
   STAGE2_STABILITY_TOLERANCE="1.2"
   STAGE2_STABILITY_MULTIPLIER="2.0"
   STAGE2_K_TRIALS="3"
-  STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
   FINAL_SELECTION_TOP_N="5"
   SEARCH_MUTATION_MAX_COORDINATES="4"
   case "$ALGORITHM" in
@@ -434,11 +416,9 @@ else
   fi
 fi
 
-if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
-  [ -f "$STAGE2_FIXED_CONFIG" ] || fail "Stage-2 fixed-config file not found: $STAGE2_FIXED_CONFIG"
-fi
-if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "manual" ]; then
-  [ -n "$STAGE2_MANUAL_GELU" ] && [ -n "$STAGE2_MANUAL_SOFTMAX" ] || fail "manual Stage-2 source requires GELU and Softmax vectors"
+if [ "$ALGORITHM" = "rl" ] && [ "$MODE" = "stage2-only" ]; then
+  [ -n "$STAGE1_CONFIG" ] || fail "Stage-2 requires --stage1-config PATH"
+  [ -f "$STAGE1_CONFIG" ] || fail "Stage-1 selected-config JSON not found: $STAGE1_CONFIG"
 fi
 
 if [ "$ELASTIC_GPU_MODE" = "auto" ] && [ "$ALGORITHM" = "rl" ]; then
@@ -522,14 +502,13 @@ CMD=(
   --stage2_rl_episodes "$STAGE2_EPISODES"
   --stage1_rl_episodes_specified "$([ "$SKIP_STAGE1" = "false" ] && printf true || printf false)"
   --stage2_rl_episodes_specified "$([ "$SKIP_STAGE2" = "false" ] && printf true || printf false)"
-  --stage1_entropy_stop_threshold "$STAGE1_ENTROPY_STOP_THRESHOLD"
   --ppo_update_interval "$PPO_UPDATE_INTERVAL"
   --skip_stage1_rl "$SKIP_STAGE1"
   --skip_noise_rl "$SKIP_STAGE2"
   --skip_final_eval "$SKIP_FINAL_EVAL"
   --resume_run_dir "$RESUME_FROM"
   --decoupled_layout "$DECOUPLED_LAYOUT"
-  --stage1_run_id "$STAGE1_RUN_ID"
+  --stage1_best_config_path "$STAGE1_CONFIG"
   --stage1_rl_lr "$STAGE1_LR"
   --stage2_rl_lr "$STAGE2_LR"
   --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE"
@@ -540,10 +519,6 @@ CMD=(
   --stage2_k_trials "$STAGE2_K_TRIALS"
   --stage2_probe_size "$STAGE2_PROBE_SIZE"
   --stage2_inference_batch_size "$STAGE2_INFERENCE_BATCH_SIZE"
-  --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE"
-  --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG"
-  --stage2_manual_gelu "$STAGE2_MANUAL_GELU"
-  --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX"
   --final_eval_random_seed "$RANDOM_SEED"
   --final_eval_preset "$FINAL_EVAL_PRESET"
   --blb_v3_rollout_size "$STAGE2_ROLLOUT_SIZE"

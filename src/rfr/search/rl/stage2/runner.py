@@ -1687,6 +1687,12 @@ def _run_layerwise_training_branch(
         "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
+        "stage1_config_path": str(
+            getattr(evaluator, "stage1_best_config_input_path", "") or ""
+        ),
+        "stage1_config_sha256": str(
+            getattr(evaluator, "stage1_best_config_input_sha256", "") or ""
+        ),
         "planned_episodes": layerwise_termination["episode_limit"],
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
@@ -3246,14 +3252,12 @@ def _build_search_invocation_contract(
         fixed_label: Any,
         fixed_source: Any,
         ) -> dict[str, Any]:
-    import hashlib as _hashlib
-
     from rfr.preparation.data.protocol import (
         PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
         validate_dataset_protocol_binding,
     )
-    from rfr.common.json_utils import stable_json_hash, to_jsonable
-    from rfr.search.comparators.common.stage1_runner import load_completed_search_result
+    from rfr.common.json_utils import to_jsonable
+    from rfr.search.common.best_config import load_stage1_best_config
 
     from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
@@ -3262,32 +3266,20 @@ def _build_search_invocation_contract(
     )
     if backend == "ppo":
         raise ValueError("search invocation contract requires a non-PPO backend")
-    expected_source = f"stage1_{backend}_result"
-    if str(fixed_source) != expected_source:
-        raise RuntimeError(
-            "two-stage comparator invocation must bind its own Stage-1 result: "
-            f"expected {expected_source!r}, got {str(fixed_source)!r}"
-        )
-
     evaluator = runner.evaluator
-    binding = dict(getattr(
-        evaluator, "stage1_comparator_selection_binding", {},
-    ) or {})
-    raw_result_path = binding.get("result_path")
-    if not raw_result_path:
-        raise RuntimeError(
-            "Stage-2 comparator invocation has no ordinary Stage-1 result path"
-        )
+    raw_config_path = str(
+        getattr(evaluator, "stage1_best_config_input_path", "") or ""
+    )
+    if not raw_config_path:
+        raise RuntimeError("Stage-2 comparator invocation has no Stage-1 JSON")
     try:
-        stage1_result_path = os.path.abspath(
-            os.path.expanduser(os.fspath(raw_result_path))
+        stage1_config_path = os.path.abspath(
+            os.path.expanduser(os.fspath(raw_config_path))
         )
-        completed_stage1 = load_completed_search_result(
-            os.path.dirname(stage1_result_path)
-        )
+        stage1_config = load_stage1_best_config(stage1_config_path)
     except (OSError, TypeError, ValueError, RuntimeError) as exc:
         raise RuntimeError(
-            "Stage-2 comparator invocation cannot load the completed Stage-1 result"
+            "Stage-2 comparator invocation cannot load the Stage-1 JSON"
         ) from exc
 
     gelu_degrees = [
@@ -3298,75 +3290,48 @@ def _build_search_invocation_contract(
     ]
     num_layers = int(getattr(evaluator, "total_layers", 0))
     seed = int(getattr(train_cfg, "seed", 0))
-    completed_action = [int(value) for value in completed_stage1.best.action]
-    completed_gelu = [
-        int(value) for value in completed_stage1.best.gelu_degrees
-    ]
-    completed_softmax = [
-        int(value) for value in completed_stage1.best.softmax_degrees
-    ]
-    selection_payload = {
-        "backend": str(binding.get("backend") or ""),
-        "seed": int(binding.get("seed", -1)),
-        "action": [int(value) for value in binding.get("action") or []],
-        "gelu_degrees": [
-            int(value) for value in binding.get("gelu_degrees") or []
-        ],
-        "softmax_degrees": [
-            int(value) for value in binding.get("softmax_degrees") or []
-        ],
-        "num_layers": int(binding.get("num_layers", 0)),
-        "dataset_protocol_hash": str(
-            binding.get("dataset_protocol_hash") or ""
-        ),
-    }
-    normalized_binding = {
-        **selection_payload,
-        "result_path": stage1_result_path,
-        "result_sha256": str(binding.get("result_sha256") or ""),
-        "selection_hash": str(binding.get("selection_hash") or ""),
-    }
-    result_hasher = _hashlib.sha256()
-    with open(stage1_result_path, "rb") as result_handle:
-        for chunk in iter(lambda: result_handle.read(1024 * 1024), b""):
-            result_hasher.update(chunk)
-    actual_result_sha256 = result_hasher.hexdigest()
-    actual_selection_hash = stable_json_hash(selection_payload)
     dataset_protocol_hash = str(
         getattr(evaluator, "dataset_protocol_hash", "") or ""
+    )
+    config_protocol_hash = str(
+        stage1_config["provenance"].get("dataset_protocol_hash") or ""
     )
     validate_dataset_protocol_binding(
         {
             "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
-            "dataset_protocol_hash": normalized_binding[
-                "dataset_protocol_hash"
-            ],
+            "dataset_protocol_hash": config_protocol_hash,
         },
         expected_hash=dataset_protocol_hash,
         artifact="Stage-2 comparator invocation",
     )
+    expected_model = "bert-large" if num_layers == 24 else "bert-base"
+    expected_source = f"stage1_json:{stage1_config_path}"
     if (
-            completed_stage1.algorithm != backend
-            or int(getattr(completed_stage1.config, "seed", -1)) != seed
+            str(fixed_source) != expected_source
+            or stage1_config["algorithm"] != backend
+            or stage1_config["model_type"] != expected_model
+            or stage1_config["dataset"] != str(evaluator.dataset_key)
             or num_layers <= 0
-            or len(completed_action) != num_layers
-            or completed_gelu != gelu_degrees
-            or completed_softmax != softmax_degrees
-            or any(value != 6 for value in completed_softmax)
-            or normalized_binding["backend"] != backend
-            or normalized_binding["seed"] != seed
-            or normalized_binding["action"] != completed_action
-            or normalized_binding["gelu_degrees"] != completed_gelu
-            or normalized_binding["softmax_degrees"] != completed_softmax
-            or normalized_binding["num_layers"] != num_layers
-            or normalized_binding["dataset_protocol_hash"]
-            != dataset_protocol_hash
-            or normalized_binding["result_sha256"] != actual_result_sha256
-            or normalized_binding["selection_hash"] != actual_selection_hash
+            or stage1_config["stage1"]["gelu"] != gelu_degrees
+            or stage1_config["stage1"]["softmax"] != softmax_degrees
     ):
         raise RuntimeError(
-            "Stage-2 comparator binding does not match the completed Stage-1 result"
+            "Stage-2 comparator binding does not match its Stage-1 JSON"
         )
+    normalized_binding = {
+        "schema_version": stage1_config["schema_version"],
+        "algorithm": stage1_config["algorithm"],
+        "model_type": stage1_config["model_type"],
+        "dataset": stage1_config["dataset"],
+        "num_layers": stage1_config["num_layers"],
+        "gelu_degrees": gelu_degrees,
+        "softmax_degrees": softmax_degrees,
+        "dataset_protocol_hash": config_protocol_hash,
+        "config_path": stage1_config_path,
+        "config_sha256": str(
+            getattr(evaluator, "stage1_best_config_input_sha256", "") or ""
+        ),
+    }
 
     scientific_parameters = {
         name: getattr(train_cfg, name, default)
@@ -3455,7 +3420,7 @@ def _build_search_invocation_contract(
         "fixed_source": str(fixed_source),
         "seed": seed,
         "stage1_selection_binding": normalized_binding,
-        "stage1_result_path": stage1_result_path,
+        "stage1_config_path": stage1_config_path,
         "rng_contract": {
             "online_stream": "ppo_global_evaluation_index_v1",
             "probe_seed": "derive_layerwise_episode_probe_seed_v1",

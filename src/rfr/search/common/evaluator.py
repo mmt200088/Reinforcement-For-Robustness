@@ -1259,15 +1259,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage1_rl_devices="",
                  device='cuda', data_path='mrpc',
                  run_output_dir='',
+                 stage1_best_config_path='',
+                 search_best_config_path='',
                  final_eval_config_source='search',
                  final_eval_config_path='configs/reference/rl.json',
                  manual_stage1_gelu=None,
                  manual_stage1_softmax=None,
                  manual_stage2_noise=None,
-                 stage2_fixed_config_source='all4',
-                 stage2_fixed_config_path='',
-                 stage2_manual_gelu=None,
-                 stage2_manual_softmax=None,
                  final_eval_random_seed=42,
                  final_eval_permutation_trials=10,
                  final_eval_cost_equivalent_trials=10,
@@ -1673,46 +1671,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.manual_stage1_gelu = manual_stage1_gelu
         self.manual_stage1_softmax = manual_stage1_softmax
         self.manual_stage2_noise = manual_stage2_noise
-        self.stage2_fixed_config_source = str(
-            stage2_fixed_config_source or 'all4'
-        ).strip().lower()
-        self.stage2_fixed_config_path = str(stage2_fixed_config_path or '').strip()
-        self.stage2_manual_gelu = stage2_manual_gelu
-        self.stage2_manual_softmax = stage2_manual_softmax
-        if self.stage2_fixed_config_source not in (
-                'all4', 'stage1_result', 'json', 'manual'):
-            raise ValueError(
-                f"Unsupported stage2_fixed_config_source "
-                f"'{self.stage2_fixed_config_source}'. Use one of: "
-                "all4, stage1_result, json, manual."
-            )
-        if self.stage2_fixed_config_source in ('all4', 'stage1_result'):
-            if self.stage2_fixed_config_path:
-                raise ValueError(
-                    f"stage2_fixed_config_source='{self.stage2_fixed_config_source}' "
-                    "does not accept stage2_fixed_config_path."
-                )
-            if self.stage2_manual_gelu is not None or self.stage2_manual_softmax is not None:
-                raise ValueError(
-                    f"stage2_fixed_config_source='{self.stage2_fixed_config_source}' "
-                    "does not accept stage2_manual_gelu/stage2_manual_softmax."
-                )
-        elif self.stage2_fixed_config_source == 'json':
-            if not self.stage2_fixed_config_path:
-                raise ValueError(
-                    "stage2_fixed_config_source='json' requires "
-                    "stage2_fixed_config_path."
-                )
-            if self.stage2_manual_gelu is not None or self.stage2_manual_softmax is not None:
-                raise ValueError(
-                    "stage2_fixed_config_source='json' does not accept "
-                    "stage2_manual_gelu/stage2_manual_softmax."
-                )
-        elif self.stage2_manual_gelu is None or self.stage2_manual_softmax is None:
-            raise ValueError(
-                "stage2_fixed_config_source='manual' requires both "
-                "stage2_manual_gelu and stage2_manual_softmax."
-            )
+        self.stage1_best_config_input_path = str(
+            stage1_best_config_path or ""
+        ).strip()
+        self.search_best_config_input_path = str(
+            search_best_config_path or ""
+        ).strip()
         self.final_eval_random_seed = int(final_eval_random_seed)
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
@@ -1734,7 +1698,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
         self.final_eval_only = self._coerce_bool_flag(final_eval_only, 'final_eval_only')
-        self.needs_stage2_fixed_config = (not self.skip_noise_rl) or (not self.skip_final_eval)
+        self.needs_stage2_fixed_config = not self.skip_noise_rl
         self.resume_run_dir = str(resume_run_dir or '').strip()
 
         if self.final_eval_config_source not in (
@@ -1758,21 +1722,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         _can_fallback_stage1 = _has_stage1_manual or _has_json_fallback
         _can_fallback_stage2 = _has_stage2_manual or _has_json_fallback
-
-        if (
-            self.needs_stage2_fixed_config
-            and self.skip_stage1_rl
-            and self.final_eval_config_source == 'search'
-            and self.stage2_fixed_config_source == 'stage1_result'
-            and (not _can_fallback_stage1)
-            and (not self.final_eval_only)
-        ):
-            raise ValueError(
-                "skip_stage1_rl=True 且 final_eval_config_source='search' 时，"
-                "需要提供 Stage-1 回退配置（json/manual）。"
-                "请提供包含 stage1 的 --final-eval-config，"
-                "或同时提供 --manual-stage1-gelu 与 --manual-stage1-softmax。"
-            )
 
         if self.skip_stage1_rl and (
             self.stage1_rl_episodes_specified
@@ -2181,25 +2130,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             results_dir=self.final_eval_dir,
         )
 
-    def _build_stage2_fixed_config_resolver(self):
-        source = self.stage2_fixed_config_source
-        resolver_source = 'search' if source == 'stage1_result' else source
-        return UnifiedFinalEvaluationModule(
-            evaluator=self,
-            config_source=resolver_source,
-            config_path=self.stage2_fixed_config_path,
-            manual_stage1_gelu=self.stage2_manual_gelu,
-            manual_stage1_softmax=self.stage2_manual_softmax,
-            random_seed=self.final_eval_random_seed,
-            permutation_trials=0,
-            cost_equivalent_trials=0,
-            budget_equivalent_trials=0,
-            stage1_budget_trials=0,
-            stage2_budget_trials=0,
-            repeat_n=1,
-            results_dir=getattr(self, 'final_eval_dir', None),
-        )
-
     def _maybe_snapshot_decoupled_stage1_record(
         self, *, best_config, base_gelu, base_softmax,
         episode_metric1s, episode_metric2s, episode_losses,
@@ -2311,86 +2241,151 @@ class LayerImportanceEvaluator(TrainerCallback):
         except Exception as _e:
             self.log(f"  [解耦][警告] Stage-1 record 归档失败（不影响训练结果）：{_e}")
 
-    def _resolve_stage1_degrees_from_record(self):
-        """Resolve Stage 1 degrees from a completed record directory."""
-        import json as _json
-        from rfr.common.config import run_layout as _rl
+    def _write_stage1_best_config_file(
+            self,
+            *,
+            best_config: Mapping[str, Any],
+            completed_episodes: int,
+            ) -> str:
+        """Write the sole production handoff consumed by Stage 2."""
+        from rfr.search.common.best_config import write_stage1_best_config
 
-        wd = os.path.normpath(str(self.run_output_dir or ""))
-        if not wd or wd == ".":
-            raise RuntimeError("解耦 stage2 需要 run_output_dir 来定位 stage1/record/。")
-        combo = os.path.basename(wd)
-        root = os.path.dirname(os.path.dirname(wd))
-        rec_root = os.path.join(root, _rl.STAGE1_SUBDIR, _rl.RECORD_SUBDIR)
-        run_id_name = self.stage1_run_id or None
-        rec_dir = _rl.latest_record_dir_in_root(rec_root, combo, run_id_name=run_id_name)
-        if rec_dir is None:
-            if run_id_name:
-                raise FileNotFoundError(
-                    f"指定的 Stage-1 record 不存在：{os.path.join(rec_root, run_id_name)}"
-                )
-            raise FileNotFoundError(
-                f"未找到 combo='{combo}' 的 Stage-1 record（{rec_root}）。"
-                "请先运行 Stage-1（--mode stage1-only），或用 --stage2-fixed-config 显式提供 JSON。"
-            )
-        cfg_path = os.path.join(rec_dir, "final_config.json")
-        if not os.path.isfile(cfg_path):
-            raise FileNotFoundError(f"Stage-1 record 缺少 final_config.json：{cfg_path}")
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            cfg = _json.load(f)
-        gelu_list = cfg.get("gelu_degree_per_layer")
-        if not gelu_list:
-            raise ValueError(
-                f"Stage-1 record 的 final_config.json 缺少 gelu_degree_per_layer：{cfg_path}"
-            )
-        gelu = np.asarray(gelu_list, dtype=int)
-        sm_list = cfg.get("softmax_degree_per_layer") or [FIXED_SOFTMAX_DEGREE] * self.total_layers
-        softmax = np.asarray(sm_list, dtype=int)
-        self.log(
-            f"[Info] Stage-2 从 Stage-1 record 读取前置配置："
-            f"{os.path.basename(rec_dir)} (gelu={gelu.tolist()})"
+        if not self.run_output_dir:
+            raise RuntimeError("Stage-1 best-config export requires run_output_dir")
+        algorithm = (
+            "rl" if self.blb_v3_search_backend == "ppo"
+            else self.blb_v3_search_backend
         )
-        return gelu, softmax, f"stage1_record:{os.path.basename(rec_dir)}"
-
-    def _resolve_stage2_fixed_stage1_config(self, search_best_config=None):
-        if self.stage2_fixed_config_source == 'all4':
-            gelu = np.full(self.total_layers, 4, dtype=int)
-            softmax = np.full(
-                self.total_layers, FIXED_SOFTMAX_DEGREE, dtype=int
-            )
-            return (
-                gelu,
-                softmax,
-                f"Stage-2 all4 (softmax fixed deg{FIXED_SOFTMAX_DEGREE})",
-                'stage2_all4',
-            )
-
-        resolver = self._build_stage2_fixed_config_resolver()
-
-
-        _use_record = (
-            self.stage2_fixed_config_source == 'stage1_result'
-            and getattr(self, "decoupled_layout", False)
-            and search_best_config is None
+        path = write_stage1_best_config(
+            self.run_output_dir,
+            algorithm=algorithm,
+            model_type=(
+                "bert-large" if int(self.total_layers) == 24 else "bert-base"
+            ),
+            dataset=self.dataset_key,
+            gelu=best_config["gelu"],
+            softmax=best_config["softmax"],
+            selection={
+                "status": str(
+                    best_config.get("selection_status") or "selected"
+                ),
+                "feasible": bool(best_config.get("feasible", True)),
+                "evaluation": best_config.get("evaluation"),
+            },
+            provenance={
+                "dataset_protocol_hash": self.dataset_protocol_hash,
+                "completed_evaluations": int(completed_episodes),
+                "source_result_path": best_config.get("result_path"),
+                "selection_binding": best_config.get("selection_binding"),
+                "search_accounting": best_config.get("search_accounting"),
+            },
         )
-        if _use_record:
-            gelu, softmax, source = self._resolve_stage1_degrees_from_record()
-        else:
-            gelu, softmax, source = resolver.resolve_stage1_only(
-                search_best_stage1=search_best_config,
-                total_layers=self.total_layers,
+        self.stage1_best_config_path = str(path)
+        self.log(f"  Stage-1 selected configuration: {path}")
+        return str(path)
+
+    def _write_search_best_config_file(
+            self,
+            *,
+            stage1_config: Mapping[str, Any],
+            stage2_result: Mapping[str, Any],
+            ) -> str:
+        """Write the sole selected-configuration input accepted by final eval."""
+        from rfr.search.common.best_config import write_search_best_config
+
+        if not self.run_output_dir:
+            raise RuntimeError("search best-config export requires run_output_dir")
+        group = stage2_result.get("blb_v3_best_action_group")
+        if not isinstance(group, Mapping):
+            raise RuntimeError("completed Stage-2 result has no action group")
+        action_matrix = group.get("policy_actions")
+        if not isinstance(action_matrix, (list, tuple)):
+            raise RuntimeError("completed Stage-2 result has no action matrix")
+        status = str(stage2_result.get("status") or "")
+        if status not in ("completed", "completed_infeasible"):
+            raise RuntimeError(
+                f"Stage-2 status {status!r} cannot produce a formal best config"
             )
-        gelu = np.asarray(gelu, dtype=int).reshape(-1)
-        if gelu.size != int(self.total_layers):
+        algorithm = (
+            "rl" if self.blb_v3_search_backend == "ppo"
+            else self.blb_v3_search_backend
+        )
+        strict_feasible = bool(
+            stage2_result.get("strict_feasible", status == "completed")
+        )
+        path = write_search_best_config(
+            self.run_output_dir,
+            algorithm=algorithm,
+            model_type=(
+                "bert-large" if int(self.total_layers) == 24 else "bert-base"
+            ),
+            dataset=self.dataset_key,
+            gelu=stage1_config["gelu"],
+            softmax=stage1_config["softmax"],
+            action_matrix=action_matrix,
+            selection={
+                "status": status,
+                "strict_feasible": strict_feasible,
+                "final_eval_eligible": strict_feasible,
+                "scientific_status": stage2_result.get("scientific_status"),
+                "final_config_fingerprint": stage2_result.get(
+                    "final_config_fingerprint"
+                ),
+            },
+            provenance={
+                "dataset_protocol_hash": self.dataset_protocol_hash,
+                "stage1_config_path": self.stage1_best_config_input_path,
+                "stage1_config_sha256": getattr(
+                    self, "stage1_best_config_input_sha256", None
+                ),
+                "search_accounting": stage2_result.get("search_accounting"),
+                "algorithm_contract_hash": stage2_result.get(
+                    "algorithm_contract_hash"
+                ),
+                "run_context_hash": stage2_result.get("run_context_hash"),
+            },
+        )
+        self.search_best_config_path = str(path)
+        self.log(f"  Selected two-stage configuration: {path}")
+        return str(path)
+
+    def _resolve_stage2_fixed_stage1_config(self):
+        """Load the sole Stage-1 JSON handoff accepted by Stage 2."""
+        from rfr.search.common.best_config import load_stage1_best_config
+
+        generated_path = str(getattr(self, "stage1_best_config_path", "") or "")
+        path = generated_path or self.stage1_best_config_input_path
+        if not path:
+            raise ValueError("Stage 2 requires a Stage-1 selected-config JSON")
+        payload = load_stage1_best_config(path)
+        expected_algorithm = (
+            "rl" if self.blb_v3_search_backend == "ppo"
+            else self.blb_v3_search_backend
+        )
+        expected_model = (
+            "bert-large" if int(self.total_layers) == 24 else "bert-base"
+        )
+        if payload["algorithm"] != expected_algorithm:
             raise ValueError(
-                f"Stage-2 GELU vector length {gelu.size} does not match "
-                f"num_layers={self.total_layers}."
+                "Stage-1 selected-config algorithm does not match Stage 2"
             )
-
-
-        del softmax
-        softmax = np.full(self.total_layers, FIXED_SOFTMAX_DEGREE, dtype=int)
-        label = f"Stage-1 config ({source}; softmax fixed deg{FIXED_SOFTMAX_DEGREE})"
+        if payload["model_type"] != expected_model:
+            raise ValueError(
+                "Stage-1 selected-config model does not match Stage 2"
+            )
+        if payload["dataset"] != self.dataset_key:
+            raise ValueError(
+                "Stage-1 selected-config dataset does not match Stage 2"
+            )
+        gelu = np.asarray(payload["stage1"]["gelu"], dtype=int)
+        softmax = np.asarray(payload["stage1"]["softmax"], dtype=int)
+        with open(path, "rb") as handle:
+            content_hash = hashlib.sha256(handle.read()).hexdigest()
+        self.stage1_best_config_input_path = os.path.abspath(path)
+        self.stage1_best_config_input_sha256 = content_hash
+        self.stage1_best_config_payload = payload
+        label = f"Stage-1 selected config ({expected_algorithm})"
+        source = f"stage1_json:{self.stage1_best_config_input_path}"
         return gelu, softmax, label, source
 
     def _detect_task_type(self):
@@ -4058,11 +4053,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         with open(os.path.join(bp_dir, "constraint_metadata.json"), "w") as _f:
             _json.dump(meta, _f, indent=2)
 
-    def run_unified_final_eval(self, stage1_search_best=None, stage2_search_best=None,
-                               baseline_stage1_gelu=None, baseline_stage1_softmax=None,
-                               baseline_noise_tot_c=None,
-                               limit_loss=None, limit_p=None, limit_s=None):
-        """Run the shared final evaluator for selected Stage 1 and Stage 2 configurations."""
+    def run_selected_config_final_eval(
+            self,
+            *,
+            search_config,
+            baseline_stage1_gelu=None,
+            baseline_stage1_softmax=None,
+            baseline_noise_tot_c=None,
+            limit_loss=None,
+            limit_p=None,
+            limit_s=None,
+            ):
+        """Evaluate the one configuration loaded from search-best JSON."""
         import numpy as np
 
         if baseline_stage1_gelu is None or baseline_stage1_softmax is None:
@@ -4092,44 +4094,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p = selection_limits["metric1"] if limit_p is None else limit_p
             limit_s = selection_limits["metric2"] if limit_s is None else limit_s
 
-        if self._should_run_blb_action_final_eval(stage2_search_best):
-            from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
-            blb_random_enabled = bool(
-                self.final_eval_random_enabled
-                or int(getattr(self, "final_eval_cost_match_count", 0)) > 0
-            )
-            runner = BLBActionFinalEvaluationModule(
-                evaluator=self,
-                config_source=self.final_eval_config_source,
-                config_path=self.final_eval_config_path,
-                manual_stage1_gelu=self.manual_stage1_gelu,
-                manual_stage1_softmax=self.manual_stage1_softmax,
-                random_seed=self.final_eval_random_seed,
-                random_enabled=blb_random_enabled,
-                random_count=self._final_eval_random_count(),
-                repeat_n=self.final_eval_repeat_n,
-                results_dir=self.final_eval_dir,
-                action_config_path=self.final_eval_action_config,
-                action_ranges=self.final_eval_action_ranges,
-                action_fixed=self.final_eval_action_fixed,
-                cost_match_count=int(getattr(self, "final_eval_cost_match_count", 50)),
-                cost_match_max_attempts=int(getattr(self, "final_eval_cost_match_max_attempts", 5000)),
-            )
-            return runner.run(
-                search_best_stage1=stage1_search_best,
-                search_best_stage2=stage2_search_best,
-                baseline_stage1_gelu=baseline_stage1_gelu,
-                baseline_stage1_softmax=baseline_stage1_softmax,
-                baseline_noise_tot_c=float(baseline_noise_tot_c),
-                limit_loss=float(limit_loss),
-                limit_p=float(limit_p),
-                limit_s=float(limit_s),
-            )
+        from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
-        runner = self._build_final_eval_runner()
+        runner = BLBActionFinalEvaluationModule(
+            evaluator=self,
+            random_seed=self.final_eval_random_seed,
+            repeat_n=self.final_eval_repeat_n,
+            results_dir=self.final_eval_dir,
+        )
         return runner.run(
-            search_best_stage1=stage1_search_best,
-            search_best_stage2=stage2_search_best,
+            search_config=search_config,
             baseline_stage1_gelu=baseline_stage1_gelu,
             baseline_stage1_softmax=baseline_stage1_softmax,
             baseline_noise_tot_c=float(baseline_noise_tot_c),
@@ -4137,28 +4111,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p=float(limit_p),
             limit_s=float(limit_s),
         )
-
-    def _final_eval_random_count(self):
-        return int(
-            self.final_eval_permutation_trials
-            + self.final_eval_cost_equivalent_trials
-            + self.final_eval_budget_equivalent_trials
-            + self.final_eval_stage1_budget_trials
-            + self.final_eval_stage2_budget_trials
-        )
-
-    def _should_run_blb_action_final_eval(self, stage2_search_best=None):
-        if str(getattr(self, "final_eval_action_config", "") or "").strip():
-            return True
-        action_ranges = getattr(self, "final_eval_action_ranges", "")
-        if action_ranges not in ("", "[]", (), [], None) and str(action_ranges).strip():
-            return True
-        action_fixed = getattr(self, "final_eval_action_fixed", "")
-        if action_fixed not in ("", "[]", (), [], None) and str(action_fixed).strip():
-            return True
-        if isinstance(stage2_search_best, dict) and stage2_search_best.get("blb_v3_best_action_vec") is not None:
-            return True
-        return False
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None, *,
                         model=None, device=None):
@@ -6426,24 +6378,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log(f"[警告] PPO训练曲线绘制失败（Failed to plot PPO training curves）: {e}")
 
 
-        if (
-                getattr(self, "decoupled_layout", False)
-                and self.skip_noise_rl
-                and not self.skip_stage1_rl
-                and self.blb_v3_search_backend == "ppo"
-        ):
-            self._maybe_snapshot_decoupled_stage1_record(
+        if best_config is not None and not self.skip_stage1_rl:
+            self._write_stage1_best_config_file(
                 best_config=best_config,
-                base_gelu=base_gelu,
-                base_softmax=base_softmax,
-                episode_metric1s=episode_metric1s,
-                episode_metric2s=episode_metric2s,
-                episode_losses=episode_losses,
-                best_reward=best_reward,
-                best_cost=best_cost,
                 completed_episodes=stage1_completed_episodes,
             )
-
 
         self.log("\n" + "="*60)
         self.log("最终评估报告（FINAL EVALUATION REPORT）（验证集）")
@@ -6464,17 +6403,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage2_fixed_softmax,
                 stage2_fixed_label,
                 stage2_fixed_source,
-            ) = self._resolve_stage2_fixed_stage1_config(search_best_config=best_config)
-            if (
-                    self.blb_v3_search_backend != "ppo"
-                    and best_config is not None
-            ):
-                stage2_fixed_source = (
-                    f"stage1_{self.blb_v3_search_backend}_result"
-                )
-                stage2_fixed_label = (
-                    f"Stage-1 {self.blb_v3_search_backend} selected config"
-                )
+            ) = self._resolve_stage2_fixed_stage1_config()
             self.log(
                 f"[Info] Stage-2 固定 GELU/Softmax 来源："
                 f"{stage2_fixed_label} (source={stage2_fixed_source})"
@@ -6520,6 +6449,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                             ),
                         },
                     )
+                if str(noise_stage_result.get("status") or "") in (
+                        "completed", "completed_infeasible"):
+                    stage1_payload = getattr(
+                        self, "stage1_best_config_payload", None
+                    )
+                    if not isinstance(stage1_payload, Mapping):
+                        raise RuntimeError(
+                            "completed Stage 2 is missing its Stage-1 JSON payload"
+                        )
+                    self._write_search_best_config_file(
+                        stage1_config=stage1_payload["stage1"],
+                        stage2_result=noise_stage_result,
+                    )
 
 
             if self.skip_final_eval:
@@ -6528,102 +6470,44 @@ class LayerImportanceEvaluator(TrainerCallback):
                     update_persistent_metadata_stage(
                         self.run_output_dir, "final_eval", "skipped")
             else:
-
-
-                prior_stage1_search_best = None
-                prior_stage2_search_best = None
-                if self.final_eval_only:
-                    prior_stage1_search_best, prior_stage2_search_best = (
-                        self._load_prior_rl_search_results()
+                if not self.final_eval_only:
+                    raise RuntimeError(
+                        "final evaluation is a separate JSON-driven command"
                     )
+                from rfr.search.common.best_config import load_search_best_config
 
-                stage1_search_best = None
-                if best_config is not None:
-                    stage1_search_best = {
-                        "gelu": np.asarray(best_config["gelu"], dtype=int),
-                        "softmax": np.asarray(best_config["softmax"], dtype=int),
-                    }
-                elif prior_stage1_search_best is not None:
-                    stage1_search_best = prior_stage1_search_best
-
-                stage2_search_best = None
-                noise_limit_loss = limit_loss
-                noise_limit_p = limit_p
-                noise_limit_s = limit_s
-                if noise_stage_result is not None:
-                    final_eval_ineligible_reason = (
-                        self._stage2_final_eval_ineligible_reason(
-                            noise_stage_result,
-                        )
+                search_config = load_search_best_config(
+                    self.search_best_config_input_path,
+                    require_final_eval_eligible=True,
+                )
+                expected_algorithm = (
+                    "rl" if self.blb_v3_search_backend == "ppo"
+                    else self.blb_v3_search_backend
+                )
+                expected_model = (
+                    "bert-large" if int(self.total_layers) == 24 else "bert-base"
+                )
+                if (
+                        search_config["algorithm"] != expected_algorithm
+                        or search_config["model_type"] != expected_model
+                        or search_config["dataset"] != self.dataset_key
+                ):
+                    raise ValueError(
+                        "search-best JSON does not match the loaded evaluation profile"
                     )
-                    if final_eval_ineligible_reason is None:
-                        stage2_search_best = (
-                            self._build_stage2_final_eval_handoff(
-                                noise_stage_result,
-                            )
-                        )
-                    noise_limit_loss = noise_stage_result.get("limit_loss", limit_loss)
-                    noise_limit_p = noise_stage_result.get("limit_p", limit_p)
-                    noise_limit_s = noise_stage_result.get("limit_s", limit_s)
-                    baseline_noise_tot_c = noise_stage_result.get("baseline_tot_c")
-                else:
-                    baseline_noise_cfg = self._get_max_noise_configuration()
-                    baseline_noise_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_cfg)
-                    if stage2_search_best is None and prior_stage2_search_best is not None:
-                        stage2_search_best = prior_stage2_search_best
-
-                if final_eval_ineligible_reason is not None:
-                    self.log(
-                        "[Comparator][Paean] skipping optional final-eval: "
-                        + final_eval_ineligible_reason
-                    )
-                    final_eval_result = None
-                elif self.final_eval_only:
-                    final_eval_result = self.run_unified_final_eval(
-                        stage1_search_best=stage1_search_best,
-                        stage2_search_best=stage2_search_best,
-                        baseline_stage1_gelu=base_gelu,
-                        baseline_stage1_softmax=base_softmax,
-                        baseline_noise_tot_c=baseline_noise_tot_c,
-                        limit_loss=noise_limit_loss,
-                        limit_p=noise_limit_p,
-                        limit_s=noise_limit_s,
-                    )
-                elif getattr(self, "decoupled_layout", False):
-
-
-                    self.log(
-                        "[解耦] 跳过训练末自动 final-eval；如需重型同-cost 对比，"
-                        "请用独立 final-eval 工具（--stage stage1|stage2 --record-dir ...）。"
-                    )
-                    final_eval_result = None
-                else:
-                    from rfr.evaluation.embedded import run_embedded_final_eval
-
-                    try:
-                        final_eval_result = run_embedded_final_eval(
-                            evaluator=self,
-                            search_best_stage1=stage1_search_best,
-                            search_best_stage2=stage2_search_best,
-                            baseline_stage1_gelu=base_gelu,
-                            baseline_stage1_softmax=base_softmax,
-                            baseline_noise_tot_c=baseline_noise_tot_c,
-                            limit_loss=noise_limit_loss,
-                            limit_p=noise_limit_p,
-                            limit_s=noise_limit_s,
-                            preset_name=self.final_eval_preset,
-                            output_root=self.final_eval_output_root,
-                            run_name=self.final_eval_run_name,
-                        )
-                    except Exception as exc:
-                        if self.blb_v3_search_backend == "ppo":
-                            raise
-                        final_eval_error = exc
-                        self.log(
-                            "[Comparator][Paean] optional final-eval failed "
-                            "after strict F4; preserving the "
-                            f"two-stage search artifact: {exc!r}"
-                        )
+                baseline_noise_cfg = self._get_max_noise_configuration()
+                baseline_noise_tot_c, _ = self.get_noise_simulated_cost(
+                    **baseline_noise_cfg
+                )
+                final_eval_result = self.run_selected_config_final_eval(
+                    search_config=search_config,
+                    baseline_stage1_gelu=base_gelu,
+                    baseline_stage1_softmax=base_softmax,
+                    baseline_noise_tot_c=baseline_noise_tot_c,
+                    limit_loss=limit_loss,
+                    limit_p=limit_p,
+                    limit_s=limit_s,
+                )
                 if self.run_output_dir:
                     update_persistent_metadata_stage(
                         self.run_output_dir,
