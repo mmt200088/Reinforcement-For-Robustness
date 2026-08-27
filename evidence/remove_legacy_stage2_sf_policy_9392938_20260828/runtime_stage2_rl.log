@@ -1,0 +1,76 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[PPO] ppo_update_interval=120 (batch=1440 steps, details chunk=360 episodes)
+Running approximation search with parameters:
+base_model: textattack/bert-base-uncased-MRPC
+data_path: mrpc
+output_dir: /hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup
+batch_size: 64
+stage1_rl_episodes: 51000
+stage2_rl_episodes: 120
+search_backend: ppo
+resume_run_dir: 
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, Weighted F1
+Starting evaluation...
+  0%|          | 0/7 [00:00<?, ?it/s] 71%|███████▏  | 5/7 [00:00<00:00, 34.25it/s]
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。
+============================================================
+
+--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-2 all4 (softmax fixed deg6) (source=stage2_all4)
+  Stage-2 GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：stage2_all4    标签（label）：Stage-2 all4 (softmax fixed deg6)
+  * GELU 离散阶数向量:   [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=120    PPO 更新间隔（rollout_size）= 120    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup/stage2/progress
+  * 详细诊断：/hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup/stage2/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup/stage2/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  * 评估子集: batch 数 = 4
+  * Rescale_optimizer root: configs/preparation/rescale
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr_legacy_sf_cleanup_5d31315/configs/preparation/rescale/mrpc/static_skeletons_mrpc.json (sha256=7ffee4d3b5b22d1d9e50810eeef974ac9b04e3ff2aca1888294383bcfec76c7b)
+  * reward_design=robust_constrained
+  * strict search gate: split=train_probe examples=256 batches=4 devices=[0]
+100%|██████████| 7/7 [00:20<00:00, 34.25it/s]  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.9557  m2(noisy)=0.9556  loss_mean(noisy)=0.1491  std(loss/m1/m2)=0.0015/0.0038/0.0039
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.9548  m2_threshold=0.9546  loss_threshold=0.1493  std_thresholds(loss/m1/m2)=0.0029/0.0076/0.0077  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=16191, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.1491, m1=0.9557, m2=0.9556
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.9557
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.9548, m2_threshold=0.9546, loss_threshold=0.1493, std_thresholds(loss/m1/m2)=0.0029/0.0076/0.0077
+  · static_skeletons archive：/hy-tmp/rfr_legacy_sf_cleanup_5d31315/configs/preparation/rescale/mrpc/static_skeletons_mrpc.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action: graphs=6, max_options=2
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,615, shared=675,648, actor_only=8,646, critic_only=8,321)
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup/stage2/progress/records/stage2/bert-base/mrpc/rfr_smoke_9392938_rl_bert-base_mrpc_stage2_s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup__20260827T162508783770Z__pid2576525
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_smoke_9392938/rl/bert-base/mrpc/stage2/s1t0.001_s2t0.001_s2st2.0__legacy-sf-cleanup/stage2/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+
+  Graceful stop requested; the current checkpoint boundary will complete before exit.
+100%|██████████| 7/7 [17:06<00:00, 146.59s/it]
