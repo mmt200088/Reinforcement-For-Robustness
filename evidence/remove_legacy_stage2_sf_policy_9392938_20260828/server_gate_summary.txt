@@ -1,0 +1,8 @@
+candidate_head=9392938c9797ece3010e3341d6e1d9e68eef478f
+candidate_tree=03280802257da4d1f67d7cb241854f5dab69e0fa
+candidate_status=clean
+compileall=passed
+bash_syntax=passed
+production_surface_guard=passed
+launcher_dry_run=passed
+remaining_test_processes=no

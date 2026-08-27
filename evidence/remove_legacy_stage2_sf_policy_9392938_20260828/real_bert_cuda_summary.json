@@ -1,0 +1,29 @@
+{
+  "candidate_commit": "9392938c9797ece3010e3341d6e1d9e68eef478f",
+  "candidate_store_rows": 662,
+  "candidate_tree": "03280802257da4d1f67d7cb241854f5dab69e0fa",
+  "dataset": "mrpc",
+  "decision_contract": {
+    "horizon": 12,
+    "slots": [
+      "block4_fusion",
+      "truncation_precision"
+    ],
+    "slots_per_layer": 2
+  },
+  "fidelity_counts": {
+    "F1": 45,
+    "F4": 613,
+    "None": 4
+  },
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "model": "textattack/bert-base-uncased-MRPC",
+  "policy_parameter_count": 692615,
+  "probe_examples": 256,
+  "probe_split": "train_probe",
+  "real_bert_cuda_run": true,
+  "run_log": "runtime_stage2_rl.log",
+  "termination": "test stopped by second SIGINT after first graceful-stop request; no process remained",
+  "tracked_clean": true,
+  "unique_candidate_count": 117
+}

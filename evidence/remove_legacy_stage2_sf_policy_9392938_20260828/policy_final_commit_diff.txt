@@ -1,0 +1,6 @@
+-        max_step_dim: int,
+-        max_num_levels: int,
+-    if int(max_step_dim) != 2 or int(max_num_levels) != 3:
+-        raise ValueError(
+-            "layerwise action mask requires max_step_dim=2 and max_num_levels=3"
+-        )
