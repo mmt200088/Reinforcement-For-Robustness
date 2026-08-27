@@ -4,8 +4,8 @@
 
 This repository supports BERT-base and BERT-large on MRPC, RTE, and SST-2.
 The production paths are Stage-1 PPO, Stage-2 layerwise robust PPO, BO-RF,
-Greedy, COINN-GA, Paean final evaluation, fusion-map generation, and the
-in-process Rescale optimizer.
+Greedy, COINN-GA, selected-configuration final evaluation, fusion-map
+generation, and the in-process Rescale optimizer.
 
 Do not add compatibility paths, alternative policy networks, research
 ablations, or support for another model or dataset without an explicit task.

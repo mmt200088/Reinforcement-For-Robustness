@@ -41,18 +41,6 @@ include = ["rfr*"]
 line-length = 120
 target-version = "py310"
 extend-exclude = [
-    "Parting Chapter",
-    "Prelude Chapter",
-    "Previous Chapter",
-    "Previous Chapter Server Reserve",
-    "rl_training_data_points",
-    "server_backups",
-    "Paean/outputs",
-    "experiment/outputs",
-    "experiments",
-    "gelu_analysis",
-    "glue_submission",
-    "reports",
     "configs/preparation/rescale",
     "local_assets",
 ]
