@@ -17,7 +17,6 @@ def match_option_id(
         action_slice: Sequence[int],
         graph: Any,
         graph_key: str = "",
-        slot_dims: Sequence[int] | None = None,
         ) -> int:
     """Return the unique fusion ``option_id`` whose ``action_indices`` equal
     ``action_slice`` on every non-K slot.
@@ -44,22 +43,6 @@ def match_option_id(
         if same_non_k:
             matches.append(int(option.option_id))
     if not matches:
-        if slot_dims is not None:
-            dims = np.asarray(slot_dims, dtype=int).reshape(-1)
-            if dims.size == arr.size:
-                legacy_all_max = all(
-                    int(arr[i]) == int(dims[i]) - 1
-                    for i in range(arr.size)
-                    if i != k_slot
-                )
-                if legacy_all_max:
-                    baseline = [
-                        int(option.option_id)
-                        for option in graph.options
-                        if int(option.option_id) == 0
-                    ]
-                    if len(baseline) == 1:
-                        return 0
         raise ValueError(
             f"could not match fusion option for graph={graph_key!r} slice={arr.tolist()}"
         )
@@ -85,7 +68,7 @@ def reconstruct_fusion_group(
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    from rfr.search.common.action_space import K_LEVELS, block_dims
+    from rfr.search.common.action_space import K_LEVELS
     from rfr.search.common.layerwise_action import fusion_materialization_blocks
 
     del softmax
@@ -114,7 +97,6 @@ def reconstruct_fusion_group(
             action_slice=action_slice,
             graph=graph,
             graph_key=graph_key,
-            slot_dims=block_dims(block.block_idx),
         )
         option = next(o for o in graph.options if int(o.option_id) == int(option_id))
         k_index = int(action_slice[int(graph.k_slot_index)])
@@ -150,143 +132,6 @@ def reconstruct_fusion_group(
             "k_values": k_values,
         },
     }
-
-
-def build_boosted_overrides_from_group(
-        action_vec: Sequence[int],
-        *,
-        group: Mapping[str, Any],
-        fusion_map: Any,
-        num_layers: int,
-        profile: str,
-        gelu: Sequence[int],
-        softmax: Sequence[int],
-        ) -> Dict[Tuple[int, int], Dict[str, int]]:
-    """Return terminal-probe SF-direct overrides for boosted fusion options.
-
-    The persisted full action vector carries map ``action_indices`` and the selected
-    K index, but it cannot carry above-baseline precision-boost SFs. This helper
-    is the shared handoff for any path that wants to replay a fusion-count action
-    through :func:`optimizer_cost.evaluate_action_for_cost`: it recovers the
-    chosen option per step from ``group``, inserts the K value selected in
-    ``action_vec`` into that option's explicit field values, and returns the
-    ``{(block, layer): field_values}`` override map consumed by the canonical cost
-    / replan / model-install path.
-    """
-    if not isinstance(group, Mapping):
-        raise ValueError("build_boosted_overrides_from_group requires group metadata")
-    raw_option_by_graph = group.get("option_by_graph")
-    raw_option_by_step = group.get("option_by_step")
-    if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
-        raise ValueError("fusion group requires option_by_step or option_by_graph")
-
-    from rfr.search.common.action_space import K_LEVELS, block_field_names
-    from rfr.search.common.layerwise_action import fusion_materialization_blocks
-
-    del softmax
-    action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
-    option_by_graph = {
-        str(k): int(v)
-        for k, v in dict(raw_option_by_graph or {}).items()
-    }
-    option_by_step = {
-        str(k): int(v)
-        for k, v in dict(raw_option_by_step or {}).items()
-    }
-    blocks = fusion_materialization_blocks(
-        int(num_layers),
-        profile=str(profile),
-        gelu_degrees=gelu_arr.tolist(),
-    )
-
-    overrides: Dict[Tuple[int, int], Dict[str, int]] = {}
-    for block in blocks:
-        graph_key = str(block.graph_key)
-        step_key = str(int(block.artifact_index))
-        if step_key in option_by_step:
-            option_id = int(option_by_step[step_key])
-        elif graph_key in option_by_graph:
-            option_id = int(option_by_graph[graph_key])
-        else:
-            continue
-        graph = fusion_map.graphs.get(graph_key)
-        if graph is None:
-            raise KeyError(f"fusion map missing graph {graph_key!r}")
-        option = None
-        for candidate in graph.options:
-            if int(candidate.option_id) == option_id:
-                option = candidate
-                break
-        if option is None:
-            raise KeyError(f"fusion map graph {graph_key!r} has no option {option_id}")
-        if not (bool(getattr(option, "boosted", False)) and option.explicit_field_values):
-            continue
-
-        action_slice = action_arr[list(block.full_vec_offsets)]
-        k_slot = int(graph.k_slot_index)
-        if not (0 <= k_slot < action_slice.size):
-            raise ValueError(f"graph {graph_key!r} K slot {k_slot} out of action slice")
-        k_index = int(action_slice[k_slot])
-        if not (0 <= k_index < len(K_LEVELS)):
-            raise ValueError(f"graph {graph_key!r} has invalid K index {k_index}")
-        field_names = block_field_names(block.block_idx)
-        if not (0 <= k_slot < len(field_names)):
-            raise ValueError(f"graph {graph_key!r} K slot {k_slot} has no field name")
-
-        field_values = {
-            str(k): int(v)
-            for k, v in dict(option.explicit_field_values).items()
-        }
-        field_values[str(field_names[k_slot])] = int(K_LEVELS[k_index])
-        overrides[(int(block.block_idx), int(block.layer_idx))] = field_values
-    return overrides
-
-
-def select_fusion_eval_metadata(
-        *,
-        action_vec: Sequence[int],
-        base_action: Sequence[int] | None,
-        existing_metadata: Any,
-        fusion_group: Any,
-        fusion_count_action: bool,
-        profile: str,
-        num_layers: int,
-        gelu: Sequence[int],
-        softmax: Sequence[int],
-        fusion_map: Any = None,
-        ) -> Dict[str, Any]:
-    """Attach the fusion metadata needed to replay a selected action.
-
-    Rules (in order):
-
-    * explicit ``fusion_count_fixed_action_v1`` metadata is returned unchanged;
-    * a per-slot run (not fusion, no group) is returned unchanged;
-    * the selected vector must match the materialized base action;
-    * attach the persisted ``fusion_group`` if present, otherwise
-      reconstruct it from the vector + the committed map.
-    """
-    md = dict(existing_metadata or {})
-    if str(md.get("schema_version", "")) == "fusion_count_fixed_action_v1":
-        return md
-    if not bool(fusion_count_action) and fusion_group is None:
-        return md
-    if base_action is None:
-        return md
-    a = np.asarray(action_vec, dtype=int).reshape(-1)
-    b = np.asarray(base_action, dtype=int).reshape(-1)
-    if a.size != b.size or not np.array_equal(a, b):
-        return md
-    group = fusion_group
-    if group is None:
-        cfg = build_fusion_fixed_config(
-            a, profile=str(profile), num_layers=int(num_layers),
-            gelu=gelu, softmax=softmax, fusion_map=fusion_map,
-        )
-        group = cfg["group"]
-    md["schema_version"] = "fusion_count_fixed_action_v1"
-    md["group"] = group
-    return md
 
 
 def build_fusion_fixed_config(

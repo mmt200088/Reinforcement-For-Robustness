@@ -801,8 +801,6 @@ def _run_layerwise_training_branch(
         network_axis_weights,
         validate_communication_importance_ratio,
     )
-    from rfr.search.rl.stage2.training import _build_best_noise_config
-
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
     )
@@ -1248,7 +1246,6 @@ def _run_layerwise_training_branch(
         best_action_group["boosted_overrides"] = selected_metadata.get(
             "boosted_overrides", []
         )
-        best_noise = _build_best_noise_config(evaluator)
         status.set_best(
             float(selected.reward or 0.0),
             best_action_vec=best_full_vector,
@@ -1271,15 +1268,6 @@ def _run_layerwise_training_branch(
             ),
             "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
             "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
-            "best_noise_config": {
-                key: value.copy() for key, value in best_noise.items()
-            },
-            "stable_search_best_noise_config": {
-                key: value.copy() for key, value in best_noise.items()
-            },
-            "stable_joint_best_noise_config": {
-                key: value.copy() for key, value in best_noise.items()
-            },
             "status": completion_status,
             "scientific_status": scientific_status,
             "strict_feasible": strict_feasible,
@@ -1402,7 +1390,7 @@ def _run_layerwise_training_branch(
         "precision_presets": [
             {
                 "name": preset.name,
-                "k_by_block": list(preset.k_by_block),
+                "k_by_block": list(preset.simulation_k_by_block),
                 "communication_utility": float(preset.communication_utility),
             }
             for preset in PRECISION_PRESETS
@@ -2237,7 +2225,7 @@ def _run_layerwise_training_branch(
         k_values = [
             int(k_value)
             for row in record.action_matrix
-            for k_value in PRECISION_PRESETS[int(row[1])].k_by_block
+            for k_value in PRECISION_PRESETS[int(row[1])].simulation_k_by_block
         ]
         avg_k = float(np.mean(k_values)) if k_values else 13.0
         is_new_best = False
@@ -2942,11 +2930,6 @@ def _run_layerwise_training_branch(
         "action_matrix": best_action_matrix,
         "boosted_overrides": summary.get("best_boosted_overrides") or {},
     }) if best_full_vector is not None else None
-    cost_reference_noise_config = evaluator._get_max_noise_configuration()
-    cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(
-        **cost_reference_noise_config
-    )
-    best_noise = _build_best_noise_config(evaluator)
     best_reward = summary.get("best_reward")
     if best_reward is None:
         best_reward = -float("inf")
@@ -2964,17 +2947,6 @@ def _run_layerwise_training_branch(
         ),
         "fixed_gelu": fixed_gelu.copy(),
         "fixed_softmax": fixed_softmax.copy(),
-        "baseline_noise_config": {
-            key: value.copy() for key, value in cost_reference_noise_config.items()
-        },
-        "baseline_tot_c": float(cost_reference_tot_c),
-        "best_noise_config": {key: value.copy() for key, value in best_noise.items()},
-        "stable_search_best_noise_config": {
-            key: value.copy() for key, value in best_noise.items()
-        },
-        "stable_joint_best_noise_config": {
-            key: value.copy() for key, value in best_noise.items()
-        },
         "limit_loss": limits["loss"],
         "limit_p": limits["metric1"],
         "limit_s": limits["metric2"],
@@ -3272,8 +3244,6 @@ def _build_completed_search_resume_result(
         ) -> dict[str, Any]:
     from rfr.preparation.fusion.fixed_action import build_fusion_fixed_config
     from rfr.search.common.layerwise_action import describe_layerwise_action_matrix
-    from rfr.search.rl.stage2.training import _build_best_noise_config
-
     manifest = dict(inner_run.get("manifest") or {})
     selected = inner_run.get("selected")
     result = inner_run.get("result")
@@ -3414,9 +3384,6 @@ def _build_completed_search_resume_result(
     best_action_group["boosted_overrides"] = selected_metadata.get(
         "boosted_overrides", []
     )
-    best_noise = _build_best_noise_config(
-        runner.evaluator
-    )
     accounting_names = (
         "seed",
         "observation_count",
@@ -3439,15 +3406,6 @@ def _build_completed_search_resume_result(
     )
     return {
         **common,
-        "best_noise_config": {
-            key: value.copy() for key, value in best_noise.items()
-        },
-        "stable_search_best_noise_config": {
-            key: value.copy() for key, value in best_noise.items()
-        },
-        "stable_joint_best_noise_config": {
-            key: value.copy() for key, value in best_noise.items()
-        },
         "status": "completed" if strict_feasible else "completed_infeasible",
         "scientific_status": (
             "full_search_with_strict_train_probe_gate"
@@ -3498,17 +3456,6 @@ def _restore_search_resume_result(payload: Any) -> dict[str, Any]:
     for name in ("fixed_gelu", "fixed_softmax"):
         if name in restored:
             restored[name] = np.asarray(restored[name], dtype=int)
-    for group_name in (
-            "best_noise_config",
-            "stable_search_best_noise_config",
-            "stable_joint_best_noise_config",
-    ):
-        group = restored.get(group_name)
-        if isinstance(group, Mapping):
-            restored[group_name] = {
-                str(name): np.asarray(value, dtype=int)
-                for name, value in group.items()
-            }
     return restored
 
 
@@ -4023,12 +3970,6 @@ def _build_stage2_materialization_env(
     gelu = np.asarray(fixed_gelu, dtype=int)
     softmax = np.asarray(fixed_softmax, dtype=int)
     ev.apply_configuration(gelu, softmax)
-    try:  # noqa: SIM105 - optional cleanup on a partially initialized evaluator
-        ev.reversible_handler.restore_layer_input_noise(
-            layer_indices=list(range(ev.total_layers)),
-        )
-    except Exception:
-        pass
 
     probe_batches = runner._build_probe_batches(
         ev,

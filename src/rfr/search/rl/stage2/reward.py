@@ -990,8 +990,8 @@ def compute_reward(
     """v3 reward with loss/m1/m2 precision gates and std stability gates.
 
     Args:
-        metrics: K-trial metrics. Missing legacy standard deviations default
-            to zero, meaning no observed variation between trials.
+        metrics: K-trial metrics. Missing standard deviations default to zero,
+            meaning no observed variation between trials.
         opt_signals: Output from ``aggregate_optimizer_signals``.
         action_avg_k: Mean truncation K; smaller values use less communication.
         baseline: All-maximum ``BaselineCostStats``.

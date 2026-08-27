@@ -42,8 +42,8 @@ def to_jsonable(
 
     ``preserve_native`` lets hot report builders keep already-JSON-native
     branches by identity while still converting numpy/dataclass/path/tensor
-    leaves. ``stringify_unknown`` matches older script helpers that needed
-    unknown objects to survive a plain ``json.dumps`` call.
+    leaves. ``stringify_unknown`` lets diagnostic writers preserve otherwise
+    unsupported objects through a plain ``json.dumps`` call.
     """
     if isinstance(value, dict):
         converted_dict: dict[str, Any] | None = None
@@ -160,8 +160,7 @@ def write_json_file(
         ) -> Path:
     """Write one JSON artifact using the repository's shared normalization.
 
-    This is for script/report artifacts that previously carried local
-    ``_write_json`` helpers. It creates the parent directory, normalizes numpy /
+    It creates the parent directory and normalizes numpy /
     dataclass / Path / optional torch values through :func:`to_jsonable`, and
     returns the written path for callers that want to record it.
     """

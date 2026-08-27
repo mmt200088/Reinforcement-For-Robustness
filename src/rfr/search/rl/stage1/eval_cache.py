@@ -21,9 +21,8 @@ Correctness notes (why a cache hit cannot change results):
   one write wins. Values are identical by determinism, so this is benign —
   deliberately no in-flight dedup (a waiting worker's GPU would idle for
   exactly as long as its own recompute would take).
-* The cache must NOT be used for any eval that samples noise
-  (``evaluate_model_with_attention_noise*`` and every Stage-2 path) — those
-  are not pure functions of the config key.
+* The cache is Stage-1-only. Stage 2 samples noise and is not a pure function
+  of this configuration key.
 """
 from __future__ import annotations
 

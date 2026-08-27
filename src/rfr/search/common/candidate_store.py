@@ -964,7 +964,6 @@ class CandidateStore:
                 effective_action_hash_value=canonical_hash,
             ),
             "identity_context_hash": str(identity_context_hash),
-            "legacy_record": False,
         }
 
     def append_trial_group(

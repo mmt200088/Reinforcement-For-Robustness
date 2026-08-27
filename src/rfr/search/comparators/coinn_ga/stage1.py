@@ -142,7 +142,7 @@ def _tournament(
         *,
         diverse_from: Optional[Stage1Action] = None,
         ) -> SearchEvaluation:
-    """Compatibility-named fitness-proportional COINN parent selector."""
+    """Select a COINN parent with feasibility-aware proportional fitness."""
 
     del tournament_size, diverse_from
     weights = np.asarray(_ga_parent_weights(population), dtype=float)

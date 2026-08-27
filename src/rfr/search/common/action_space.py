@@ -1,8 +1,8 @@
 """Full-vector Stage-2 action schema and model-config materialization.
 
 The layerwise policy projects its compact fusion/precision matrix into this
-stable vector. Inactive compatibility slots keep fixed offsets for persisted
-artifacts but are never installed or charged by the optimizer.
+stable vector. Fixed inactive slots preserve the Rescale layout but are never
+installed or charged by the optimizer.
 """
 from __future__ import annotations
 
@@ -1049,7 +1049,7 @@ def make_slot_label(
     return base if not short else f"{base}.{short}"
 
 
-_COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
+_FIXED_INACTIVE_FIELDS: Dict[int, frozenset] = {
 
 
     1: frozenset(),
@@ -1155,10 +1155,9 @@ def _is_action_field_effective(
             "layer 0 Block1 SF/noise fields remain inactive; only its "
             "output_truncation_k is installed"
         )
-    if str(field_name) in _COMPAT_EXTRA_FIELDS.get(int(block_idx), frozenset()):
+    if str(field_name) in _FIXED_INACTIVE_FIELDS.get(int(block_idx), frozenset()):
         return False, (
-            "compat-extra slot retained for action-vector back-compat; cfg field "
-            "is forced None / bound elsewhere so this action value has no effect"
+            "fixed inactive slot; the field is forced None or bound elsewhere"
         )
 
 
@@ -1297,8 +1296,8 @@ def describe_action_vector(
         "gelu_degree": None,
         "attn_degree": None,
         "note": (
-            "first_input fresh noise deprecated; the first HE config is treated "
-            "as lossless. Slot kept for action-vector backward compatibility."
+            "first_input fresh noise is inactive because the first HE config "
+            "is treated as lossless"
         ),
     })
 
@@ -1323,7 +1322,7 @@ def describe_action_vector(
 
 
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
-    """Build the all-maximum baseline action, including compatibility slots."""
+    """Build the all-maximum baseline action, including fixed inactive slots."""
     dims = action_dims_for_config(int(num_layers))
     arr = np.array(dims, dtype=int) - 1
     fields = per_layer_field_offsets()

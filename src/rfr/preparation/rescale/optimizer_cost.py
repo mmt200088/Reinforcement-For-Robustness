@@ -182,7 +182,7 @@ def apply_optimizer_outputs_to_cfgs(
         return resolved
 
     per_config: Dict[str, Dict[str, Any]] = {}
-    legacy_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
+    optimizer_cfg_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
     invalid_count = 0
     missing_compact_count = 0
     missing_cfg_count = 0
@@ -220,7 +220,7 @@ def apply_optimizer_outputs_to_cfgs(
             "apply_error_count": 0,
             "override_total": 0,
             "per_config": per_config,
-            "optimizer_cfg_overrides": legacy_overrides,
+            "optimizer_cfg_overrides": optimizer_cfg_overrides,
         }
 
     for config_name, out in outputs.items():
@@ -303,7 +303,7 @@ def apply_optimizer_outputs_to_cfgs(
         applied_count += 1
         override_total += len(override_rows)
         if override_tuples:
-            legacy_overrides[name] = override_tuples
+            optimizer_cfg_overrides[name] = override_tuples
         record.update(
             {
                 "applied": True,
@@ -337,7 +337,7 @@ def apply_optimizer_outputs_to_cfgs(
         "apply_error_count": int(apply_error_count),
         "override_total": int(override_total),
         "per_config": per_config,
-        "optimizer_cfg_overrides": legacy_overrides,
+        "optimizer_cfg_overrides": optimizer_cfg_overrides,
     }
 
 

@@ -2506,10 +2506,6 @@ def run_layerwise_search_baseline(
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "evaluation_count": int(result.evaluation_count),
         "inference_reaching_candidate_count": int(result.evaluation_count),
-        "model_inference_count": int(result.evaluation_count),
-        "model_inference_count_semantics": (
-            "legacy_alias_of_inference_reaching_candidate_count"
-        ),
         "online_candidate_trial_count": int(online_trial_count),
         "observation_count": int(result.observation_count),
         "non_inference_observation_count": int(

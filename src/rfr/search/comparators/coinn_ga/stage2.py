@@ -63,7 +63,7 @@ def _tournament_parent(
         population: Sequence[SearchEvaluation],
         rng: np.random.Generator,
         ) -> SearchEvaluation:
-    """Compatibility-named fitness-proportional COINN parent selector."""
+    """Select a COINN parent with feasibility-aware proportional fitness."""
 
     weights = np.asarray(_ga_parent_weights(population), dtype=float)
     probabilities = weights / float(np.sum(weights))

@@ -182,7 +182,7 @@ class RLDataPointWriter:
         }
 
     def recover_jsonl_files(self, committed_sizes: Optional[Dict[str, Any]]) -> None:
-        """Repair/rollback mirrors before opening append handles on resume."""
+        """Repair mirrored records before opening append handles on resume."""
         if self._files:
             raise RuntimeError("cannot recover structured JSONL after opening writers")
         sizes = dict(committed_sizes or {})

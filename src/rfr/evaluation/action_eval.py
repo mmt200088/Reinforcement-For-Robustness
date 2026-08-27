@@ -592,15 +592,7 @@ class BLBActionFinalEvaluationModule:
                 str(name): int(value) for name, value in field_values.items()
             }
 
-        base_raw = None
-        for key in ("legacy_action_vec", "base", "action_vec"):
-            value = metadata.get(key)
-            if isinstance(value, (list, tuple, np.ndarray)):
-                base_raw = value
-                break
-        if base_raw is None:
-            base_raw = action_vec
-        base_arr = validate_action_vector(base_raw, int(num_layers))
+        base_arr = validate_action_vector(action_vec, int(num_layers))
         gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
         softmax_arr = np.asarray(softmax, dtype=int).reshape(-1)
 
@@ -1214,7 +1206,6 @@ class BLBActionFinalEvaluationModule:
             layers_attribute="model." + ev.layers_attribute,
         )
         ev.apply_configuration(gelu, softmax)
-        self._clear_legacy_noise()
         try:
 
 
@@ -1253,33 +1244,7 @@ class BLBActionFinalEvaluationModule:
             bridge.clear()
             self._clear_all_noise()
 
-    def _clear_legacy_noise(self):
-        ev = self.evaluator
-        handler = ev.reversible_handler
-        layer_indices = list(range(ev.total_layers))
-        try:
-            handler.restore_layer_input_noise(layer_indices=layer_indices)
-        except Exception:
-            pass
-        for restore_name in (
-            "restore_layer_query_noise",
-            "restore_layer_key_noise",
-            "restore_layer_value_noise",
-            "restore_layer_wo_noise",
-            "restore_layer_ffn1_noise",
-            "restore_layer_ffn2_noise",
-            "restore_layer_softmax_value_noise",
-        ):
-            method = getattr(handler, restore_name, None)
-            if method is None:
-                continue
-            try:
-                method(layer_indices=layer_indices)
-            except Exception:
-                pass
-
     def _clear_all_noise(self):
-        self._clear_legacy_noise()
         ev = self.evaluator
         layer_indices = list(range(ev.total_layers))
         layer_name = "model." + ev.layers_attribute

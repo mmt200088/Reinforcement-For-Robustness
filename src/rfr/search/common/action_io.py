@@ -349,7 +349,7 @@ def slots_list_to_action_vec(
             if entry.get("effective") is False:
                 continue
             raise ValueError(
-                f"slot {label}: first_input is deprecated and is not selectable; "
+                f"slot {label}: first_input is inactive and is not selectable; "
                 "the first HE config is treated as lossless and no first_input "
                 "noise is installed"
             )

@@ -476,21 +476,6 @@ class LayerwiseSearchSpace:
         action = self.validate(action_matrix)
         return tuple(value for row in action for value in row)
 
-    def unflatten(self, values: Sequence[int]) -> ActionMatrix:
-        """Decode pairwise coordinates or one atomic gene per layer."""
-        flat = tuple(int(value) for value in values)
-        if len(flat) == self.num_layers:
-            return self.from_genes(flat)
-        if len(flat) != 2 * self.num_layers:
-            raise ValueError(
-                f"flat action must contain {self.num_layers} genes or "
-                f"{2 * self.num_layers} legacy values"
-            )
-        return self.validate(tuple(
-            (flat[2 * index], flat[2 * index + 1])
-            for index in range(self.num_layers)
-        ))
-
     def genes(self, action_matrix: Sequence[Sequence[int]]) -> tuple[int, ...]:
         return encode_layerwise_action_matrix(self.validate(action_matrix))
 

@@ -54,12 +54,6 @@ class PrecisionPreset:
             )
         )
 
-    @property
-    def k_by_block(self) -> Tuple[int, int, int, int, int]:
-        """Compatibility alias for the unchanged executable simulation K."""
-        return self.simulation_k_by_block
-
-
 PRECISION_PRESETS = (
     PrecisionPreset(
         "high",

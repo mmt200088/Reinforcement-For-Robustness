@@ -68,7 +68,7 @@ def resolve_probe_backend(spec: Optional[str] = None) -> str:
 
     Persistent processes are the default because same-process BERT forwards
     contend in Python even when their CUDA kernels target separate devices.
-    The thread backend remains available as an operational rollback.
+    The thread backend remains available for environments that cannot spawn.
     """
     raw = (
         os.environ.get("BLB_STAGE2_PROBE_BACKEND", "process")

@@ -614,7 +614,7 @@ def apply_layer_action(
     preset_index = int(action[1])
     preset = precision_preset(preset_index)
     k_by_block = {
-        block_idx: int(preset.k_by_block[block_idx - 1])
+        block_idx: int(preset.simulation_k_by_block[block_idx - 1])
         for block_idx in _BLOCK_ORDER
     }
     k_indices = {
@@ -714,7 +714,9 @@ def materialize_layerwise_counterfactuals(
     communication_vector = baseline.copy()
     for row, spec in zip(rows, specs):
         preset = precision_preset(row[1])
-        for block_idx, k_value in zip(_BLOCK_ORDER, preset.k_by_block):
+        for block_idx, k_value in zip(
+                _BLOCK_ORDER, preset.simulation_k_by_block,
+        ):
             k_offset = _block_offsets(spec.layer_idx, block_idx).stop - 1
             compute_vector[k_offset] = baseline_k_index
             communication_vector[k_offset] = int(K_LEVELS.index(int(k_value)))
@@ -749,7 +751,7 @@ def _decoded_preset_index(action: LayerwiseDecodedAction, layer_idx: int) -> int
     index = int(action.precision_preset_index)
     if 0 <= index < len(PRECISION_PRESETS):
         expected = {
-            block_idx: PRECISION_PRESETS[index].k_by_block[block_idx - 1]
+            block_idx: PRECISION_PRESETS[index].simulation_k_by_block[block_idx - 1]
             for block_idx in _BLOCK_ORDER
         }
         if dict(action.k_by_block) != expected:
@@ -761,7 +763,7 @@ def _decoded_preset_index(action: LayerwiseDecodedAction, layer_idx: int) -> int
     matches = [
         preset_index
         for preset_index, preset in enumerate(PRECISION_PRESETS)
-        if tuple(preset.k_by_block) == observed
+        if tuple(preset.simulation_k_by_block) == observed
     ]
     if len(matches) != 1:
         raise ValueError(
@@ -887,7 +889,7 @@ def compute_variable_cost_from_action_matrix(
         preset_index = int(row[1])
         preset = precision_preset(preset_index)
         k_by_block = {
-            block_idx: int(preset.k_by_block[block_idx - 1])
+            block_idx: int(preset.simulation_k_by_block[block_idx - 1])
             for block_idx in _BLOCK_ORDER
         }
         decoded.append(LayerwiseDecodedAction(fusion, k_by_block, preset_index))

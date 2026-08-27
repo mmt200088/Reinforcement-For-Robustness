@@ -385,24 +385,6 @@ class BLBStage2Env:
             seed: Optional[int] = None,
             ) -> np.ndarray:
         """Clear installed noise state and return the initial observation."""
-
-        try:
-            self.handler.restore_layer_input_noise(layer_indices=list(range(self.num_layers)))
-        except Exception:
-            pass
-        for restore_name in (
-                "restore_layer_query_noise", "restore_layer_key_noise", "restore_layer_value_noise",
-                "restore_layer_wo_noise", "restore_layer_ffn1_noise", "restore_layer_ffn2_noise",
-                "restore_layer_softmax_value_noise"):
-            method = getattr(self.handler, restore_name, None)
-            if method is None:
-                continue
-            try:
-                method(layer_indices=list(range(self.num_layers)))
-            except Exception:
-                pass
-
-
         if not bool(getattr(self.env_cfg, "persistent_probe_install", False)):
             try:
                 self.clear_installed_blb()
