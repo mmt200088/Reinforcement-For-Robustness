@@ -1357,7 +1357,7 @@ class RLDiagnosticsRecorder:
         lines.append(f"## 2. 训练期 Top-{self.top_k} candidates")
         lines.append("")
         lines.append(
-            "**说明**：按 hard-priority + unbounded P3 cost rank 排序。"
+            "**说明**：按 hard-priority + uncapped P3 cost rank 排序。"
             "P1/P2 不吃 cost；P3 内部先看无上限 cost rank，再看 fusion/K/bits 与 reward。"
             "每条候选的完整 SF / K 配置见 `top_candidates.jsonl` 的 `slots` 字段。"
         )

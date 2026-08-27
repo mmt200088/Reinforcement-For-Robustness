@@ -2,16 +2,12 @@
 from __future__ import annotations
 
 import datetime as _dt
-import csv
 import json
 import math
 import os
-import shutil
-import sys
 import tempfile
 import time
-import traceback
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from rfr.common.json_utils import to_jsonable as _to_jsonable
 from rfr.evaluation.training_curve_plot import save_stage1_style_training_curve
@@ -23,73 +19,12 @@ BLB_TRAINING_CURVE_NPZ = "blb_stage2_training_curve.npz"
 BLB_REWARD_PAPER_PNG = "blb_stage2_reward_paper.png"
 BLB_REWARD_PAPER_PDF = "blb_stage2_reward_paper.pdf"
 BLB_ENTROPY_CURVE_PNG = "blb_stage2_entropy_curve.png"
-BLB_DIAGNOSTIC_CURVE_PNG = "blb_stage2_diagnostics_curve.png"
-BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
 BLB_LIVE_SUMMARY_MD = "blb_stage2_live_summary.md"
-BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
-BLB_ERROR_TXT = "blb_stage2_error.txt"
-BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
 BLB_DETAILS_DIRNAME = "details"
 BLB_DETAILS_FILENAME_FMT = "noise_ppo_step_info_{start}-{end}.txt"
 BLB_WARNING_FILENAME = "warning.txt"
 _PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
-_TRACE_SCHEMA_CURRENT_PATHS: set[str] = set()
 _FLOAT_ARRAY_DIRECT_SEQUENCE_TYPES = (list, tuple, range)
-
-BLB_TRACE_FIELDNAMES = (
-    "episode",
-    "total_episodes",
-    "ppo_update_count",
-    "rollout_reward_mean",
-    "rollout_reward_max",
-    "rollout_reward_min",
-    "rollout_metric1_mean",
-    "rollout_metric2_mean",
-    "rollout_metric1_min",
-    "rollout_metric2_min",
-    "rollout_loss_mean",
-    "rollout_loss_std_mean",
-    "rollout_loss_max",
-    "best_reward",
-    "priority1_count",
-    "priority2_count",
-    "priority3_count",
-    "invalid_count",
-    "apply_error_count",
-    "eval_error_count",
-    "last_error",
-    "action_source",
-    "anchor_count",
-    "cost_probe_count",
-    "action_source_anchor_count",
-    "action_source_cost_probe_count",
-    "action_source_neighbor_count",
-    "action_source_policy_count",
-    "action_mask_mode",
-    "action_mask_hash",
-    "action_bias_bonus",
-    "mutated_slot_count",
-    "mutated_effective_slot_count",
-    "mutated_ineffective_slot_count",
-    "mutated_slot_count_mean",
-    "mutated_slot_count_max",
-    "mutated_effective_slot_count_mean",
-    "mutated_ineffective_slot_count_mean",
-    "raw_entropy_by_kind",
-    "masked_entropy_by_kind",
-    "mutated_F_count",
-    "mutated_W_count",
-    "mutated_M_count",
-    "mutated_S_count",
-    "mutated_R_count",
-    "mutated_K_count",
-    "mutated_by_block",
-    "policy_loss",
-    "value_loss",
-    "entropy",
-    "clip_fraction",
-    "n_samples",
-)
 
 
 def _atomic_json_dump(path: str, obj: Any) -> None:
@@ -125,16 +60,6 @@ def _atomic_text_dump(path: str, text: str) -> None:
         raise
 
 
-def _write_joined_lines_stream(fh: TextIO, lines: Iterable[str]) -> None:
-    first = True
-    for line in lines:
-        if first:
-            first = False
-        else:
-            fh.write("\n")
-        fh.write(str(line))
-
-
 def _stage2_plot_rendering_enabled(render_plots: Optional[bool]) -> bool:
     if render_plots is not None:
         return bool(render_plots)
@@ -158,10 +83,7 @@ def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
     completed = int(state.get("completed_episodes", 0) or 0)
     total = int(state.get("total_episodes", 0) or 0)
     pct = (100.0 * completed / total) if total > 0 else 0.0
-    episode_progress = (
-        f"{completed} / {total} ({pct:.2f}%)"
-        if total > 0 else f"{completed} / unbounded"
-    )
+    episode_progress = f"{completed} / {total} ({pct:.2f}%)"
     recent = [float(x) for x in (state.get("recent_returns") or [])]
     recent_mean = sum(recent) / len(recent) if recent else None
     best = state.get("best") if isinstance(state.get("best"), Mapping) else {}
@@ -230,88 +152,9 @@ def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
         "- Details batches: `details/`",
         f"- Training curve: `{BLB_TRAINING_CURVE_PNG}`",
         f"- Entropy curve: `{BLB_ENTROPY_CURVE_PNG}`",
-        f"- Final report: `{BLB_FINAL_REPORT_MD}`",
         "",
     ])
     return "\n".join(lines)
-
-
-def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
-    """Keep live trace CSV readable when new rollout columns are added."""
-    cache_key = os.path.abspath(path)
-    if cache_key in _TRACE_SCHEMA_CURRENT_PATHS:
-        return
-    if (not os.path.isfile(path)) or os.path.getsize(path) == 0:
-        return
-
-    current_fields = list(BLB_TRACE_FIELDNAMES)
-    try:
-        with open(path, "r", encoding="utf-8-sig", newline="") as f:
-            reader = csv.reader(f)
-            try:
-                old_fields = next(reader)
-            except StopIteration:
-                return
-            if old_fields == current_fields:
-                _TRACE_SCHEMA_CURRENT_PATHS.add(cache_key)
-                return
-
-            old_index = {field: idx for idx, field in enumerate(old_fields)}
-            anchor_idx = old_index.get("anchor_count")
-            parent = os.path.dirname(path) or "."
-            timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"{path}.bak_schema_{timestamp}"
-            fd, tmp_path = tempfile.mkstemp(prefix=".blb_trace_", suffix=".tmp", dir=parent)
-            tmp_open = True
-            try:
-                shutil.copyfile(path, backup_path)
-                with os.fdopen(fd, "w", encoding="utf-8", newline="") as out_f:
-                    tmp_open = False
-                    writer = csv.DictWriter(out_f, fieldnames=current_fields)
-                    writer.writeheader()
-                    for raw in reader:
-                        shifted_cost_probe_row = (
-                            "cost_probe_count" not in old_index
-                            and anchor_idx is not None
-                            and len(raw) == len(old_fields) + 1
-                        )
-                        migrated: Dict[str, Any] = {}
-                        for field in current_fields:
-                            if shifted_cost_probe_row and field == "cost_probe_count":
-                                src_idx = int(anchor_idx) + 1
-                            elif (
-                                shifted_cost_probe_row
-                                and field in old_index
-                                and old_index[field] > int(anchor_idx)
-                            ):
-                                src_idx = old_index[field] + 1
-                            else:
-                                src_idx = old_index.get(field)
-                            migrated[field] = (
-                                raw[src_idx] if src_idx is not None and src_idx < len(raw) else ""
-                            )
-                        if "cost_probe_count" not in old_index and not migrated.get("cost_probe_count"):
-                            migrated["cost_probe_count"] = "0"
-                        writer.writerow(migrated)
-                os.replace(tmp_path, path)
-                _TRACE_SCHEMA_CURRENT_PATHS.add(cache_key)
-                if log_fn is not None:
-                    log_fn(f"  [BLB trace] migrated CSV schema -> {path} (backup: {backup_path})")
-            except Exception as exc:
-                if tmp_open:
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-                if log_fn is not None:
-                    log_fn(f"  [BLB trace][warning] failed to migrate {path}: {exc}")
-    except Exception as exc:
-        if log_fn is not None:
-            log_fn(f"  [BLB trace][warning] failed to inspect {path}: {exc}")
 
 
 class BLBStatusBoard:
@@ -327,6 +170,8 @@ class BLBStatusBoard:
             extra_meta: Optional[Mapping[str, Any]] = None,
             log_fn=None,
             ):
+        if int(total_episodes) <= 0:
+            raise ValueError("total_episodes must be positive")
         self._dir = str(persistence_dir)
         os.makedirs(self._dir, exist_ok=True)
         self._path = os.path.join(self._dir, BLB_STATUS_FILENAME)
@@ -341,7 +186,7 @@ class BLBStatusBoard:
             "total_episodes": int(total_episodes),
             "completed_episodes": 0,
             "ppo_update_count": 0,
-            "phase": "初始化",
+            "phase": "initializing",
             "elapsed_sec": 0.0,
             "last_update": _dt.datetime.now().isoformat(),
             "recent_returns": [],

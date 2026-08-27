@@ -581,7 +581,7 @@ def _build_per_worker_eval_wrapper(
 
 
 def format_diagnostics_line(diag: Stage1ParallelRunnerDiagnostics) -> str:
-    """One-line summary suitable for ``pruning_search_log.txt``."""
+    """Return one compact line for the Stage 1 search log."""
     if not diag.devices:
         return "[stage1-rollout] (no workers)"
     ws = ", ".join(f"{s:.3f}" for s in diag.per_worker_seconds)

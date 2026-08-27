@@ -2517,7 +2517,7 @@ def build_probe_runner(
 
 
 def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
-    """One-line summary suitable for ``pruning_search_log.txt``.
+    """Return one compact line for the Stage 2 search log.
 
     Example:
         ``[probe-runner] k=4 split=[1, 1, 1, 1] devices=[cuda:0, ...]

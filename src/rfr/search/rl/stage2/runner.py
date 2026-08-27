@@ -125,6 +125,15 @@ def resolve_resumed_best_reward(
     return max(finite_values, default=-math.inf)
 
 
+def _stage2_selection_result_status(summary: Mapping[str, Any]) -> str:
+    selected = bool(
+        summary.get("best_full_vector") is not None
+        and summary.get("best_action_matrix") is not None
+        and summary.get("strict_revalidation_status") == "passed"
+    )
+    return "completed" if selected else "completed_without_selection"
+
+
 @dataclass
 class LayerwiseTrainConfig:
     total_episodes: int = 100
@@ -2918,6 +2927,8 @@ def _run_layerwise_training_branch(
 
     best_full_vector = summary.get("best_full_vector")
     best_action_matrix = summary.get("best_action_matrix")
+    result_status = _stage2_selection_result_status(summary)
+    selection_completed = result_status == "completed"
     best_layer_configurations = (
         summary.get("best_layer_configurations")
         if summary.get("best_layer_configurations") is not None
@@ -2972,7 +2983,11 @@ def _run_layerwise_training_branch(
         "proxy_limit_s": limits["metric2"],
         "search_limits": limits,
         "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
-        "status": completion_status,
+        "status": result_status,
+        "termination_reason": completion_status,
+        "scientific_status": (
+            "strict_selected" if selection_completed else "no_strict_selection"
+        ),
         "blb_v3_best_action_vec": best_full_vector,
         "blb_v3_best_action_group": best_action_group,
         "blb_v3_layerwise_best_action_group": best_action_group,

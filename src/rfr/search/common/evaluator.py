@@ -156,7 +156,7 @@ WFFN1_NOISE_COST_MAP = {
 NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
 NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
 NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
-DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
+DEFAULT_STAGE1_SEARCH_LOG_FILE = "search.log"
 
 SEARCH_LOG_HEADER = "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ==="
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"

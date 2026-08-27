@@ -146,18 +146,8 @@ def parse_optional_positive_int(raw_value: Any, flag_name: str) -> int | None:
     return parse_positive_int(raw_value, flag_name)
 
 
-def parse_stage1_episode_limit(raw_value: Any, flag_name: str) -> int:
-    """Parse Stage-1 episode budget; 0/-1 means unbounded until entropy stop."""
-    try:
-        return int(raw_value)
-    except (TypeError, ValueError):
-        raise ValueError(
-            f"Invalid integer for {flag_name}: {raw_value!r}."
-        ) from None
-
-
 def parse_stage2_episode_limit(raw_value: Any, flag_name: str) -> int:
-    """Parse Stage-2 episode limit; zero means natural-convergence mode."""
+    """Parse the Stage-2 limit; zero is reserved for a skipped stage."""
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
