@@ -1415,10 +1415,7 @@ def _restore_three_bank_candidates(
         str, tuple[str, tuple[int, ...], dict[str, Any]]
     ] = {}
     for record in candidate_store.iter_active_records():
-        if record.get("record_type") not in (
-                "candidate_promotion_status_v1",
-                "candidate_promotion_status_v2",
-        ):
+        if record.get("record_type") != "candidate_promotion_status_v2":
             continue
         if str(record.get("identity_context_hash", "")) != wanted_context_hash:
             continue
@@ -1572,10 +1569,7 @@ def restore_promoted_candidates(
     ] = {}
     wanted_context_hash = sha256_json(full_identity_context)
     for record in candidate_store.iter_active_records():
-        if record.get("record_type") not in (
-                "candidate_promotion_status_v1",
-                "candidate_promotion_status_v2",
-        ):
+        if record.get("record_type") != "candidate_promotion_status_v2":
             continue
         if str(record.get("identity_context_hash", "")) != wanted_context_hash:
             continue
@@ -1980,7 +1974,6 @@ def _collect_fixed_validation_bank(
                 metadata["episode_reward"] = float(episode_reward)
             candidate_store.append_trial_group(
                 action_indices, fresh_trials, metadata,
-                compact=True,
             )
             fresh_count += len(fresh_trials.loss)
     finally:
@@ -2738,7 +2731,6 @@ def promote_candidate_if_eligible(
                     "promotion_marker": "fresh_top_up",
                     "promotion_status": "pending_reassessment",
                 },
-                compact=True,
             )
         evidence = candidate_store.trial_evidence_for_action(
             action_indices, full_identity_context,
@@ -3844,7 +3836,6 @@ def train_layerwise(
                     "episode_reward": float(episode_reward),
                     "promotion_marker": "online_group",
                 },
-                compact=True,
             )
             evidence = candidate_store.trial_evidence_for_action(
                 full_vector, probe_identity_context,

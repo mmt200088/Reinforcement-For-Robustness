@@ -22,19 +22,14 @@ from rfr.common.jsonl_utils import iter_jsonl
 
 from .statistical_constraints import TrialSeries
 
-FIDELITY_ORDER = {
-    "F0": 0,
-    "F1": 1,
-    "F4": 2,
-}
 _CANDIDATE_JSONL_ENCODER = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
 _RECOVERY_RECORD_TYPE = "candidate_store_recovery_v1"
 _IDENTITY_CONTEXT_RECORD_TYPE = "candidate_identity_context_v1"
 _TRIAL_GROUP_RECORD_TYPES = frozenset({
-    "candidate_trial_group_v1", "candidate_trial_group_v2",
+    "candidate_trial_group_v2",
 })
 _PROMOTION_STATUS_RECORD_TYPES = frozenset({
-    "candidate_promotion_status_v1", "candidate_promotion_status_v2",
+    "candidate_promotion_status_v2",
 })
 _COMPACT_RECORD_TYPES = frozenset({
     "candidate_trial_group_v2", "candidate_promotion_status_v2",
@@ -142,87 +137,8 @@ def action_hash(action_indices: Any) -> str:
     return _action_hash_from_tuple(tuple(normalize_action_indices(action_indices)))
 
 
-def raw_action_hash(action_indices: Any) -> str:
-    return action_hash(action_indices)
-
-
 def sha256_json(value: Any) -> str:
     return stable_json_hash(value)
-
-
-def _assign_candidate_identity_field(
-        payload: Dict[str, Any],
-        field: str,
-        expected: Any,
-        ) -> None:
-    if field in payload and payload[field] != expected:
-        raise ValueError(f"candidate identity field mismatch: {field}")
-    payload[field] = expected
-
-
-def _records_from_registry(registry_or_description: Any) -> List[Mapping[str, Any]]:
-    if registry_or_description is None:
-        return []
-    if isinstance(registry_or_description, Mapping):
-        for key in ("records", "slot_registry_full", "slots"):
-            rows = registry_or_description.get(key)
-            if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes)):
-                return [r for r in rows if isinstance(r, Mapping)]
-        if "global_index" in registry_or_description:
-            return [registry_or_description]
-        return []
-    if isinstance(registry_or_description, Sequence) and not isinstance(registry_or_description, (str, bytes)):
-        return [r for r in registry_or_description if isinstance(r, Mapping)]
-    return []
-
-
-def _record_effective(record: Mapping[str, Any]) -> bool:
-    if "effective" in record:
-        return bool(record.get("effective"))
-    if "is_effective" in record:
-        return bool(record.get("is_effective"))
-    if "is_required" in record:
-        return bool(record.get("is_required"))
-    return True
-
-
-def effective_action_vector(
-        action_indices: Any,
-        registry_or_description: Any = None,
-        baseline_action: Any = None,
-        ) -> List[int]:
-    raw = normalize_action_indices(action_indices)
-    if registry_or_description is None:
-        return list(raw)
-    if baseline_action is None:
-        raise ValueError("baseline_action is required when registry_or_description is provided")
-    baseline = normalize_action_indices(baseline_action)
-    if len(raw) != len(baseline):
-        raise ValueError(f"action width {len(raw)} != baseline width {len(baseline)}")
-    out = list(raw)
-    for record in _records_from_registry(registry_or_description):
-        if _record_effective(record):
-            continue
-        if "global_index" not in record:
-            continue
-        idx = int(record["global_index"])
-        if 0 <= idx < len(out):
-            out[idx] = int(baseline[idx])
-    return out
-
-
-def effective_action_hash(
-        action_indices: Any,
-        registry_or_description: Any = None,
-        baseline_action: Any = None,
-        ) -> str:
-    return action_hash(
-        effective_action_vector(
-            action_indices,
-            registry_or_description=registry_or_description,
-            baseline_action=baseline_action,
-        )
-    )
 
 
 def build_candidate_identity_context(
@@ -301,10 +217,6 @@ def candidate_key(
     return sha256_json(payload)
 
 
-def is_legacy_record(record: Mapping[str, Any]) -> bool:
-    return not bool(record.get("candidate_key"))
-
-
 def rescale_cost_rank_key(record: Mapping[str, Any]) -> Tuple[float, float]:
     cost = record.get("rescale_cost") if isinstance(record, Mapping) else None
     if isinstance(cost, Mapping):
@@ -330,22 +242,6 @@ def rescale_cost_rank_key(record: Mapping[str, Any]) -> Tuple[float, float]:
             ),
         )
     return (1.0e9, 1.0e9)
-
-
-def f0_sort_key(record: Mapping[str, Any]) -> Tuple[float, float, float]:
-    """Optimizer-only F0 ordering: validity gate, then bits, then fusion."""
-    valid = bool(record.get("valid", not bool(record.get("invalid", False))))
-    optimizer_valid = record.get("optimizer_valid")
-    if optimizer_valid is not None:
-        valid = bool(optimizer_valid)
-    invalid_flag = 0.0 if valid else 1.0
-    bits, fusion = rescale_cost_rank_key(record)
-    return (invalid_flag, max(0.0, bits), max(0.0, fusion))
-
-
-def fidelity_rank(fidelity: str) -> int:
-    key = str(fidelity or "F0").upper()
-    return int(FIDELITY_ORDER.get(key, -1))
 
 
 def _finite_float(value: Any, default: float) -> float:
@@ -649,60 +545,6 @@ class CandidateStore:
         return payload
 
     @staticmethod
-    def _validate_legacy_evidence_identity(
-            record: Mapping[str, Any],
-            ) -> None:
-        record_type = str(record.get("record_type", ""))
-        if record_type not in {
-                "candidate_trial_group_v1",
-                "candidate_promotion_status_v1",
-        }:
-            return
-        context = record.get("identity_context")
-        if not isinstance(context, Mapping):
-            raise ValueError("candidate identity context is missing")
-        action = normalize_action_indices(record.get("action_indices", ()))
-        for field in ("raw_action_indices", "effective_action_indices"):
-            if (
-                    field in record
-                    and normalize_action_indices(record[field]) != action
-            ):
-                raise ValueError(
-                    f"candidate identity field mismatch: {field}"
-                )
-        raw_hash = action_hash(action)
-        effective_hash = raw_hash
-        expected = {
-            "raw_action_hash": raw_hash,
-            "action_hash": raw_hash,
-            "action_vector_hash": raw_hash,
-            "effective_action_hash": effective_hash,
-            "candidate_key_basis": "effective_action_hash + identity_context",
-            "candidate_key": candidate_key(
-                action,
-                context,
-                effective_action_indices=action,
-                effective_action_hash_value=effective_hash,
-            ),
-            "identity_context_hash": sha256_json(dict(context)),
-            "legacy_record": False,
-        }
-        for field, expected_value in expected.items():
-            if record.get(field) != expected_value:
-                raise ValueError(
-                    f"candidate identity field mismatch: {field}"
-                )
-        if record_type == "candidate_trial_group_v1":
-            metadata = record.get("trial_group_metadata")
-            if (
-                    not isinstance(metadata, Mapping)
-                    or dict(metadata.get("identity_context") or {})
-                    != dict(context)
-            ):
-                raise ValueError(
-                    "candidate identity field mismatch: trial_group_metadata"
-                )
-
     def _load_recovery_layout(self) -> None:
         self._refresh_external_storage()
         self._repair_unterminated_tail()
@@ -861,9 +703,6 @@ class CandidateStore:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def read_all(self) -> List[Dict[str, Any]]:
-        return list(self.iter_active_records())
-
     def iter_active_records(self) -> Iterator[Dict[str, Any]]:
         """Stream the current logical generation without materializing JSONL."""
         if not self.path.exists():
@@ -880,11 +719,9 @@ class CandidateStore:
             if record_type == _IDENTITY_CONTEXT_RECORD_TYPE:
                 self._register_identity_context_record(payload, context_index)
                 continue
-            if record_type in _COMPACT_RECORD_TYPES:
-                payload = self._hydrate_compact_record(payload, context_index)
-            else:
-                self._validate_legacy_evidence_identity(payload)
-            payload.setdefault("legacy_record", is_legacy_record(payload))
+            if record_type not in _COMPACT_RECORD_TYPES:
+                raise ValueError(f"unsupported candidate record type: {record_type!r}")
+            payload = self._hydrate_compact_record(payload, context_index)
             yield payload
 
     def _append_record(
@@ -930,62 +767,14 @@ class CandidateStore:
                 and payload.get("candidate_key")
         ):
             indexed_payload = payload
-            if record_type in _COMPACT_RECORD_TYPES:
-                if self._identity_context_by_hash is None:
-                    self._reset_trial_indices()
-                    return payload
-                self._compact_record_identity_context(
-                    payload, self._identity_context_by_hash,
-                )
+            if self._identity_context_by_hash is None:
+                self._reset_trial_indices()
+                return payload
+            self._compact_record_identity_context(
+                payload, self._identity_context_by_hash,
+            )
             self._index_trial_record(indexed_payload, offset=row_offset)
         return payload
-
-    def append(self, record: Mapping[str, Any]) -> Dict[str, Any]:
-        payload = dict(record)
-        if "action_indices" not in payload:
-            raise ValueError("candidate record requires action_indices")
-        payload["action_indices"] = normalize_action_indices(payload["action_indices"])
-        payload.setdefault("raw_action_indices", list(payload["action_indices"]))
-        payload["raw_action_indices"] = normalize_action_indices(payload["raw_action_indices"])
-        raw_hash = action_hash(payload["raw_action_indices"])
-        _assign_candidate_identity_field(payload, "raw_action_hash", raw_hash)
-        _assign_candidate_identity_field(payload, "action_hash", raw_hash)
-        _assign_candidate_identity_field(payload, "action_vector_hash", raw_hash)
-        if "effective_action_indices" in payload:
-            payload["effective_action_indices"] = normalize_action_indices(payload["effective_action_indices"])
-        else:
-            payload["effective_action_indices"] = list(payload["action_indices"])
-        effective_hash = action_hash(payload["effective_action_indices"])
-        _assign_candidate_identity_field(
-            payload, "effective_action_hash", effective_hash,
-        )
-        _assign_candidate_identity_field(
-            payload,
-            "candidate_key_basis",
-            "effective_action_hash + identity_context",
-        )
-        identity_context = payload.get("identity_context")
-        if isinstance(identity_context, Mapping):
-            expected_candidate_key = candidate_key(
-                payload["action_indices"],
-                identity_context,
-                effective_action_indices=payload["effective_action_indices"],
-                effective_action_hash_value=effective_hash,
-            )
-            _assign_candidate_identity_field(
-                payload, "candidate_key", expected_candidate_key,
-            )
-            _assign_candidate_identity_field(
-                payload,
-                "identity_context_hash",
-                sha256_json(dict(identity_context)),
-            )
-        _assign_candidate_identity_field(
-            payload, "legacy_record", is_legacy_record(payload),
-        )
-        self._validate_legacy_evidence_identity(payload)
-        payload.setdefault("rank_key", list(candidate_rank_key(payload)))
-        return self._append_record(payload)
 
     @staticmethod
     def _trial_group_from_record(
@@ -1087,12 +876,9 @@ class CandidateStore:
                     continue
                 if record_type not in _INDEXED_RECORD_TYPES:
                     continue
-                if record_type in _COMPACT_RECORD_TYPES:
-                    self._compact_record_identity_context(
-                        record, self._identity_context_by_hash,
-                    )
-                else:
-                    self._validate_legacy_evidence_identity(record)
+                self._compact_record_identity_context(
+                    record, self._identity_context_by_hash,
+                )
                 if not record.get("candidate_key"):
                     continue
                 self._index_trial_record(record, offset=offset)
@@ -1117,28 +903,23 @@ class CandidateStore:
                     handle.readline(), path=self.path, offset=offset,
                 )
                 if record is not None:
-                    if str(record.get("record_type", "")) in _COMPACT_RECORD_TYPES:
-                        record = self._hydrate_compact_evidence_record(
-                            record, self._identity_context_by_hash,
-                        )
-                    else:
-                        self._validate_legacy_evidence_identity(record)
+                    record = self._hydrate_compact_evidence_record(
+                        record, self._identity_context_by_hash,
+                    )
                     yield record
 
     @staticmethod
     def _trial_group_metadata_payload(
             metadata: Mapping[str, Any],
             *,
-            compact: bool,
             fidelity: str,
             ) -> Dict[str, Any]:
         payload = to_jsonable(dict(metadata), stringify_unknown=True)
         if not isinstance(payload, dict):
             raise TypeError("trial group metadata must encode as an object")
-        if compact:
-            payload.pop("identity_context", None)
-            if str(fidelity).upper() == "F1":
-                payload.pop("boosted_overrides", None)
+        payload.pop("identity_context", None)
+        if str(fidelity).upper() == "F1":
+            payload.pop("boosted_overrides", None)
         return payload
 
     def _intern_identity_context(
@@ -1192,8 +973,6 @@ class CandidateStore:
             action_indices: Any,
             trials: TrialSeries,
             metadata: Mapping[str, Any],
-            *,
-            compact: bool = False,
             ) -> Dict[str, Any]:
         """Append one aligned raw robust-evidence group for a candidate."""
         if not isinstance(trials, TrialSeries):
@@ -1219,7 +998,7 @@ class CandidateStore:
             int(seed) for seed in trials.seeds if int(seed) in existing_seeds
         )
         metadata_payload = self._trial_group_metadata_payload(
-            metadata, compact=bool(compact), fidelity=fidelity,
+            metadata, fidelity=fidelity,
         )
         if overlap:
             if len(overlap) == len(trials.seeds):
@@ -1255,18 +1034,12 @@ class CandidateStore:
                         if isinstance(existing_metadata, Mapping) else {}
                     )
                     exact_record_type = str(exact_record.get("record_type", ""))
-                    compare_compact = (
-                        bool(compact)
-                        or exact_record_type == "candidate_trial_group_v2"
-                    )
                     incoming_comparison_metadata = self._trial_group_metadata_payload(
                         metadata,
-                        compact=compare_compact,
                         fidelity=str(exact_record.get("fidelity", fidelity)),
                     )
                     existing_comparison_metadata = self._trial_group_metadata_payload(
                         existing_metadata,
-                        compact=compare_compact,
                         fidelity=str(exact_record.get("fidelity", fidelity)),
                     )
                     if (
@@ -1292,31 +1065,19 @@ class CandidateStore:
             "metric2": [float(value) for value in trials.metric2],
             "seeds": [int(value) for value in trials.seeds],
         }
-        if compact:
-            context_hash = self._intern_identity_context(identity_context)
-            payload = {
-                "record_type": "candidate_trial_group_v2",
-                **self._compact_candidate_identity_fields(
-                    normalized_action, identity_context, context_hash,
-                ),
-                "fidelity": fidelity,
-                "valid": bool(metadata.get("valid", True)),
-                "trial_group": trial_group,
-                "trial_group_metadata": metadata_payload,
-            }
-            payload["rank_key"] = list(candidate_rank_key(payload))
-            return self._append_record(payload)
-
-        return self.append({
-            "record_type": "candidate_trial_group_v1",
-            "action_indices": normalized_action,
-            "effective_action_indices": normalized_action,
-            "identity_context": dict(identity_context),
+        context_hash = self._intern_identity_context(identity_context)
+        payload = {
+            "record_type": "candidate_trial_group_v2",
+            **self._compact_candidate_identity_fields(
+                normalized_action, identity_context, context_hash,
+            ),
             "fidelity": fidelity,
             "valid": bool(metadata.get("valid", True)),
             "trial_group": trial_group,
             "trial_group_metadata": metadata_payload,
-        })
+        }
+        payload["rank_key"] = list(candidate_rank_key(payload))
+        return self._append_record(payload)
 
     def append_promotion_status(
             self,
@@ -1445,69 +1206,3 @@ class CandidateStore:
             wanted_key, ("", {}),
         )
         return status, dict(metadata)
-
-    def best_for_action(
-            self,
-            action_indices: Any,
-            *,
-            identity_context: Mapping[str, Any] | None = None,
-            effective_action_indices: Any | None = None,
-            registry_or_description: Any = None,
-            baseline_action: Any = None,
-            allow_legacy: bool = False,
-            ) -> Optional[Dict[str, Any]]:
-        wanted = action_hash(action_indices)
-        records = self.read_all()
-        if identity_context is not None:
-            effective_indices = effective_action_indices
-            if effective_indices is None and registry_or_description is not None:
-                effective_indices = effective_action_vector(
-                    action_indices,
-                    registry_or_description=registry_or_description,
-                    baseline_action=baseline_action,
-                )
-            wanted_key = candidate_key(
-                action_indices,
-                identity_context,
-                effective_action_indices=effective_indices,
-            )
-            matches = [
-                r for r in records
-                if r.get("candidate_key") == wanted_key
-            ]
-            if allow_legacy:
-                matches.extend([
-                    r for r in records
-                    if r.get("action_hash") == wanted and bool(r.get("legacy_record", False))
-                ])
-        else:
-            matches = [r for r in records if r.get("action_hash") == wanted]
-        if not matches:
-            return None
-        return sorted(
-            matches,
-            key=lambda r: (-fidelity_rank(str(r.get("fidelity", "F0"))), candidate_rank_key(r)),
-        )[0]
-
-    def should_evaluate(
-            self,
-            action_indices: Any,
-            fidelity: str,
-            *,
-            identity_context: Mapping[str, Any] | None = None,
-            effective_action_indices: Any | None = None,
-            registry_or_description: Any = None,
-            baseline_action: Any = None,
-            allow_legacy: bool = False,
-            ) -> bool:
-        existing = self.best_for_action(
-            action_indices,
-            identity_context=identity_context,
-            effective_action_indices=effective_action_indices,
-            registry_or_description=registry_or_description,
-            baseline_action=baseline_action,
-            allow_legacy=allow_legacy if identity_context is None else False,
-        )
-        if existing is None:
-            return True
-        return fidelity_rank(str(existing.get("fidelity", "F0"))) < fidelity_rank(fidelity)
