@@ -447,8 +447,8 @@ class SearchConfig:
 
     bo_initial_design_size: int = 64
     bo_candidate_pool_size: int = 2048
-    bo_no_improvement_patience: int = 100
-    rf_n_estimators: int = 256
+    bo_no_improvement_patience: int = 1_000
+    rf_n_estimators: int = 128
     rf_min_samples_leaf: int = 2
     acquisition_exploration: float = 0.05
 
@@ -457,7 +457,7 @@ class SearchConfig:
 
     ga_population_size: int = 64
     ga_elite_count: int = 7
-    ga_update_generations: int = 800
+    ga_update_generations: int = 200
 
     ga_tournament_size: int = 3
     ga_crossover_probability: float = 0.0
