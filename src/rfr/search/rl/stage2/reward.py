@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
