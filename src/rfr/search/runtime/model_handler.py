@@ -3277,6 +3277,17 @@ class ReversibleLayerHandler:
             self.block5_cfg_per_layer.pop(i, None)
 
 
+    def get_active_blb_noise_layers(self) -> dict:
+        """Return the layers with an installed configuration for each BLB block."""
+        return {
+            "block1": set(self.block1_cfg_per_layer),
+            "block2": set(self.block2_cfg_per_layer),
+            "block3": set(self.block3_cfg_per_layer),
+            "block4": set(self.block4_cfg_per_layer),
+            "block5": set(self.block5_cfg_per_layer),
+        }
+
+
     def restore_all(self):
         """Restore the complete model to its original state."""
         self.model = copy.deepcopy(self.backup_model)
