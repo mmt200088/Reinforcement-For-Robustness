@@ -21,11 +21,8 @@ from transformers import (  # noqa: F402
 )
 from rfr.common.cli_parse_utils import (
     parse_bool_flag,
-    parse_degree_config,
-    parse_noise_config,
     parse_optional_positive_float,
     parse_positive_int,
-    parse_stage1_episode_limit,
     parse_stage2_episode_limit,
 )
 from rfr.preparation.data.protocol import (
@@ -37,18 +34,13 @@ from rfr.preparation.data.protocol import (
     validate_dataset,
     validate_supported_profile,
 )
-from rfr.preparation.data.mrpc_reproducibility import (
-    MRPC_FULL_EXAMPLE_COUNT,
-    MRPCReproducibilityContext,
-    MRPCReproducibilityError,
-    load_mrpc_fixture,
-    resolve_mrpc_pretrained_revision_kwargs,
-    resolve_mrpc_validation_views,
+from rfr.preparation.data.mrpc_contract import (
+    comparator_pretrained_revision_kwargs,
+    validate_mrpc_comparator_runtime,
 )
 
 
 ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE = True
-MRPC_VALIDATION_ROW_COUNT = MRPC_FULL_EXAMPLE_COUNT
 GLUE_EQUIVALENT_PARQUET_ENDPOINTS = [
     "https://huggingface.co",
 ]
@@ -60,12 +52,12 @@ GLUE_LOCAL_DATASET_ENV_VARS = (
 
 def resolve_pretrained_revision_kwargs(
         *,
-        fixture,
+        comparator_enabled: bool,
         data_path: str,
         model_id: str,
         ) -> tuple[dict[str, str], dict[str, str]]:
-    return resolve_mrpc_pretrained_revision_kwargs(
-        fixture=fixture,
+    return comparator_pretrained_revision_kwargs(
+        enabled=bool(comparator_enabled),
         data_path=data_path,
         model_id=model_id,
     )
@@ -82,9 +74,9 @@ def seed_everything(seed: int) -> int:
 
 
 GLUE_PARQUET_SPLITS = {
-    "mrpc": ("train", "validation", "test"),
-    "rte": ("train", "validation", "test"),
-    "sst2": ("train", "validation", "test"),
+    "mrpc": ("train", "validation"),
+    "rte": ("train", "validation"),
+    "sst2": ("train", "validation"),
 }
 
 GLUE_REQUIRED_COLUMNS = {
@@ -172,53 +164,9 @@ def _validate_glue_dataset_equivalence(data, task_name: str) -> None:
         )
 
 
-def resolve_mrpc_reproducibility_views(
-        data: Any,
-        *,
-        data_path: str,
-        fixture,
-        ):
-    if fixture is None:
-        raise MRPCReproducibilityError(
-            "MRPC reproducibility requires a fixture"
-        )
-    if str(data_path).strip().lower() != "mrpc":
-        raise MRPCReproducibilityError(
-            "MRPC reproducibility fixture requires the MRPC task"
-        )
-    return resolve_mrpc_validation_views(
-        data,
-        fixture,
-        expected_row_count=MRPC_VALIDATION_ROW_COUNT,
-    )
-
-
-def _finalize_glue_load_success(
-        data,
-        task_name: str,
-        *,
-        mrpc_reproducibility_fixture=None,
-        ):
-    task = str(task_name).strip().lower()
-    try:
-        _validate_glue_dataset_equivalence(data, task)
-    except Exception as exc:
-        if mrpc_reproducibility_fixture is not None:
-            raise MRPCReproducibilityError(
-                f"MRPC GLUE {task!r} schema mismatch"
-            ) from exc
-        raise
-
-    if mrpc_reproducibility_fixture is None:
-        return data
-    if task != "mrpc":
-        raise MRPCReproducibilityError(
-            "MRPC reproducibility fixture cannot validate another GLUE task"
-        )
-    resolve_mrpc_validation_views(
-        data,
-        mrpc_reproducibility_fixture,
-        expected_row_count=MRPC_VALIDATION_ROW_COUNT,
+def _finalize_glue_load_success(data, task_name: str):
+    _validate_glue_dataset_equivalence(
+        data, str(task_name).strip().lower(),
     )
     return data
 
@@ -313,7 +261,6 @@ def _try_load_local_glue_dataset(
         load_from_disk_fn,
         route_log_dir: str,
         primary_exc: Exception,
-        mrpc_reproducibility_fixture=None,
         ):
     errors = []
     for path in _glue_local_dataset_candidates(task):
@@ -321,11 +268,7 @@ def _try_load_local_glue_dataset(
             continue
         try:
             data = load_from_disk_fn(path)
-            _finalize_glue_load_success(
-                data,
-                task,
-                mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
-            )
+            _finalize_glue_load_success(data, task)
             log_path = None
             if route_log_dir:
                 log_path = _write_glue_local_route_log(
@@ -341,8 +284,6 @@ def _try_load_local_glue_dataset(
                 file=sys.stderr,
             )
             return data, errors
-        except MRPCReproducibilityError:
-            raise
         except Exception as local_exc:
             errors.append(f"{path} load_from_disk: {local_exc!r}")
 
@@ -351,11 +292,7 @@ def _try_load_local_glue_dataset(
             continue
         try:
             data = load_dataset_fn("parquet", data_files=data_files)
-            _finalize_glue_load_success(
-                data,
-                task,
-                mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
-            )
+            _finalize_glue_load_success(data, task)
             log_path = None
             if route_log_dir:
                 log_path = _write_glue_local_route_log(
@@ -372,8 +309,6 @@ def _try_load_local_glue_dataset(
                 file=sys.stderr,
             )
             return data, errors
-        except MRPCReproducibilityError:
-            raise
         except Exception as local_exc:
             errors.append(f"{path} local_parquet: {local_exc!r}")
 
@@ -384,11 +319,7 @@ def _try_load_local_glue_dataset(
             revision=GLUE_DATASET_REVISION,
             download_config=DownloadConfig(local_files_only=True),
         )
-        _finalize_glue_load_success(
-            data,
-            task,
-            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
-        )
+        _finalize_glue_load_success(data, task)
         log_path = None
         if route_log_dir:
             log_path = _write_glue_local_route_log(
@@ -405,8 +336,6 @@ def _try_load_local_glue_dataset(
             file=sys.stderr,
         )
         return data, errors
-    except MRPCReproducibilityError:
-        raise
     except Exception as cache_exc:
         errors.append(f"hf_cache_local_files_only: {cache_exc!r}")
 
@@ -462,7 +391,6 @@ def load_glue_dataset_equivalent(
         load_dataset_fn=load_dataset,
         load_from_disk_fn=load_from_disk,
         route_log_dir: str = None,
-        mrpc_reproducibility_fixture=None,
         ):
     task = str(task_name).strip().lower()
     validate_dataset(task)
@@ -474,18 +402,12 @@ def load_glue_dataset_equivalent(
             task,
             revision=GLUE_DATASET_REVISION,
         )
-        _finalize_glue_load_success(
-            data,
-            task,
-            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
-        )
+        _finalize_glue_load_success(data, task)
         print(
             f"[dataset] task={task!r} → route=hf_remote endpoint=nyu-mll/glue",
             file=sys.stderr,
         )
         return data
-    except MRPCReproducibilityError:
-        raise
     except Exception as primary_exc:
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
@@ -501,7 +423,6 @@ def load_glue_dataset_equivalent(
             load_from_disk_fn=load_from_disk_fn,
             route_log_dir=route_log_dir,
             primary_exc=primary_exc,
-            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
         )
         if data is not None:
             return data
@@ -530,14 +451,8 @@ def load_glue_dataset_equivalent(
             )
             try:
                 data = load_dataset_fn("parquet", data_files=data_files)
-                _finalize_glue_load_success(
-                    data,
-                    task,
-                    mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
-                )
+                _finalize_glue_load_success(data, task)
                 return data
-            except MRPCReproducibilityError:
-                raise
             except Exception as equivalent_exc:
                 equivalent_errors.append(f"{endpoint}: {equivalent_exc!r}")
 
@@ -555,7 +470,6 @@ def train(
         stage1_best_config_path: str = "",
         search_best_config_path: str = "",
         glue_train_probe_fixture_path: str = "fixtures/reproducibility/glue_train_probe_v1.json",
-        mrpc_reproducibility_fixture_path: str = "",
         batch_size: int = 128,
         rl_lr: float = 1e-4,
         stage1_rl_lr: float = None,
@@ -566,28 +480,8 @@ def train(
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         ppo_update_interval: int = 120,
-        final_eval_config_source: str = "search",
-        final_eval_config_path: str = "configs/reference/rl.json",
-        manual_stage1_gelu: str = "",
-        manual_stage1_softmax: str = "",
-        manual_stage2_noise: str = "",
         final_eval_random_seed: int = 42,
-        final_eval_permutation_trials: int = 10,
-        final_eval_cost_equivalent_trials: int = 10,
-        final_eval_budget_equivalent_trials: int = 10,
-        final_eval_stage1_budget_trials: int = 10,
-        final_eval_stage2_budget_trials: int = 10,
         final_eval_repeat_n: int = 1,
-        final_eval_preset: str = "default",
-        final_eval_output_root: str = "",
-        final_eval_run_name: str = "",
-        final_eval_random_enabled: bool = False,
-        final_eval_action_config: str = "",
-        final_eval_action_ranges: str = "",
-        final_eval_action_fixed: str = "",
-
-        final_eval_cost_match_count: int = 50,
-        final_eval_cost_match_max_attempts: int = 5000,
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
@@ -650,9 +544,6 @@ def train(
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
     decoupled_layout = parse_bool_flag(decoupled_layout, "decoupled_layout")
-    final_eval_random_enabled = parse_bool_flag(
-        final_eval_random_enabled, "final_eval_random_enabled"
-    )
     from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     blb_v3_search_backend = normalize_search_backend(
@@ -738,17 +629,9 @@ def train(
         glue_fixture_path = Path(__file__).resolve().parents[3] / glue_fixture_path
     glue_fixture = load_train_probe_fixture(glue_fixture_path)
 
-    mrpc_fixture = None
-    mrpc_views = None
-    mrpc_reproducibility = None
-    fixture_path = str(
-        mrpc_reproducibility_fixture_path or ""
-    ).strip()
-    if fixture_path:
-        mrpc_fixture = load_mrpc_fixture(fixture_path)
     model_revision_kwargs, tokenizer_revision_kwargs = (
         resolve_pretrained_revision_kwargs(
-            fixture=mrpc_fixture,
+            comparator_enabled=blb_v3_search_backend != "ppo",
             data_path=data_path,
             model_id=base_model,
         )
@@ -832,30 +715,19 @@ def train(
     data = load_glue_dataset_equivalent(
         data_path,
         route_log_dir=os.path.join(output_dir, "logs"),
-        mrpc_reproducibility_fixture=mrpc_fixture,
     )
     glue_views = resolve_glue_protocol_views(
         data,
         dataset=data_path,
         fixture=glue_fixture,
     )
-    if mrpc_fixture is not None:
-        mrpc_views = resolve_mrpc_reproducibility_views(
-            data,
-            data_path=data_path,
-            fixture=mrpc_fixture,
-        )
-
     train_data = glue_views.train_full.shuffle(
         seed=final_eval_random_seed
     ).map(tokenize_fn)
     train_probe_data = glue_views.train_probe.map(tokenize_fn)
-    if mrpc_views is not None:
-        validation_source = mrpc_views.full_validation
-    else:
-        validation_source = glue_views.validation_full.shuffle(
-            seed=final_eval_random_seed
-        )
+    validation_source = glue_views.validation_full.shuffle(
+        seed=final_eval_random_seed
+    )
     val_data = validation_source.map(tokenize_fn)
 
     columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
@@ -881,16 +753,17 @@ def train(
         return_tensors="pt",
         pad_to_multiple_of=8,
     )
-    if mrpc_views is not None:
-        mrpc_reproducibility = MRPCReproducibilityContext(
-            fixture=mrpc_fixture,
-            stability_probe=train_probe_data,
+    if blb_v3_search_backend != "ppo" and not final_eval_only:
+        validate_mrpc_comparator_runtime(
+            model=model,
+            tokenizer=tokenizer,
+            collator=data_collator,
+            validation_full=val_data,
+            train_probe=train_probe_data,
+            batch_size=batch_size,
         )
 
 
-    parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
-    parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
-    parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
     from rfr.search.common.evaluator import LayerImportanceEvaluator
 
     importance_evaluator = LayerImportanceEvaluator(
@@ -911,27 +784,8 @@ def train(
         stage1_best_config_path=stage1_best_config_path,
         search_best_config_path=search_best_config_path,
         run_output_dir=run_output_dir,
-        final_eval_config_source=final_eval_config_source,
-        final_eval_config_path=final_eval_config_path,
-        manual_stage1_gelu=parsed_manual_stage1_gelu,
-        manual_stage1_softmax=parsed_manual_stage1_softmax,
-        manual_stage2_noise=parsed_manual_stage2_noise,
         final_eval_random_seed=final_eval_random_seed,
-        final_eval_permutation_trials=final_eval_permutation_trials,
-        final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
-        final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
-        final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
-        final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
         final_eval_repeat_n=final_eval_repeat_n,
-        final_eval_preset=final_eval_preset,
-        final_eval_output_root=final_eval_output_root,
-        final_eval_run_name=final_eval_run_name,
-        final_eval_random_enabled=final_eval_random_enabled,
-        final_eval_action_config=final_eval_action_config,
-        final_eval_action_ranges=final_eval_action_ranges,
-        final_eval_action_fixed=final_eval_action_fixed,
-        final_eval_cost_match_count=final_eval_cost_match_count,
-        final_eval_cost_match_max_attempts=final_eval_cost_match_max_attempts,
         skip_noise_rl=skip_noise_rl,
         skip_stage1_rl=skip_stage1_rl,
         skip_final_eval=skip_final_eval,
@@ -941,7 +795,6 @@ def train(
         stage1_run_id=stage1_run_id,
         data_path=data_path,
         glue_data_protocol=glue_protocol_context,
-        mrpc_reproducibility=mrpc_reproducibility,
         stage1_accuracy_tolerance=stage1_accuracy_tolerance,
         stage2_limit_tolerance=stage2_limit_tolerance,
         stage2_stability_tolerance=stage2_stability_tolerance,

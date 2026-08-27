@@ -39,6 +39,7 @@ FORBIDDEN_TRACKED_ARTIFACT_FILES = {
     "noise_std_table.csv",
     "pruning_search_log_eval.txt",
     "rl_agent_checkpoint_BertForSequenceClassification.pt",
+    "fixtures/reproducibility/mrpc_validation_v1.json",
 }
 
 FORBIDDEN_WEIGHT_SUFFIXES = {
@@ -54,8 +55,6 @@ ALLOWED_RESULT_FILES = {
     "examples/representative_rl_log/README.md",
     "examples/representative_rl_log/stage2_mrpc_600ep.jsonl",
     "outputs/README.md",
-    "configs/reference/coinn_ga.json",
-    "configs/reference/rl.json",
 }
 
 FORBIDDEN_RUNTIME_PATHS = {
@@ -68,6 +67,11 @@ FORBIDDEN_RUNTIME_PATHS = {
     "elastic_gpu.py",
     "noise_tables.py",
     "noise_targets_registry.py",
+    "src/rfr/evaluation/action_grid.py",
+    "src/rfr/evaluation/embedded.py",
+    "src/rfr/evaluation/final_eval_layout.py",
+    "src/rfr/evaluation/final_evaluation.py",
+    "src/rfr/preparation/data/mrpc_reproducibility.py",
     "rl_data_points.py",
     "rl_local_optimum.py",
     "noise_rl_module_v2.py",
@@ -124,11 +128,14 @@ REQUIRED_RUNTIME_PATHS = {
     "run_search.sh",
     "src/rfr/cli/run.py",
     "src/rfr/cli/evaluate.py",
+    "src/rfr/evaluation/protocol.py",
     "src/rfr/preparation/data/protocol.py",
+    "src/rfr/preparation/data/mrpc_contract.py",
     "src/rfr/preparation/fusion/count_map.py",
     "src/rfr/preparation/rescale/optimizer/replan_interface.py",
     "src/rfr/search/rl/stage1/parallel_runner.py",
     "src/rfr/search/rl/stage2/training.py",
+    "src/rfr/search/common/best_config.py",
     "src/rfr/search/comparators/bo_rf/stage1.py",
     "src/rfr/search/comparators/bo_rf/stage2.py",
     "src/rfr/search/comparators/greedy/stage1.py",
@@ -177,6 +184,24 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "<!doctype html>",
     "html_table(",
     "pareto_html_path",
+    "--comparator-smoke",
+    "comparator_smoke",
+    "final_eval_config_source",
+    "manual_stage1_gelu",
+    "manual_stage2_noise",
+    "final_eval_action_ranges",
+    "final_eval_action_fixed",
+    "final_eval_cost_match_count",
+    "evaluation_cap",
+    "search_evaluation_budget",
+    "ga_stop_on_no_improvement",
+    "ga_require_full_generations",
+    "convergence_patience_updates",
+    "stage1_entropy_stop_threshold",
+    "smoke_only_complete",
+    "two_stage_result.json",
+    "mrpc_validation_v1.json",
+    "canonical_rows",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}

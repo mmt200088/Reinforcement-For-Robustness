@@ -1642,24 +1642,6 @@ class RLDiagnosticsRecorder:
         lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")
         lines.append("| `best_action_vec.json` | **训练期最优**：`slots` 列表（按 SF/K 选）+ `action_vec` 兜底字段。**可直接喂给 `run_search.sh eval --action-config`** |")
         lines.append("")
-        lines.append(
-            "**重跑 final eval 的最简命令**（无需等训练结束）："
-        )
-        lines.append("")
-        lines.append("```bash")
-        lines.append(
-            "bash run_search.sh eval \\\n"
-            f"    --preset mrpc-final-eval-only \\\n"
-            f"    --action-config {self.best_json_path}"
-        )
-        lines.append("```")
-        lines.append("")
-        lines.append(
-            "**手动调几个槽位**：直接复制 `best_action_vec.json`，改里面 `slots` 列表"
-            "中对应槽位的 `scaling_factor` 或 `truncation_bits`，存成新文件后 `--action-config` 指过去即可。"
-            "支持简写 `{\"base\":\"max\", \"overrides\":[{\"label\":\"L05.B3.K\", \"truncation_bits\":10}]}`。"
-        )
-
         self._dump(lines)
 
     def _dump(self, lines: List[str]) -> None:

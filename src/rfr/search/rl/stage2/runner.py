@@ -1217,59 +1217,6 @@ def _run_layerwise_training_branch(
                 "search_backend": search_backend,
             },
         )
-        if search_run["strict_validation"] is None:
-            status.set_phase(
-                f"Stage-2 {search_backend} smoke-only search complete"
-            )
-            return {
-                "dataset_protocol_hash": getattr(
-                    evaluator, "dataset_protocol_hash", None
-                ),
-                "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
-                "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
-                "status": "smoke_only_complete",
-                "scientific_status": (
-                    "smoke_only_no_strict_search_gate"
-                ),
-                "strict_feasible": False,
-                "stage2_inference_batch_size": stage2_inference_batch_size,
-                "selected_action_identity": selected_action_identity,
-                "search_backend": search_backend,
-                "stage1_consumed_binding": stage1_selection_binding,
-                "strict_identity_context_hash": str(
-                    search_manifest.get("strict_identity_context_hash") or ""
-                ),
-                "final_config_fingerprint": selected_action_identity[
-                    "final_config_fingerprint"
-                ],
-                "blb_v3_profile": str(train_cfg.profile),
-                "blb_v3_total_episodes": int(
-                    search_run["result"].evaluation_count
-                ),
-                "rl_variant": (
-                    f"blb_v3_layerwise_search_{search_backend}_smoke"
-                ),
-                "limit_loss": float(limits["loss_max"]),
-                "limit_p": float(limits["metric1_min"]),
-                "limit_s": float(limits["metric2_min"]),
-                "selection_diagnostics": {
-                    "selection_mode": (
-                        "smoke_only_layerwise_search_baseline"
-                    ),
-                    "smoke_candidate_full_vector": best_full_vector,
-                    "smoke_candidate_action_matrix": best_action_matrix,
-                    "smoke_candidate_layer_configurations": (
-                        best_layer_configurations
-                    ),
-                    "smoke_candidate_evaluation": selected.as_dict(),
-                    "artifact_paths": search_run["artifact_paths"],
-                },
-                "layerwise_summary": {
-                    **search_run["result"].as_dict(),
-                    "smoke_candidate": selected.as_dict(),
-                    "artifact_paths": search_run["artifact_paths"],
-                },
-            }
         fixed_config = build_fusion_fixed_config(
             best_full_vector,
             profile=str(train_cfg.profile),
@@ -3372,23 +3319,17 @@ def _build_completed_search_resume_result(
 
     inner_status = str(manifest.get("status") or "")
     strict_feasible = bool(inner_run.get("strict_feasible", False))
-    if inner_status == "smoke_only_complete":
-        if inner_run.get("strict_validation") is not None or strict_feasible:
-            raise RuntimeError(
-                "Stage-2 smoke completion has strict-validation evidence"
-            )
-    else:
-        expected_status = (
-            "complete_strict_feasible"
-            if strict_feasible else "complete_least_violating"
+    expected_status = (
+        "complete_strict_feasible"
+        if strict_feasible else "complete_least_violating"
+    )
+    if (
+            inner_status != expected_status
+            or inner_run.get("strict_validation") is None
+    ):
+        raise RuntimeError(
+            "Stage-2 completed strict result has inconsistent status"
         )
-        if (
-                inner_status != expected_status
-                or inner_run.get("strict_validation") is None
-        ):
-            raise RuntimeError(
-                "Stage-2 completed strict result has inconsistent status"
-            )
 
     best_layer_configurations = describe_layerwise_action_matrix(
         best_action_matrix
@@ -3436,29 +3377,6 @@ def _build_completed_search_resume_result(
         "limit_p": float(limits["metric1_min"]),
         "limit_s": float(limits["metric2_min"]),
     }
-
-    if inner_status == "smoke_only_complete":
-        return {
-            **common,
-            "status": "smoke_only_complete",
-            "scientific_status": "smoke_only_no_strict_search_gate",
-            "rl_variant": f"blb_v3_layerwise_search_{search_backend}_smoke",
-            "selection_diagnostics": {
-                "selection_mode": "smoke_only_layerwise_search_baseline",
-                "smoke_candidate_full_vector": best_full_vector,
-                "smoke_candidate_action_matrix": best_action_matrix,
-                "smoke_candidate_layer_configurations": (
-                    best_layer_configurations
-                ),
-                "smoke_candidate_evaluation": selected.as_dict(),
-                "artifact_paths": artifact_paths,
-            },
-            "layerwise_summary": {
-                **result.as_dict(),
-                "smoke_candidate": selected.as_dict(),
-                "artifact_paths": artifact_paths,
-            },
-        }
 
     fixed_config = build_fusion_fixed_config(
         best_full_vector,
@@ -3863,7 +3781,6 @@ def _preflight_pending_strict_search_resume(
     if status in {
             "complete_strict_feasible",
             "complete_least_violating",
-            "smoke_only_complete",
     }:
         return None
     if status != "search_complete_pending_strict":
@@ -4007,7 +3924,6 @@ def _preflight_completed_search_resume(
     completed_statuses = {
         "complete_strict_feasible",
         "complete_least_violating",
-        "smoke_only_complete",
     }
     resume_contract = manifest.get("resume_contract")
     requested_manifest = (
@@ -4294,11 +4210,7 @@ def _run_layerwise_via_runner_locked(
     Reuses the runner's probe, Rescale, baseline, and persistence owners so the
     policy and strict evaluation share one materialization path.
 
-    Returns a noise_stage_result dict matching the keys downstream consumers
-    (UnifiedFinalEvaluationModule, BLBActionFinalEvaluationModule) read from
-    the single-shot path: ``blb_v3_best_action_vec``, ``blb_v3_profile``,
-    ``best_noise_config`` (all-maximum config), ``limit_loss`` /
-    ``limit_p`` / ``limit_s``, ``baseline_tot_c``.
+    Returns the selected action, strict evidence, and materialization metadata.
     """
     from rfr.search.common.action_io import action_vec_to_slots_list
     from rfr.search.common.diagnostics import (

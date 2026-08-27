@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_by": "scripts/batch_run_configs.py",
+  "generated_by": "rfr.preparation.rescale.optimizer",
   "n_configs": 11,
   "n_success": 11,
   "results": [

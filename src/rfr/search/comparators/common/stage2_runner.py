@@ -1779,90 +1779,89 @@ def _load_plain_completed_search_run(
     if status not in {"complete_strict_feasible", "complete_least_violating"}:
         raise RuntimeError("completed Stage-2 manifest has no strict result")
     strict_validation = None
-    if True:
-        strict_path = os.path.join(output_dir, "strict_validation.json")
-        if not os.path.isfile(strict_path):
-            raise RuntimeError(
-                "completed Stage-2 strict validation artifact is missing"
-            )
-        payload = read_json_file(strict_path)
-        if not isinstance(payload, Mapping):
-            raise RuntimeError(
-                "completed Stage-2 strict validation artifact is invalid"
-            )
-        strict_validation = dict(payload)
-        _validate_strict_validation_payload(
-            result=result,
-            payload=strict_validation,
-            communication_importance_ratio=communication_importance_ratio,
+    strict_path = os.path.join(output_dir, "strict_validation.json")
+    if not os.path.isfile(strict_path):
+        raise RuntimeError(
+            "completed Stage-2 strict validation artifact is missing"
         )
-        verdict = strict_validation.get("strict_feasible")
-        if type(verdict) is not bool:
-            raise RuntimeError(
-                "completed strict validation has no boolean strict verdict"
-            )
-        if bool(manifest.get("strict_feasible", False)) != verdict:
-            raise RuntimeError(
-                "completed strict verdict does not match manifest"
-            )
-        expected_status = (
-            "complete_strict_feasible"
-            if verdict else "complete_least_violating"
+    payload = read_json_file(strict_path)
+    if not isinstance(payload, Mapping):
+        raise RuntimeError(
+            "completed Stage-2 strict validation artifact is invalid"
         )
-        if status != expected_status:
-            raise RuntimeError(
-                "completed strict status does not match strict verdict"
-            )
-        strict_selection_status = str(
-            strict_validation.get("selection_status") or ""
+    strict_validation = dict(payload)
+    _validate_strict_validation_payload(
+        result=result,
+        payload=strict_validation,
+        communication_importance_ratio=communication_importance_ratio,
+    )
+    verdict = strict_validation.get("strict_feasible")
+    if type(verdict) is not bool:
+        raise RuntimeError(
+            "completed strict validation has no boolean strict verdict"
         )
-        expected_selection_status = (
-            "strict_feasible" if verdict else "strict_least_violating"
+    if bool(manifest.get("strict_feasible", False)) != verdict:
+        raise RuntimeError(
+            "completed strict verdict does not match manifest"
         )
-        if (
-                strict_selection_status != expected_selection_status
-                or str(manifest.get("selection_status") or "")
-                != expected_selection_status
-        ):
-            raise RuntimeError(
-                "completed strict selection status is inconsistent"
-            )
-        strict_selected_payload = strict_validation.get("selected")
-        if not isinstance(strict_selected_payload, Mapping):
-            raise RuntimeError(
-                "completed strict validation has no selected configuration"
-            )
-        strict_selected = _evaluation_from_payload(
-            strict_selected_payload,
-            communication_importance_ratio,
+    expected_status = (
+        "complete_strict_feasible"
+        if verdict else "complete_least_violating"
+    )
+    if status != expected_status:
+        raise RuntimeError(
+            "completed strict status does not match strict verdict"
         )
-        if (
-                selected is None
-                or selected.as_dict() != strict_selected.as_dict()
-        ):
+    strict_selection_status = str(
+        strict_validation.get("selection_status") or ""
+    )
+    expected_selection_status = (
+        "strict_feasible" if verdict else "strict_least_violating"
+    )
+    if (
+            strict_selection_status != expected_selection_status
+            or str(manifest.get("selection_status") or "")
+            != expected_selection_status
+    ):
+        raise RuntimeError(
+            "completed strict selection status is inconsistent"
+        )
+    strict_selected_payload = strict_validation.get("selected")
+    if not isinstance(strict_selected_payload, Mapping):
+        raise RuntimeError(
+            "completed strict validation has no selected configuration"
+        )
+    strict_selected = _evaluation_from_payload(
+        strict_selected_payload,
+        communication_importance_ratio,
+    )
+    if (
+            selected is None
+            or selected.as_dict() != strict_selected.as_dict()
+    ):
+        raise RuntimeError(
+            "completed selected configuration does not match strict validation"
+        )
+    if (
+            not isinstance(selected_payload, Mapping)
+            or selected_payload.get("strict_feasible") is not verdict
+            or str(selected_payload.get("selection_status") or "")
+            != expected_selection_status
+    ):
+        raise RuntimeError(
+            "completed selected configuration has inconsistent strict status"
+        )
+    paths["strict_validation"] = strict_path
+    candidate_store_path = strict_validation.get("candidate_store")
+    if candidate_store_path:
+        owned_path = os.fspath(candidate_store_path)
+        if not os.path.isabs(owned_path):
+            owned_path = os.path.join(output_dir, owned_path)
+        if not os.path.isfile(owned_path):
             raise RuntimeError(
-                "completed selected configuration does not match strict validation"
+                "completed Stage-2 strict candidate store is missing"
             )
-        if (
-                not isinstance(selected_payload, Mapping)
-                or selected_payload.get("strict_feasible") is not verdict
-                or str(selected_payload.get("selection_status") or "")
-                != expected_selection_status
-        ):
-            raise RuntimeError(
-                "completed selected configuration has inconsistent strict status"
-            )
-        paths["strict_validation"] = strict_path
-        candidate_store_path = strict_validation.get("candidate_store")
-        if candidate_store_path:
-            owned_path = os.fspath(candidate_store_path)
-            if not os.path.isabs(owned_path):
-                owned_path = os.path.join(output_dir, owned_path)
-            if not os.path.isfile(owned_path):
-                raise RuntimeError(
-                    "completed Stage-2 strict candidate store is missing"
-                )
-            paths["strict_candidate_store"] = owned_path
+        paths["strict_candidate_store"] = owned_path
 
     return {
         "result": result,
@@ -2272,160 +2271,159 @@ def run_layerwise_search_baseline(
     selection_status = "pending_strict_validation"
     strict_feasible = False
     strict_validation_wall_seconds = 0.0
-    if True:
-        strict_payload_from_artifact = None
+    strict_payload_from_artifact = None
+    if (
+            existing_manifest is not None
+            and str(existing_manifest.get("status") or "")
+            == "search_complete_pending_strict"
+            and os.path.isfile(strict_validation_path)
+    ):
+        completed_strict_payload = read_json_file(
+            strict_validation_path
+        )
+        if not isinstance(completed_strict_payload, Mapping):
+            raise RuntimeError(
+                "completed strict validation artifact is invalid"
+            )
+        strict_payload_from_artifact = dict(
+            completed_strict_payload
+        )
+    if (
+            strict_payload_from_artifact is None
+            and strict_candidate_store is not None
+    ):
+        if strict_candidate_store_checkpoint_size is None:
+            store_path = os.fspath(strict_candidate_store.path)
+            strict_candidate_store_checkpoint_size = (
+                os.path.getsize(store_path)
+                if os.path.exists(store_path) else 0
+            )
+            run_manifest = {
+                **run_manifest,
+                "strict_candidate_store_checkpoint_size": int(
+                    strict_candidate_store_checkpoint_size
+                ),
+            }
+            _atomic_json(manifest_path, run_manifest)
+        else:
+            strict_candidate_store.recover_to_checkpoint_size(
+                strict_candidate_store_checkpoint_size
+            )
+
+    strict_started_monotonic = time.perf_counter()
+    try:
+        strict_payload = (
+            strict_payload_from_artifact
+            if strict_payload_from_artifact is not None
+            else strict_validator(result)
+        )
+        if not isinstance(strict_payload, Mapping):
+            raise RuntimeError(
+                "strict validation must return a mapping"
+            )
+        strict_validation = dict(strict_payload)
+        _validate_strict_validation_payload(
+            result=result,
+            payload=strict_validation,
+            communication_importance_ratio=communication_importance_ratio,
+        )
+        verdict = strict_validation.get("strict_feasible")
+        if type(verdict) is not bool:
+            raise RuntimeError(
+                "strict validation must provide a boolean strict_feasible verdict"
+            )
+        strict_feasible = bool(verdict)
+        selected_payload = strict_validation.get("selected")
+        if selected_payload is None:
+            selected = None
+        elif isinstance(selected_payload, Mapping):
+            selected = _evaluation_from_payload(
+                selected_payload,
+                communication_importance_ratio,
+            )
+        else:
+            raise RuntimeError(
+                "strict selected candidate must be an object or null"
+            )
+        selection_status = str(strict_validation.get(
+            "selection_status",
+            (
+                "strict_feasible"
+                if strict_feasible else "strict_least_violating"
+            ),
+        ))
+        if strict_feasible and selected is None:
+            raise RuntimeError(
+                "strict feasible validation must select a candidate"
+            )
+        if strict_feasible and selection_status != "strict_feasible":
+            raise RuntimeError(
+                "strict feasible verdict has an inconsistent selection status"
+            )
         if (
-                existing_manifest is not None
-                and str(existing_manifest.get("status") or "")
-                == "search_complete_pending_strict"
-                and os.path.isfile(strict_validation_path)
+                not strict_feasible
+                and selected is not None
+                and selection_status != "strict_least_violating"
         ):
-            completed_strict_payload = read_json_file(
-                strict_validation_path
+            raise RuntimeError(
+                "least-violating selection has an inconsistent status"
             )
-            if not isinstance(completed_strict_payload, Mapping):
-                raise RuntimeError(
-                    "completed strict validation artifact is invalid"
-                )
-            strict_payload_from_artifact = dict(
-                completed_strict_payload
-            )
+    except Exception:
+        failed_seconds = float(
+            time.perf_counter() - strict_started_monotonic
+        )
         if (
                 strict_payload_from_artifact is None
                 and strict_candidate_store is not None
+                and strict_candidate_store_checkpoint_size is not None
         ):
-            if strict_candidate_store_checkpoint_size is None:
-                store_path = os.fspath(strict_candidate_store.path)
-                strict_candidate_store_checkpoint_size = (
-                    os.path.getsize(store_path)
-                    if os.path.exists(store_path) else 0
-                )
-                run_manifest = {
-                    **run_manifest,
-                    "strict_candidate_store_checkpoint_size": int(
-                        strict_candidate_store_checkpoint_size
-                    ),
-                }
-                _atomic_json(manifest_path, run_manifest)
-            else:
-                strict_candidate_store.recover_to_checkpoint_size(
-                    strict_candidate_store_checkpoint_size
-                )
-
-        strict_started_monotonic = time.perf_counter()
-        try:
-            strict_payload = (
-                strict_payload_from_artifact
-                if strict_payload_from_artifact is not None
-                else strict_validator(result)
+            strict_candidate_store.recover_to_checkpoint_size(
+                strict_candidate_store_checkpoint_size
             )
-            if not isinstance(strict_payload, Mapping):
-                raise RuntimeError(
-                    "strict validation must return a mapping"
-                )
-            strict_validation = dict(strict_payload)
-            _validate_strict_validation_payload(
-                result=result,
-                payload=strict_validation,
-                communication_importance_ratio=communication_importance_ratio,
+        failed_manifest = {
+            **run_manifest,
+            "status": "search_complete_pending_strict",
+            "strict_attempt_count": int(
+                run_manifest.get("strict_attempt_count", 0)
+            ) + 1,
+            "last_strict_attempt_wall_seconds": failed_seconds,
+            "strict_attempt_wall_seconds_total": float(
+                run_manifest.get(
+                    "strict_attempt_wall_seconds_total", 0.0,
+                ) + failed_seconds
+            ),
+        }
+        _atomic_json(manifest_path, failed_manifest)
+        raise
+    strict_validation_wall_seconds = (
+        0.0
+        if strict_payload_from_artifact is not None
+        else float(time.perf_counter() - strict_started_monotonic)
+    )
+    if strict_payload_from_artifact is None:
+        _atomic_json(strict_validation_path, strict_validation)
+    paths["strict_validation"] = strict_validation_path
+    candidate_store_path = strict_validation.get("candidate_store")
+    if candidate_store_path:
+        owned_candidate_store_path = os.fspath(candidate_store_path)
+        if not os.path.isabs(owned_candidate_store_path):
+            owned_candidate_store_path = os.path.join(
+                output_dir, owned_candidate_store_path,
             )
-            verdict = strict_validation.get("strict_feasible")
-            if type(verdict) is not bool:
-                raise RuntimeError(
-                    "strict validation must provide a boolean strict_feasible verdict"
-                )
-            strict_feasible = bool(verdict)
-            selected_payload = strict_validation.get("selected")
-            if selected_payload is None:
-                selected = None
-            elif isinstance(selected_payload, Mapping):
-                selected = _evaluation_from_payload(
-                    selected_payload,
-                    communication_importance_ratio,
-                )
-            else:
-                raise RuntimeError(
-                    "strict selected candidate must be an object or null"
-                )
-            selection_status = str(strict_validation.get(
-                "selection_status",
-                (
-                    "strict_feasible"
-                    if strict_feasible else "strict_least_violating"
-                ),
-            ))
-            if strict_feasible and selected is None:
-                raise RuntimeError(
-                    "strict feasible validation must select a candidate"
-                )
-            if strict_feasible and selection_status != "strict_feasible":
-                raise RuntimeError(
-                    "strict feasible verdict has an inconsistent selection status"
-                )
-            if (
-                    not strict_feasible
-                    and selected is not None
-                    and selection_status != "strict_least_violating"
-            ):
-                raise RuntimeError(
-                    "least-violating selection has an inconsistent status"
-                )
-        except Exception:
-            failed_seconds = float(
-                time.perf_counter() - strict_started_monotonic
-            )
-            if (
-                    strict_payload_from_artifact is None
-                    and strict_candidate_store is not None
-                    and strict_candidate_store_checkpoint_size is not None
-            ):
-                strict_candidate_store.recover_to_checkpoint_size(
-                    strict_candidate_store_checkpoint_size
-                )
-            failed_manifest = {
-                **run_manifest,
-                "status": "search_complete_pending_strict",
-                "strict_attempt_count": int(
-                    run_manifest.get("strict_attempt_count", 0)
-                ) + 1,
-                "last_strict_attempt_wall_seconds": failed_seconds,
-                "strict_attempt_wall_seconds_total": float(
-                    run_manifest.get(
-                        "strict_attempt_wall_seconds_total", 0.0,
-                    ) + failed_seconds
-                ),
-            }
-            _atomic_json(manifest_path, failed_manifest)
-            raise
-        strict_validation_wall_seconds = (
-            0.0
-            if strict_payload_from_artifact is not None
-            else float(time.perf_counter() - strict_started_monotonic)
-        )
-        if strict_payload_from_artifact is None:
-            _atomic_json(strict_validation_path, strict_validation)
-        paths["strict_validation"] = strict_validation_path
-        candidate_store_path = strict_validation.get("candidate_store")
-        if candidate_store_path:
-            owned_candidate_store_path = os.fspath(candidate_store_path)
-            if not os.path.isabs(owned_candidate_store_path):
-                owned_candidate_store_path = os.path.join(
-                    output_dir, owned_candidate_store_path,
-                )
-            if not os.path.isfile(owned_candidate_store_path):
-                raise RuntimeError(
-                    "strict validation candidate store is missing at completion"
-                )
-            paths["strict_candidate_store"] = owned_candidate_store_path
-        if selected is None:
-            failed_manifest = {
-                **run_manifest,
-                "status": "search_complete_pending_strict",
-            }
-            _atomic_json(manifest_path, failed_manifest)
+        if not os.path.isfile(owned_candidate_store_path):
             raise RuntimeError(
-                "strict validation produced no materializable candidate"
+                "strict validation candidate store is missing at completion"
             )
+        paths["strict_candidate_store"] = owned_candidate_store_path
+    if selected is None:
+        failed_manifest = {
+            **run_manifest,
+            "status": "search_complete_pending_strict",
+        }
+        _atomic_json(manifest_path, failed_manifest)
+        raise RuntimeError(
+            "strict validation produced no materializable candidate"
+        )
 
     selected_path = os.path.join(
         output_dir, "final_selected_configuration.json",

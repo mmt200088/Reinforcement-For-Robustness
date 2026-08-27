@@ -229,8 +229,7 @@ ELASTIC_GPU_RECOVERY_INTERVAL="60"
 ELASTIC_GPU_MAX_RESTARTS="8"
 
 RANDOM_SEED="42"
-FINAL_EVAL_PRESET="default"
-SKIP_FINAL_EVAL="false"
+SKIP_FINAL_EVAL="true"
 COMPARATOR_STAGE1_ONLY="false"
 BO_STAGE1_NO_IMPROVEMENT="1000"
 BO_STAGE2_NO_IMPROVEMENT="2000"
@@ -297,7 +296,6 @@ while [ "$#" -gt 0 ]; do
     --elastic-gpu-recovery-interval) require_value "$@"; ELASTIC_GPU_RECOVERY_INTERVAL="$2"; shift 2 ;;
     --elastic-gpu-max-restarts) require_value "$@"; ELASTIC_GPU_MAX_RESTARTS="$2"; shift 2 ;;
     --random-seed) require_value "$@"; RANDOM_SEED="$2"; shift 2 ;;
-    --final-eval-preset) require_value "$@"; FINAL_EVAL_PRESET="$2"; shift 2 ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; shift ;;
     --comparator-stage1-only) COMPARATOR_STAGE1_ONLY="true"; shift ;;
     --bo-stage1-no-improvement) require_value "$@"; BO_STAGE1_NO_IMPROVEMENT="$2"; shift 2 ;;
@@ -512,7 +510,6 @@ CMD=(
   --stage2_probe_size "$STAGE2_PROBE_SIZE"
   --stage2_inference_batch_size "$STAGE2_INFERENCE_BATCH_SIZE"
   --final_eval_random_seed "$RANDOM_SEED"
-  --final_eval_preset "$FINAL_EVAL_PRESET"
   --blb_v3_rollout_size "$STAGE2_ROLLOUT_SIZE"
   --blb_v3_save_interval "$STAGE2_SAVE_INTERVAL"
   --blb_v3_eval_interval "$STAGE2_EVAL_INTERVAL"
@@ -552,10 +549,6 @@ fi
 if [ -n "$STAGE1_RL_DEVICES" ]; then
   CMD+=(--stage1_rl_devices "$STAGE1_RL_DEVICES")
 fi
-if [ "$ALGORITHM" != "rl" ]; then
-  CMD+=(--mrpc_reproducibility_fixture_path "$ROOT_DIR/fixtures/reproducibility/mrpc_validation_v1.json")
-fi
-
 LAUNCH_CMD=("${CMD[@]}")
 if [ "$ALGORITHM" = "rl" ] && [ "$ELASTIC_GPU_MODE" = "auto" ]; then
   LAUNCH_CMD=(
