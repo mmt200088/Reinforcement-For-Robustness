@@ -1,0 +1,22 @@
+{
+  "command_matrix": 16,
+  "comparator_stage1": "passed",
+  "core_tests": {
+    "failed": 0,
+    "passed": 76
+  },
+  "dataset_contract": "passed",
+  "final_eval_selected_only": "passed",
+  "six_profile_action_parity": "passed",
+  "source_commit": "99bd5bdb47beae174945bd57943575587e276464",
+  "source_hygiene": "passed",
+  "source_tree": "100c1fc738853a047f00b172a0bccdf9bac0381f",
+  "stage1_resume": "passed",
+  "stage2_algorithm_contract": "passed",
+  "stage2_real": {
+    "episodes": 120,
+    "normalized_sha256": "6c4f59e37060147d9935b395407ba1f1bcf4a804cbcb127b021d4324df0c4755",
+    "scientific_rows_equal": true
+  },
+  "static_gates": "passed"
+}

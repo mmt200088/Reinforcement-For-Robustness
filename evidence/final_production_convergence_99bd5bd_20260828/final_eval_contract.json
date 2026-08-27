@@ -1,0 +1,11 @@
+{
+  "candidate_count": 1,
+  "family": "BLBAction",
+  "install_verified": true,
+  "json_files": 1,
+  "markdown_files": 1,
+  "mode": "selected_configuration_repeated_validation_full",
+  "repeat_n": 2,
+  "split": "validation_full",
+  "status": "complete"
+}

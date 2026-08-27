@@ -1,0 +1,16 @@
+HEAD=99bd5bdb47beae174945bd57943575587e276464
+TREE=100c1fc738853a047f00b172a0bccdf9bac0381f
+All checks passed!
+[validate_preset] using 57 canonical flags from run_search.sh
+  OK  configs/presets/bert-base-mrpc-stage1-rl.conf
+  OK  configs/presets/bert-base-mrpc-stage2-rl.conf
+  OK  configs/presets/bert-base-rte-stage1-rl.conf
+  OK  configs/presets/bert-base-rte-stage2-rl.conf
+  OK  configs/presets/bert-base-sst2-stage1-rl.conf
+  OK  configs/presets/bert-base-sst2-stage2-rl.conf
+  OK  configs/presets/bert-large-mrpc-stage1-rl.conf
+  OK  configs/presets/bert-large-mrpc-stage2-rl.conf
+  OK  configs/presets/bert-large-rte-stage1-rl.conf
+  OK  configs/presets/bert-large-rte-stage2-rl.conf
+  OK  configs/presets/bert-large-sst2-stage1-rl.conf
+  OK  configs/presets/bert-large-sst2-stage2-rl.conf

@@ -1,0 +1,23 @@
+{
+  "mrpc": {
+    "final_eval_split": "validation_full",
+    "search_split": "train_probe",
+    "train_full": 3668,
+    "train_probe": 256,
+    "validation_full": 408
+  },
+  "rte": {
+    "final_eval_split": "validation_full",
+    "search_split": "train_probe",
+    "train_full": 2490,
+    "train_probe": 256,
+    "validation_full": 277
+  },
+  "sst2": {
+    "final_eval_split": "validation_full",
+    "search_split": "train_probe",
+    "train_full": 67349,
+    "train_probe": 256,
+    "validation_full": 872
+  }
+}

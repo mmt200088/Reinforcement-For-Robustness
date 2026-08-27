@@ -1,0 +1,8 @@
+{
+  "episodes": 120,
+  "formal_json_absent": true,
+  "normalized_sha256": "6c4f59e37060147d9935b395407ba1f1bcf4a804cbcb127b021d4324df0c4755",
+  "row_count": 546,
+  "scientific_rows_equal": true,
+  "termination": "maximum_episodes"
+}

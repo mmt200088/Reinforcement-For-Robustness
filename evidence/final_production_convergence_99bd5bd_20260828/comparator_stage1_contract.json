@@ -1,0 +1,20 @@
+{
+  "bo_rf": {
+    "evaluation_count": 66,
+    "formal_json": true,
+    "termination_reason": "consecutive_no_improvement",
+    "unique_evaluation_count": 66
+  },
+  "coinn_ga": {
+    "evaluation_count": 121,
+    "formal_json": true,
+    "termination_reason": "completed_generations",
+    "unique_evaluation_count": 121
+  },
+  "greedy": {
+    "evaluation_count": 784,
+    "formal_json": true,
+    "termination_reason": "consecutive_no_improvement_rounds",
+    "unique_evaluation_count": 784
+  }
+}

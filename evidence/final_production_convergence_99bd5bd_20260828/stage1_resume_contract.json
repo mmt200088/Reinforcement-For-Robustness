@@ -1,0 +1,7 @@
+{
+  "completed_evaluations": 240,
+  "interrupted_formal_json_absent_observed": true,
+  "resumed_formal_json_present": true,
+  "schema": "stage1_best_config_v1",
+  "sigint_checkpoint_recorded": false
+}

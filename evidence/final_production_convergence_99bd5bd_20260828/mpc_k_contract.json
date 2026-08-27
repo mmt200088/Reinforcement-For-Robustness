@@ -1,0 +1,77 @@
+[
+  {
+    "ciphertext_k": [
+      13,
+      13,
+      13,
+      13,
+      13
+    ],
+    "name": "high",
+    "reserve_bits": [
+      2,
+      3,
+      3,
+      1,
+      2
+    ],
+    "ring_bits": 40,
+    "simulation_k": [
+      11,
+      10,
+      10,
+      12,
+      11
+    ]
+  },
+  {
+    "ciphertext_k": [
+      12,
+      12,
+      12,
+      12,
+      12
+    ],
+    "name": "medium",
+    "reserve_bits": [
+      3,
+      4,
+      4,
+      2,
+      3
+    ],
+    "ring_bits": 39,
+    "simulation_k": [
+      9,
+      8,
+      8,
+      10,
+      9
+    ]
+  },
+  {
+    "ciphertext_k": [
+      11,
+      11,
+      11,
+      12,
+      11
+    ],
+    "name": "low",
+    "reserve_bits": [
+      4,
+      5,
+      5,
+      4,
+      4
+    ],
+    "ring_bits": 38,
+    "simulation_k": [
+      7,
+      6,
+      6,
+      8,
+      7
+    ]
+  }
+]

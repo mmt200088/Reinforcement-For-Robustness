@@ -1,0 +1,17 @@
+{
+  "bo_rf": {
+    "evaluations": 15,
+    "observations": 15,
+    "termination_reason": "consecutive_no_improvement"
+  },
+  "coinn_ga": {
+    "evaluations": 20,
+    "observations": 20,
+    "termination_reason": "completed_generations"
+  },
+  "greedy": {
+    "evaluations": 156,
+    "observations": 156,
+    "termination_reason": "consecutive_no_improvement_rounds"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "mrpc": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_mrpc",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 877
+  },
+  "mrpc_large": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_mrpc_large",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 1753
+  },
+  "rte": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_rte",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 877
+  },
+  "rte_large": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_rte_large",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 1753
+  },
+  "sst2": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_sst2",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 877
+  },
+  "sst2_large": {
+    "checks": {
+      "boosted_overrides": true,
+      "option_by_step": true,
+      "vector": true
+    },
+    "map_graphs": [
+      "block2_sst2_large",
+      "block4",
+      "block5_n1",
+      "block5_n2",
+      "block5_n4"
+    ],
+    "vector_length": 1753
+  }
+}
