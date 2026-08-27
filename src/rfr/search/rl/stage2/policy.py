@@ -803,41 +803,6 @@ class BLBStage2LayerwisePolicy(nn.Module):
         e = eps.view(1, -1, 1).to(probs.dtype)
         return torch.distributions.Categorical(probs=(1.0 - e) * probs + e * uniform)
 
-    def apply_preferred_per_step_bias(
-            self,
-            preferred_per_slot_idx: Sequence[int],
-            *,
-            gain: float = 1.5,
-            clear_existing: bool = True,
-            ) -> None:
-        """Install an external per-slot warmstart prior.
-
-        Older MLP policy builds wrote this bias directly into the actor head.
-        The GTrXL policy keeps learned logits near zero and adds a caller-owned
-        prior in ``forward``. That makes the prior schedulable per episode and
-        replayable during PPO updates via ``baseline_prior_scale``.
-        """
-        if len(preferred_per_slot_idx) != self.cfg.max_step_dim:
-            raise ValueError(
-                f"preferred length {len(preferred_per_slot_idx)} != max_step_dim {self.cfg.max_step_dim}"
-            )
-        with torch.no_grad():
-            preferred = torch.full_like(self._preferred_per_slot_idx, -1)
-            for slot_idx, lvl in enumerate(preferred_per_slot_idx):
-                lvl = int(lvl)
-                if lvl == -1:
-
-
-                    continue
-                if lvl < 0 or lvl >= self.cfg.max_num_levels:
-                    raise ValueError(
-                        f"preferred index {lvl} out of range [0, {self.cfg.max_num_levels})"
-                    )
-                preferred[int(slot_idx)] = int(lvl)
-            self._preferred_per_slot_idx.copy_(preferred)
-            self._refresh_preferred_prior_template()
-            self.default_prior_scale = float(gain)
-
     def set_initial_slot_probabilities(
             self,
             probabilities_by_slot: Sequence[Mapping[int, float]],

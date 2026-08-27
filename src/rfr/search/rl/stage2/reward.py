@@ -12,7 +12,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from rfr.search.common.truncation_levels import K_MAX_BITS, K_MIN_BITS
+from rfr.search.common.truncation_levels import K_MIN_BITS
 
 
 DEFAULT_REWARD_CLIP_MIN = -5.0
@@ -946,14 +946,6 @@ def _stage1_aligned_terminal_reward(
         float(cost_reward),
         float(raw - cost_reward),
     )
-
-
-def _resolve_metric_for_threshold(
-        metrics: EpisodeMetrics,
-        prefer_metric: str = "accuracy",
-        ) -> float:
-    """Resolve the primary metric for single-metric threshold callers."""
-    return float(metrics.metric1_mean)
 
 
 def _resolve_acc_threshold(

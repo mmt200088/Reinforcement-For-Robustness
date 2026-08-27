@@ -4235,32 +4235,16 @@ def _run_layerwise_via_runner_locked(
 
     Returns the selected action, strict evidence, and materialization metadata.
     """
-    from rfr.search.common.action_io import action_vec_to_slots_list
-    from rfr.search.common.diagnostics import (
-        EpisodeStats,
-        PPOUpdateStats,
-        RLDiagnosticsRecorder,
-    )
     from rfr.search.common.persistence import (
-        BLBRewardCrashWatcher,
         BLBStatusBoard,
-        BLBStepDetailsWriter,
-        write_training_curves,
     )
     from rfr.search.runtime.probe_runner import enable_cuda_reward_probe_fast_math
     from rfr.search.rl.stage2.reward import ParetoCostArchive
-    from rfr.search.rl.stage2.training import (
-        _build_best_noise_config,
-        resolve_blb_persistence_dir,
-    )
+    from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
 
 
     enable_cuda_reward_probe_fast_math()
     ev = runner.evaluator
-    stage2_model_type = resolve_stage2_model_type(
-        str(getattr(ev, "model_type", "") or ""),
-        num_layers=int(ev.total_layers),
-    )
     robust_mode = True
     decision_path = "layerwise"
     restored_pending_evidence = None
@@ -4299,7 +4283,6 @@ def _run_layerwise_via_runner_locked(
     active_rl_mode = "layerwise_robust"
 
 
-    legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
     blb_progress_dir = resolve_blb_persistence_dir(ev)
     try:
         ev.noise_stage_progress_dir = blb_progress_dir
@@ -4345,28 +4328,6 @@ def _run_layerwise_via_runner_locked(
         log_fn=log,
     )
     status.set_phase("装载 stage1 GELU/Softmax 多项式近似")
-
-
-    blb_stage2_root = os.path.dirname(os.path.normpath(blb_progress_dir))
-    details_batch_size = max(int(train_cfg.rollout_size) * 3, 360)
-    details_writer = BLBStepDetailsWriter(
-        blb_stage2_root,
-        batch_size=details_batch_size,
-        log_fn=log,
-    )
-    crash_watcher = BLBRewardCrashWatcher(
-        blb_stage2_root,
-        drop_threshold=0.3,
-        log_fn=log,
-    )
-    log(
-        f"  {bullet} 详细诊断：{os.path.join(blb_stage2_root, 'details')}/ "
-        f"（每 {details_batch_size} 回合一文件，记录每回合错误/动作变化）"
-    )
-    log(
-        f"  {bullet} 奖励暴跌警告：{os.path.join(blb_stage2_root, 'warning.txt')} "
-        f"（PPO rollout 平均奖励较上一次跌幅 > {crash_watcher._drop_threshold:.2f} 时记录）"
-    )
 
 
     materialization_setup = _build_stage2_materialization_env(

@@ -5,7 +5,6 @@ import re
 import glob
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import fire
 import torch
@@ -21,7 +20,6 @@ from transformers import (  # noqa: F402
 )
 from rfr.common.cli_parse_utils import (
     parse_bool_flag,
-    parse_optional_positive_float,
     parse_positive_int,
     parse_stage2_episode_limit,
 )

@@ -42,9 +42,6 @@ from rfr.search.common.statistical_constraints import (
     retarget_constraint_assessment,
     retarget_precision_tolerance,
 )
-from rfr.search.common.truncation_levels import LEVELS_K
-
-
 _PROBABILITY_FIELDS = (
     "loss_precision_probability",
     "metric1_precision_probability",

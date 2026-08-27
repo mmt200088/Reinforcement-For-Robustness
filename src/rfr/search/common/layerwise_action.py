@@ -24,7 +24,6 @@ from .precision_presets import (
 from .truncation_levels import (
     K_LEVELS,
     K_MAX_BITS,
-    K_MIN_BITS,
     validate_exact_k_domain,
 )
 
@@ -944,7 +943,7 @@ def describe_layerwise_action_matrix(
 
 def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator[list[list[int]]]:
     """Yield every legal one-coordinate alternative for a layerwise policy action."""
-    levels = _validate_k_levels()
+    _validate_k_levels()
     rows = [list(map(int, row)) for row in action_matrix]
     if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
         raise ValueError("action_matrix must have shape num_layers x 2")

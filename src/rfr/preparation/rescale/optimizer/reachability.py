@@ -72,10 +72,6 @@ class Reachability:
         return (l in self.bwd_steps.get(i, ())) and\
                ((l - 1) in self.bwd_steps.get(j, ()))
 
-    def feas_tail(self, i: int, dummy_sink: int, l: int) -> bool:
-        """Tail edge usable only when l == 0 (no levels left)."""
-        return l == 0 and (0 in self.bwd_steps.get(i, ()))
-
     def valid_L_choices(self) -> List[int]:
         """
         Every L such that there exists a path c_0 →^L c_{M+1}.

@@ -544,7 +544,7 @@ def stage1_comparator_search_config(
         ) -> SearchConfig:
     """Return the reproducible MRPC search parameters for one comparator."""
 
-    normalized = normalize_search_backend(backend)
+    normalize_search_backend(backend)
     return SearchConfig(
         seed=42,
         bo_initial_design_size=64,

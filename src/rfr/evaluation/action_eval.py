@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import random
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import torch
@@ -35,7 +35,6 @@ from rfr.search.common.eval_metrics import (
     pack_repeat_evaluation,
 )
 from rfr.preparation.fusion.count_map import FusionCountMap
-from rfr.preparation.fusion.fixed_action import select_fusion_eval_metadata
 from rfr.preparation.rescale.optimizer_cost import materialize_decoded_action
 from rfr.evaluation.protocol import require_final_evaluation_protocol
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT

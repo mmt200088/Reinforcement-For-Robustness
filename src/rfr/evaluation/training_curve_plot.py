@@ -58,7 +58,6 @@ def save_stage1_style_training_curve(
     import numpy as np
 
     rewards = np.asarray(list(reward), dtype=float)
-    episodes = np.arange(1, rewards.size + 1)
     window = _stage1_window(moving_average_window)
 
     def _to_arr(seq):

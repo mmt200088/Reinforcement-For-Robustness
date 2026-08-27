@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence, Tuple, Dict, Mapping, Any
 
 from rfr.search.runtime.model_handler import (
-    NoisePoint,
     Block1NoiseConfig,
     Block2NoiseConfig,
     Block3NoiseConfig,
