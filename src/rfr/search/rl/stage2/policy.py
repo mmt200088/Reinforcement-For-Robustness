@@ -2121,14 +2121,8 @@ def layerwise_ppo_update(
 
 def layer_action_mask_and_levels(
         spec,
-        max_step_dim: int,
-        max_num_levels: int,
         ) -> Tuple[np.ndarray, np.ndarray]:
     """Return masks for one fixed fusion/precision layer action."""
-    if int(max_step_dim) != 2 or int(max_num_levels) != 3:
-        raise ValueError(
-            "layerwise action mask requires max_step_dim=2 and max_num_levels=3"
-        )
     per_slot = tuple(int(value) for value in spec.slot_dims)
     slot_mask = tuple(bool(value) for value in spec.slot_mask)
     if per_slot != (2, 3) or slot_mask != (True, True):

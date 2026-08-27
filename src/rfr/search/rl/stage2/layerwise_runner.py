@@ -3582,9 +3582,7 @@ def _collect_layerwise_episode(
         expected_online_trials: int,
         horizon: int,
         device: Any,
-        step_adapter_fn: Callable[
-            [Any, int, int], tuple[np.ndarray, np.ndarray]
-        ],
+        step_adapter_fn: Callable[[Any], tuple[np.ndarray, np.ndarray]],
         ) -> _LayerwiseEpisodeDraft:
     reset_seed = None
     probe_seed = None
@@ -3606,11 +3604,7 @@ def _collect_layerwise_episode(
     episode_reward = 0.0
     for step_idx in range(horizon):
         spec = env.current_spec()
-        slot_mask, levels = step_adapter_fn(
-            spec,
-            int(env.max_step_dim),
-            LEVELS_K,
-        )
+        slot_mask, levels = step_adapter_fn(spec)
         state_np = np.asarray(state, dtype=np.float32)
         sample_out = policy.sample_action(
             _policy_input(state_np[None, ...], device),
