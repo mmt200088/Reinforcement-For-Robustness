@@ -447,9 +447,6 @@ fi
 if [ "$FRESH" = "true" ] && [ -d "$RUN_ROOT" ]; then
   rm -rf "$RUN_ROOT"
 fi
-if [ -f "$RUN_ROOT/COMPLETED" ] && [ "$FRESH" != "true" ]; then
-  fail "run is already complete; pass --fresh to start again: $RUN_ROOT"
-fi
 if [ -z "$RESUME_FROM" ] && [ -f "$RUN_ROOT/metadata.json" ]; then
   RESUME_FROM="$RUN_ROOT"
 fi
