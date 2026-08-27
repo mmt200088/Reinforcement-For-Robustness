@@ -7,7 +7,7 @@ restores that option so strict evaluation installs the exact searched config.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 
