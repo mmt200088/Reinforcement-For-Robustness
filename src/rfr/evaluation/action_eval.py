@@ -439,7 +439,7 @@ class BLBActionFinalEvaluationModule:
         stage1_tot, g_c, s_c = ev.get_simulated_cost(gelu, softmax)
         result = {
             "name": str(name),
-            "family": "BLBActionRandom" if str(name).startswith("ActionRandom_") else "BLBAction",
+            "family": "BLBAction",
             "loss": loss,
             "p": p,
             "s": s,

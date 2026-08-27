@@ -209,6 +209,8 @@ FORBIDDEN_RUNTIME_REFERENCES = (
     "select_fusion_eval_metadata",
     "best_noise_config",
     "stable_search_best_noise_config",
+    "ActionRandom_",
+    "BLBActionRandom",
 )
 
 ACTIVE_SUFFIXES = {".py", ".sh", ".json", ".toml", ".conf"}
