@@ -1,0 +1,1518 @@
+{
+  "aggregate_branch": "codex/aggregate-final-production-convergence-canonical-20260828",
+  "aggregate_id": "final-production-convergence-canonical-20260828",
+  "base_commit": "bbe95ff94eba16416f070c54c1b6b59acaeca8e6",
+  "base_tree": "d74dc67c2695f8b45c069c02635049ca204d6cae",
+  "canonical_branch": "jk_standard_rl",
+  "canonical_eligible": true,
+  "created_at": "2026-08-28T05:27:44+08:00",
+  "deployment_eligible": true,
+  "heads": [
+    {
+      "branch": "bert-large",
+      "commit": "ba155379fe1f71e37ab7918f833d349f2451f5b1",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "non-canonical legacy branch with no eligible handoff",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/aggregate-20260804-git-protocol",
+      "commit": "1e25b7755b1834a835b4a506fc1905e8f1c8677b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-20260804-primary-recovery",
+      "commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-bo-rf-10k-20260815",
+      "commit": "7db45b9ac283a65020eff97e6b5742f871dff291",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-comparator-runtime-20260811",
+      "commit": "02ce6df34ace643beb93883d1e38506e2749a78f",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-comparator-stage1-only-20260812",
+      "commit": "73ad927a53e411035f7d7756538a0c8838944b22",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-english-comments-readme-20260826",
+      "commit": "71d3ca6e98e48ed1689c05084f61ce26ea979167",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior aggregate is an ancestor of the final source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-final-submission-runtime-audit-20260827",
+      "commit": "76bffe197c9ec56ad31fdfde5b61170e6ad54ed4",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-greedy-bo-rf-guide-20260814",
+      "commit": "9a217274b74ac96f37bee7f04a857c52807c2ac4",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-ignore-local-noise-table-20260825",
+      "commit": "c799a2780a84ffc7c63e08bf834ec8cc4360ec42",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-mpc-truncation-paper-semantics-20260825",
+      "commit": "f86359bce6ac432cd7f431c21627efd5930f9e02",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-mrpc-launch-20260804",
+      "commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-production-cleanup-20260825",
+      "commit": "f3411ecb913ff557b1315a8c12ec0f9f4acd15e7",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-remove-legacy-stage2-sf-policy-canonical-20260828",
+      "commit": "bbe95ff94eba16416f070c54c1b6b59acaeca8e6",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-restore-authoritative-fusion-maps-20260827",
+      "commit": "14f5de72e64702a5a9bba6f34eb16aeb5c6ec3d5",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-search-artifact-separation-20260825",
+      "commit": "7eee835d141ed41a1ab7cf81228fa9eae7fb4de3",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "its 148-head manifest was superseded after the aggregate result branch was published",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-search-artifact-separation-final-20260825",
+      "commit": "c0f09fb89097ac0ad6de41b788819dbcf52e8115",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "immediate prior canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-search-structure-reorganization-20260826",
+      "commit": "94d4e2c2b34768c652352bf86c1c2969ca9c270b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "current canonical aggregate is the aggregate base",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage1-comparator-batch16-v2-20260816",
+      "commit": "9d833d90760b1bf85fca4c8650e8149f61119ad2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage1-ga-200-v2-20260814",
+      "commit": "b4dd0aa15b2f89fda2ad36291209a02ad930041c",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "superseded by codex/aggregate-stage1-ga-200-v3-20260814, whose completed source is already in the aggregate ancestry",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage1-ga-200-v3-20260814",
+      "commit": "58f192e8aee44d78f224891387d386d506b82368",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage1-ga-full-run-only-20260814",
+      "commit": "f4fabec78431e8c7e9ae70e96784c4dd4bf2aa47",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "superseded by codex/aggregate-stage1-ga-full-run-only-v2-20260814, whose completed source is already in the aggregate ancestry",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage1-ga-full-run-only-v2-20260814",
+      "commit": "cfdd9a00406b43e2762685297ce4fd715a3ba451",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage2-bo-rf-patience2000-20260819",
+      "commit": "480e154053b1303e140077a05c46295cab95ef0a",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage2-comparator-rl-parity-20260817",
+      "commit": "b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage2-ga200-context-resume-20260817",
+      "commit": "a092b40e5af49317f217239fd69d49e990a798d8",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "superseded by codex/aggregate-stage2-ga200-context-resume-v2-20260817, whose completed source is already in the aggregate ancestry",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage2-ga200-context-resume-v2-20260817",
+      "commit": "4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-stage2-ga200-resume-20260817",
+      "commit": "789d2c661909c90863efb7edeb6cae6423c8c61f",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-three-search-baselines-20260805",
+      "commit": "c3598e98064558cef1f39cfa15c9468e65dbf9f9",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-three-search-correctness-20260810",
+      "commit": "5f8441a8d30cd5cf9fac871d4240f1de61328b97",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/all-agents-elastic-rl-integrated-20260727",
+      "commit": "1f32a793cda54b72e19319fa172eb51c458d7198",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/all-agents-integrated-20260724",
+      "commit": "accc27d65b6e99435913c3f1bed8629e755742e8",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/all-agents-k6-13-integrated-20260727",
+      "commit": "54dfeaa085fc2aa8da9523fb4707451fbde01634",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/archive-pre-artifact-separation-20260825-212431",
+      "commit": "dd367bbb3c9d9761c78c1f864a965610eb6f4665",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "exact pre-separation rollback snapshot; never a source integration input",
+      "role": "archive"
+    },
+    {
+      "branch": "codex/archive-pre-final-production-convergence-20260828",
+      "commit": "62bcef15b55dd74f8e6b241138d1276dc66bea07",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "pre-task cloud snapshot retained only for recovery",
+      "role": "archive"
+    },
+    {
+      "branch": "codex/archive-pre-thorough-code-cleanup-20260825-024715",
+      "commit": "88aa21283a5c433792bcdf9801b04c290e752b9a",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "branch role excludes source integration",
+      "role": "archive"
+    },
+    {
+      "branch": "codex/archive-training-artifacts-20260825",
+      "commit": "f81887d632df21b4f3122eb0b2d19efdcfcda73f",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical training artifacts only; excluded from production source",
+      "role": "archive"
+    },
+    {
+      "branch": "codex/bert-base-sst2-stage2-archive-20260804",
+      "commit": "7a7b9de0c8901a0dac01970f495e61f746c9a475",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+      "commit": "264e4002860818e87c1933006df678af8464d1c2",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-mrpc-final-archive-20260731",
+      "commit": "a9559610df1cfddecaba40e969896468cc8e0de0",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-rte-final-archive-20260801",
+      "commit": "377cfb1266806d87e123602b5f805157f0ddcd7d",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-rte-sst2-training-archives-20260803",
+      "commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/block-sf-audit",
+      "commit": "aff4d1ccc7ae1d2e8dabef97d9466a28e0e5948b",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/block3-runtime-wiring",
+      "commit": "ed2e89f2fa3f667eca1d06135c1f4748b9957076",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/candidate-index-on-stage2-small",
+      "commit": "c28e7304c96d98fe349ec3653c6bb54a01debd76",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/candidate-promotion-index-d3fa013b",
+      "commit": "a8c026a78c81ad985f47c1f2e88b02aad241e215",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/elastic-rl-gpu-scheduling-20260726",
+      "commit": "eee7d21513ffee103359d97e37acc33a31346000",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/experiment-unrelated-artifacts-20260825",
+      "commit": "cdc1b5da5a2401df90e4c1f38be145cc87305618",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "unrelated experiment code and reports are intentionally superseded for production by the included cleanup task",
+      "role": "experiment"
+    },
+    {
+      "branch": "codex/final-submission-runtime-audit-20260826",
+      "commit": "8b0ca3d71036efd95adb290ef28aa01a323d49f2",
+      "disposition": "patch_equivalent",
+      "handoff": null,
+      "reason": "exact verified source tip is integrated as the aggregate source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/five-profile-fusion-audit",
+      "commit": "c49fed05f0bac59b2471143a8d3e41c65c2b93d1",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/fixed-b2-b5-fusion",
+      "commit": "24e919cea64f22b1b869b9bf22d57bbb776bac5e",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/git-multi-agent-protocol-20260804",
+      "commit": "da9443f07a8d2329166977d55b042075011d4d7d",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-paean-action-batch-20260710",
+      "commit": "381d4a81b9802289fb306e29d64720b5a1813390",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-paean-plot-defer-20260710",
+      "commit": "f19736112c12b62b29b2958158bb751ca806b4a2",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-rescale-compact-scan-20260710",
+      "commit": "85c81a25bb7feb8cd834998ce3be26ff354b534f",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-rescale-scalar-state-20260710",
+      "commit": "2907e63388c5d58b0e4e6f1e80b37f50aaa2d83c",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-stage2-plot-default-20260710",
+      "commit": "78cfec9672db58935f1e2e1c7b7cae5ed0c88be5",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-task5-map-aware-gate-20260710",
+      "commit": "ffa58a5de4fc5997acbd1ca89805da5d0419187b",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/l0-block1-k-rl-20260726",
+      "commit": "efc7e1055ce95f119e374187f8ad563c24e5c848",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-dirty-recovery-20260803",
+      "commit": "37e1af3fab38d886aff11843c383457ec2f03dfc",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-dirty-recovery-20260804",
+      "commit": "0f0287a1fe8caf035cdd1258923233398068fbae",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-primary-head-backup-20260731",
+      "commit": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/stage2-task4-bounded-history-red",
+      "commit": "761cddecace57246b3ecf587af6060cd8c1f8b33",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/stage2-task5-compact-candidate-red",
+      "commit": "d7ed3a99ffd7be47fb9f17a2f27ea2b48647a5c2",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6a-probe-telemetry-red",
+      "commit": "4c992ad754756d122816050ddb3963fc57e74789",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6b-red-telemetry",
+      "commit": "50773a8c60bf7daa8ec453053743d052c46aec15",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6c-runtime-gate-impl",
+      "commit": "7fce21b095de4c0066ccd161c24cdfba16b835f3",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k-doc-width-subagent-d",
+      "commit": "2cde04365be0f916c800eea661608c2e4c122c2c",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k-exact-coercion-subagent-b",
+      "commit": "bd26d251c3374cb760391a1d22cab029df5e5714",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k6-collector-p1-20260727",
+      "commit": "a02ec502771a8859f768d84123bbbf1d2e5be662",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/comparator-single-gpu-design",
+      "commit": "981cc901191bcb172608c998d51364a3daaaf5b6",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/comparator-stage1-formal-results",
+      "commit": "c1548bf595c90c0c44eaff2a160c19bc37170640",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/dirty-comparator-single-gpu-docs",
+      "commit": "97076019fa0f28a5fbee68dd7ae713c2619d4cbd",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/dirty-paper-reasoning-traces",
+      "commit": "db9e1d14b791b5048798e861639f9e6dd4d2f052",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/dirty-stage1-ga-200-aggregate",
+      "commit": "a5eaf8fff03b8996a8c980e1282d22b9e53ec0b2",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/fusion-map-six-profile-handoff",
+      "commit": "cdc835c629cc5aa5e4ab89340d51f6210e4c6fa2",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/jsonl-helper-stash",
+      "commit": "ea502a443a707510bc5d1ade5437bdf307df0214",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/stage1-ga-200-manifest-v2",
+      "commit": "95509b1413a75a857e62b9fa42546e1761567d89",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/stage1-ga-200-source",
+      "commit": "45fc16316b7235ab1f2c4d400b1883667e6badc2",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/stage1-ga-full-run-manifest",
+      "commit": "1f5524161439c3ec831179cf979e05cd95630784",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260825/stage2-runtime-gate-red",
+      "commit": "1bbbf92a3d36b8766ca80a42570e7b0dcbd5ce77",
+      "disposition": "recovery_only",
+      "reason": "explicit local worktree backup retained only for recovery; never a deployment source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/recovery-local-files-20260825",
+      "commit": "27bfe739bcc465bf0daa066961b818d58db6c311",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "standalone local recovery archive; excluded from source integration",
+      "role": "recovery"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-20260710",
+      "commit": "897b273b79721033f1414e846b0a012d29a5461e",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-rng-20260710",
+      "commit": "6ce18c4bb3122a8de496a13ae4cd99405d895ced",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-workload-20260710",
+      "commit": "2312cec43f3f23d5b85484c605101e57557b12d1",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-fixed-workload-20260710",
+      "commit": "34cfb4c1431c00a4000a0861f751ab3a51ee0f72",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-noise-rng-20260710",
+      "commit": "3fe6004c95195ed08fbaf884f56b6ecc3a5dd8cb",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-plot-defer-20260710",
+      "commit": "4b08e19d18a308dbf409926550db090e2d3b0c89",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-rescale-compact-scan-20260710",
+      "commit": "57f67d91ae16cb90eb39342b1091946f5b7b5837",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-rescale-scalar-state-20260710",
+      "commit": "0fc84b66cd737e4395ce9201a3e2442b6d3ecc03",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-stage2-plot-default-20260710",
+      "commit": "84f274ac8c315e3084b5ca9ba78ab4f91e20d13c",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "failed or worktree-backup variant; not a completed scientific source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/result-aggregate-mpc-truncation-paper-semantics-20260825",
+      "commit": "5eac683bd6b54523af5bdd65abc27721c11ee830",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-aggregate-production-cleanup-20260825",
+      "commit": "299ebd4ea26904f58f271c7c063867c16284c4b6",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-aggregate-search-artifact-separation-20260825",
+      "commit": "bfd361be055ee50bdd718cfb554216a1f69580be",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server verification evidence only; excluded from source integration",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-base-rte-b4zero-high-gate-20260806",
+      "commit": "09136b122e03b34b3b6522f222cdcbd8bff86284",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-english-comments-readme-20260826",
+      "commit": "cf6d03c1916a5811884195688e4469244f359d77",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "artifact-only verification branch; excluded from source integration",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-final-aggregate-search-artifact-separation-20260825",
+      "commit": "10d2230b6ae6876ee6644248005a9e550b7bdf67",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "final canonical verification evidence only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-final-ignore-local-noise-table-20260825",
+      "commit": "a6ec2687a545cbf670efa36d56acf1e2f7db4da0",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "artifact-only result branch; excluded from source integration",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-final-production-convergence-20260828",
+      "commit": "c90f02bee628bf6054de876b65f544472197f7aa",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "artifact-only server evidence passed result-check and is not a source input",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-fusion-map-six-profile-audit-20260811",
+      "commit": "afc0a4fa96d1d1e9645b88ebb4769165bbf15ec9",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-git-hygiene-tmp-20260804",
+      "commit": "06a51b14f92320ca7c28f0b28201b537be6f1625",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-git-protocol-bootstrap-20260804",
+      "commit": "9eae15a2f2836ec6c21bbb5994c26ab901a9ead3",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-glue-train-probe-fixture-20260824",
+      "commit": "201143a5f91983640fe8cca478b65b7e51510950",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-ignore-local-noise-table-20260825",
+      "commit": "4b9d7e960aa9d7752b601fb7d9e1dae2b5f75a2b",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "task server verification evidence only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-mpc-truncation-paper-semantics-20260824",
+      "commit": "2ce211ced57093aabe872b259fe36aa4d17c033a",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-production-cleanup-phase1-20260825",
+      "commit": "fd0f3650f22c170e36e5c1a4b87e7220225c4bf1",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-production-code-cleanup-20260825",
+      "commit": "e0ccd3402c259c328dd42c3c42816f6ca8b8caa8",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-production-code-cleanup-final-20260825",
+      "commit": "ac48b62cbccb9eb16185b17f802303a509c2ebdf",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-remove-legacy-stage2-sf-policy-20260828",
+      "commit": "1c96fc39b6eee87f4e444741ccd5c2a9199a2fa0",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server verification branch contains evidence only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-rte-latestbest-0p1-gates-20260807",
+      "commit": "217a7591b0d37235f6188491595a49b54b460ae6",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-search-artifact-separation-20260825",
+      "commit": "6e5175c6693ba2856051e76dac110cf93a0d596d",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server verification evidence only; excluded from source integration",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-search-structure-reorganization-20260826",
+      "commit": "69ccc888a18c225509fe41950d577f86b08cc825",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "artifact-only result branch; excluded from source integration",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage1-bo-rf-10k-20260815",
+      "commit": "ed6e60195267348996b5de0c1e9daf741c008498",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage1-comparators-batch16-20260816",
+      "commit": "1df23db3e066d46497e8b69cc52744405c22cecc",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage1-ga-200-20260814",
+      "commit": "4edf8f62a24d3f0a10960b001b9b678843a3dd71",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage1-greedy-20260812",
+      "commit": "afd9efd46c3a9b4d75e74650b3ac7c96b512adfa",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage1-three-comparator-report-20260815",
+      "commit": "7248a855ae39db23e4fafe14965f46e202467e09",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-mrpc-60k-20260805",
+      "commit": "8c2a526dbf793c95c388b5f8544a793e83c733dc",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-rte-0p5-50k-20260807",
+      "commit": "1fa50e0c05db4d6b8c7522ae4d55659a7e265684",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-rte-50k-20260805",
+      "commit": "25415e2e8ae1ce0bb14ffa0f3368f85b6d90715b",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-large-mrpc-full-archive-repair-20260805",
+      "commit": "66c3dbf29ec80eaa1cdcefec699827406e83f55a",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bo-rf-patience2000-20260819",
+      "commit": "b2295adb7bb339bb22075d5dbfcf37478bc6378f",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-comparators-current-stop-20260817",
+      "commit": "3cf6cec210596c11d91a49666129ec1c8ae5c0dc",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-comparators-html-aligned-20260817",
+      "commit": "0b45187bac0844877cc29d1dc0eb04f7fbe027ec",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-ga-200-fresh-20260818",
+      "commit": "c2aab5c77e09d0aea1890d115d7fc6158b230902",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-six-model-backup-audit-20260805",
+      "commit": "2bb175defb4c042773650c26d7b853bdd81e0a59",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-six-model-final-full-report-20260805",
+      "commit": "c5b9f7a64dcf50cadb02fd1caf35bc160bb413e8",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-three-search-baselines-20260805",
+      "commit": "8ecf3513b22c46e99e81e0a28dbe1083a2ba1ee8",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "server result branch is artifact-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/rl-end-to-end-runtime-optimization-20260724",
+      "commit": "39abb31bbed11614033a5042e9722987116aac2d",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/rte-gpu-canary-health",
+      "commit": "1b34e94936ec19f92a1715ccaf7020049cf926c1",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/server-artifact-evacuation-20260720",
+      "commit": "5fbd2332839576f9025c6a87ca211fa1a31bcfd5",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/server-data-cloud-archive-20260731",
+      "commit": "f0545112589ea97f63d1fc914a6be6db98f5d7bc",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-base-rte-report",
+      "commit": "024bc52dd39ea095d046bc4e9be6a3c1a80aff69",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-large-mrpc-report",
+      "commit": "07fb87aaf53a3bf2ab27b9cf69fa1f6ba32c39ec",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-unbounded-entropy",
+      "commit": "e5f77b7ca02479743f47f5b9e9b138d1e80b91f5",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1best-large-stage2-chain-eval-20260725",
+      "commit": "41b57eae9cd3299945c2bc0d9f924f1e3637a4cc",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1best-large-stage2-training-20260725",
+      "commit": "e1a1bba96502ef5a49bdae1749f0434908f97452",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-18-group-eval-20260727",
+      "commit": "ad810c1724da759d23ef4ed6f1077dc2b24d3b52",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-five-gpu-runtime-20260728",
+      "commit": "e48121b170e2dbcb8d466e0b1a57313928759e3a",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-glue-ep114240",
+      "commit": "13e923da134a960b5026281b6df3ed3fb4003fc6",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-k-convergence",
+      "commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-k-presets-network-budget-20260728",
+      "commit": "117f94590eb8bf22d40ff1f47abc518cebf53b74",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-large-throughput",
+      "commit": "0764e71025ee887327d63364052935d770c489f9",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-network-ablation-v10",
+      "commit": "bc9de82e22e5602155766f7117086f766ff7588a",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "historical result, report, health, or recovery archive; not a source integration input",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-rl-runtime-opt-48b03e8",
+      "commit": "6268ee02fdbf070065ea04f72966cffc0461300f",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-runtime-efficiency-integrated-3d89",
+      "commit": "2356a58fabf20ad1744be0f7d998acfcad9232a2",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-search-baselines-20260731",
+      "commit": "2cd9dbcaab5802bdb4c6959b567b775a600a6296",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-small-a2d-index-integrated",
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-terminal-probe-opt-97079",
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/task-bo-rf-stage1-10k-20260814",
+      "commit": "a9768cf7ef32e0974983a3d836618f2a78d9e29a",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-comparator-algorithm-analysis-20260818",
+      "commit": "475a9120ca47f3a756cba62b15af3e012c6d26d0",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-comparator-single-gpu-optimization-20260810",
+      "commit": "64cc9036438c9b21243080552616112e772d75f8",
+      "disposition": "in_progress",
+      "handoff": null,
+      "reason": "handoff status='in_progress', aggregate_eligible=False; unfinished work is not integrated",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-comparator-stage1-only-launch-20260812",
+      "commit": "3db713d6003a8e5683014ddaa4931af2a43c230c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-english-comments-readme-20260826",
+      "commit": "b058a5f8b37a590cbef927fa5a8d2264c70f0fe9",
+      "disposition": "included",
+      "handoff": "agent_handoffs/tasks/english-comments-readme-20260826.json",
+      "reason": "completed source and handoff are integrated exactly in aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-final-production-convergence-20260828",
+      "commit": "89ef7be353092ae2badffa083b15de465882e4e4",
+      "disposition": "included",
+      "handoff": "agent_handoffs/tasks/final-production-convergence-20260828.json",
+      "reason": "completed source and handoff are integrated exactly in aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-fusion-map-six-profile-audit-20260811",
+      "commit": "795a6b3283cb45b497d2de7eddbd4c883f2e8ca6",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "superseded by fusion-map-six-profile-audit-clarification-20260811, which explicitly rejects this task source restriction",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-fusion-map-six-profile-audit-clarification-20260811",
+      "commit": "1fae87e994ff02661918bcc1ef0c54fa7b5aaaf7",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-git-hygiene-tmp-20260804",
+      "commit": "2f3e997584119d6eb5c35c115bdee91151da68b2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-git-protocol-20260804",
+      "commit": "56496375476c0a5d0177592f84df652f321567d0",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-glue-train-probe-protocol-design-20260824",
+      "commit": "d67100a7cb0444275498b780c10b46631a7577c1",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "no valid completed handoff; the design-only train-probe branch is superseded by the verified production cleanup implementation",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-greedy-bo-rf-guide-20260814",
+      "commit": "3ffc3bb904b6a75c6a3fc980ffc5f11e5ee2a85e",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-ignore-local-noise-table-20260825",
+      "commit": "9e9391cea9b7962d9ea7ca8ab1b69d375e488007",
+      "disposition": "already_ancestor",
+      "reason": "completed source is already integrated in canonical ancestry",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-mpc-truncation-paper-semantics-20260824",
+      "commit": "909f05890543e2b97230b8e85cf3cfa402cb862f",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-production-code-cleanup-20260825",
+      "commit": "57d96e27a9b865b98b9d1d00bd7ea9054926c3a4",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed source was integrated by the prior canonical aggregate",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-remove-legacy-stage2-sf-policy-20260828",
+      "commit": "75d35cd743ed79385218fe729a48c71d385e8e18",
+      "disposition": "included",
+      "handoff": "agent_handoffs/tasks/remove-legacy-stage2-sf-policy-20260828.json",
+      "reason": "completed source and handoff are integrated exactly in aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-remove-unused-block1-maps-20260827",
+      "commit": "66c3e90e1a39832d9b8c64e32dc55d707716aa3c",
+      "disposition": "patch_equivalent",
+      "handoff": null,
+      "reason": "exact verified map-restoration source is integrated into the aggregate",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-search-artifact-separation-20260825",
+      "commit": "9d78155b117004daa3c65320ea777c398b139529",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed source was integrated by the current canonical aggregate",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-search-structure-reorganization-20260826",
+      "commit": "2556e5f6bf287133cfccb21e8d521c79520a8d95",
+      "disposition": "included",
+      "handoff": "agent_handoffs/tasks/search-structure-reorganization-20260826.json",
+      "reason": "completed source and handoff are integrated exactly in aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage1-comparator-batch16-20260816",
+      "commit": "1181103d94475f8f008baf157eb6ef4226888478",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage1-ga-200-resume-20260813",
+      "commit": "56ef93146ba800a6ad51e59c96c57e9eaf3cad96",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage1-ga-600-resume-20260813",
+      "commit": "e8c5ea1c518aa1a4da06aff713341a4b8b4a2556",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "no valid completed handoff; the 600-generation draft is superseded by the canonical 200-generation contract",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage1-ga-full-run-only-20260814",
+      "commit": "58cf7c53591c1d56c6bbd66b76c4b636fc3a12bc",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-bo-rf-patience2000-20260819",
+      "commit": "23b8df9a2df77cf8a2c7881c8fcc3686478c0d7c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-comparator-rl-parity-20260816",
+      "commit": "4909f20aafa327cacacf4358f400bbdadc28b2c7",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-contract-test-cleanup-20260805",
+      "commit": "ee5645e7937a1c7c95a99f2b7681ecd75d92ab41",
+      "disposition": "in_progress",
+      "handoff": null,
+      "reason": "handoff status='in_progress', aggregate_eligible=False; unfinished work is not integrated",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-ga200-pending-context-resume-v2-20260817",
+      "commit": "b8f0699ea123a1f2cdda87a63ef30e4935a05c3a",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-ga200-resume-20260817",
+      "commit": "f1425af72bece5bde944a6928464c9b828d51ea8",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-ga200-resume-v2-20260817",
+      "commit": "328e56e2799e5ea37bc26d3dbd556f21d787899b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-three-comparator-single-gpu-runtime-20260811",
+      "commit": "30041683f5a5a9787b981109942d1e1678cf574b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-three-search-baselines-20260804",
+      "commit": "06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "completed handoff source is already an ancestor of the aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task6-docs-k6-13",
+      "commit": "15aa8d85c7f1a99501cef232fcd83af2fa0468fe",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/truncation-k6-13-20260727",
+      "commit": "88e6978defeea4725f49490201b6583245c1b37f",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "legacy development branch without an eligible handoff; replaced by later canonical aggregates",
+      "role": "legacy"
+    },
+    {
+      "branch": "jk_standard_rl",
+      "commit": "bbe95ff94eba16416f070c54c1b6b59acaeca8e6",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "canonical snapshot is the aggregate base and an ancestor of aggregate source",
+      "role": "canonical"
+    },
+    {
+      "branch": "main",
+      "commit": "3a7400560ed66bfb42424f414bb3f360ff3e9f56",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "non-canonical legacy branch with no eligible handoff",
+      "role": "legacy"
+    }
+  ],
+  "record_type": "aggregate_manifest",
+  "remote": "origin",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-final-production-convergence-20260828:evidence/final_production_convergence_99bd5bd_20260828/"
+  ],
+  "snapshot_at": "2026-08-28T05:27:44+08:00",
+  "source_commit": "89ef7be353092ae2badffa083b15de465882e4e4",
+  "source_tree": "31a45d9ada876cd526ce0ae05e6e6193a0d97ea6",
+  "verification": [
+    {
+      "command": "all-head preflight and disposition review",
+      "evidence": "184 remote heads reviewed; 179 unchanged dispositions reused from the prior manifest and five new or changed heads reviewed explicitly",
+      "outcome": "passed"
+    },
+    {
+      "command": "exact-source static, import, preset, production-surface, and command-matrix gates",
+      "evidence": "105 reachable modules; static gates and 16 documented entrypoints passed on source 99bd5bdb/tree 100c1fc7",
+      "outcome": "passed"
+    },
+    {
+      "command": "core layerwise, MPC, and CUDA regression suite",
+      "evidence": "76 current production tests passed on the RTX 4090 server environment",
+      "outcome": "passed"
+    },
+    {
+      "command": "six-profile fusion and executable MPC parity",
+      "evidence": "full vectors, option_by_step, boosted overrides, five-map sets, and ciphertext/simulation K separation all passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "real Stage-2 scientific-state parity",
+      "evidence": "120 episodes ended by maximum_episodes; 546 normalized scientific records matched with SHA-256 6c4f59e37060147d9935b395407ba1f1bcf4a804cbcb127b021d4324df0c4755",
+      "outcome": "passed"
+    },
+    {
+      "command": "Stage-1 resume, comparators, and selected-only final evaluation",
+      "evidence": "SIGINT/resume reached 240 evaluations; all comparator termination contracts passed; final eval ran one selected config on validation_full with verified Block1-5 installation",
+      "outcome": "passed"
+    },
+    {
+      "command": "result branch integrity",
+      "evidence": "result commit c90f02bee628bf6054de876b65f544472197f7aa passed artifact-only scope, SHA256SUMS, and remote parity",
+      "outcome": "passed"
+    }
+  ]
+}
