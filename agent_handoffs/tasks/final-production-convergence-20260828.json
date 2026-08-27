@@ -1,0 +1,76 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "bbe95ff94eba16416f070c54c1b6b59acaeca8e6",
+  "base_tree": "d74dc67c2695f8b45c069c02635049ca204d6cae",
+  "branch": "codex/task-final-production-convergence-20260828",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".gitignore",
+    ".dockerignore",
+    "AGENTS.md",
+    "Dockerfile",
+    "Makefile",
+    "README.md",
+    "configs/",
+    "docs/superpowers/",
+    "examples/",
+    "fixtures/reproducibility/",
+    "outputs/",
+    "pyproject.toml",
+    "requirements-torch-cu124.txt",
+    "run_search.sh",
+    "scripts/production_surface_guard.py",
+    "scripts/setup_cuda124_env.sh",
+    "src/rfr/"
+  ],
+  "completed_at": "2026-08-28T05:25:01+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "codex/result-final-production-convergence-20260828:evidence/final_production_convergence_99bd5bd_20260828/"
+  ],
+  "source_commit": "99bd5bdb47beae174945bd57943575587e276464",
+  "source_tree": "100c1fc738853a047f00b172a0bccdf9bac0381f",
+  "started_at": "2026-08-28T01:25:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "final-production-convergence-20260828",
+  "verification": [
+    {
+      "command": "exact-source static, import, preset, production-surface, and command-matrix gates",
+      "evidence": "105 modules are reachable from production entrypoints; undefined/unused-symbol checks, compileall, Bash syntax, preset validation, production guard, Git diff checks, and 16 documented search/evaluation dry-runs passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "historical core regression suite against the cleaned source",
+      "evidence": "76 layerwise action, environment, precision-preset, truncation CUDA/backend, K-domain, and production-config tests passed on RTX 4090 server dependencies",
+      "outcome": "passed"
+    },
+    {
+      "command": "six-profile fusion and MPC execution parity",
+      "evidence": "MRPC/RTE/SST-2 for BERT-base/large matched authoritative full vectors, option_by_step, and boosted overrides exactly; each profile loads exactly five maps; paper ciphertext K metadata remains distinct from unchanged simulation K",
+      "outcome": "passed"
+    },
+    {
+      "command": "matched real BERT-base MRPC Stage-2 CUDA runs",
+      "evidence": "both runs completed exactly 120 episodes with maximum_episodes; 546 normalized candidate scientific rows were identical with SHA-256 6c4f59e37060147d9935b395407ba1f1bcf4a804cbcb127b021d4324df0c4755; neither run produced a formal JSON without strict selection",
+      "outcome": "passed"
+    },
+    {
+      "command": "real Stage-1 interruption/resume and comparator termination gates",
+      "evidence": "SIGINT produced a resumable checkpoint and no formal JSON; the same command resumed to exactly 240 evaluations and wrote stage1_best_config.json. BO-RF, Greedy, and COINN-GA ended only by their configured no-improvement, no-improvement-round, and generation conditions and wrote formal Stage-1 JSON",
+      "outcome": "passed"
+    },
+    {
+      "command": "selected-configuration final evaluation and dataset protocol gate",
+      "evidence": "final eval used validation_full, evaluated one selected configuration twice, verified the installed Block1-5 configuration before forward, and wrote one JSON plus one Markdown report. All searches use fixed train_probe=256; validation sizes are MRPC 408, RTE 277, and SST-2 872",
+      "outcome": "passed"
+    },
+    {
+      "command": "source hygiene and result-branch integrity",
+      "evidence": "no CJK or prompt-like comments/docstrings, personal paths, tracked PDF/model/data artifacts, development tests, unrelated experiments, or obsolete public search paths remain; result commit c90f02bee628bf6054de876b65f544472197f7aa passed result-check and remote parity",
+      "outcome": "passed"
+    }
+  ]
+}
