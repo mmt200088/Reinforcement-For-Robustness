@@ -542,7 +542,7 @@ def _validate_greedy_neighborhood_proof(
                 "Stage-1 Greedy completion contract neighborhood proof starts "
                 "from the wrong anchor"
             )
-        verified = False
+        completed_rounds = 0
         for row in rows[1:]:
             phase = str(row.get("phase"))
             try:
@@ -604,7 +604,7 @@ def _validate_greedy_neighborhood_proof(
                 current = recorded_current
                 continue
             if (
-                    phase != "verified_local_optimum"
+                    phase != "no_improvement_round"
                     or row.get("one_opt_verified") is not True
                     or row.get("two_opt_verified") is not True
                     or recorded_current != current
@@ -615,13 +615,22 @@ def _validate_greedy_neighborhood_proof(
                     "Stage-1 Greedy completion contract neighborhood proof "
                     "does not establish a local optimum"
                 )
-            if row is not rows[-1] or verified:
+            completed_rounds += 1
+            if int(row.get("no_improvement_rounds", -1)) != completed_rounds:
                 raise RuntimeError(
                     "Stage-1 Greedy completion contract neighborhood proof has "
-                    "rows after the verified local optimum"
+                    "inconsistent no-improvement accounting"
                 )
-            verified = True
-        if not verified:
+            if completed_rounds == int(
+                    result.config.greedy_no_improvement_rounds
+            ):
+                if row is not rows[-1]:
+                    raise RuntimeError(
+                        "Stage-1 Greedy completion contract has rows after its "
+                        "configured no-improvement limit"
+                    )
+                break
+        if completed_rounds != int(result.config.greedy_no_improvement_rounds):
             raise RuntimeError(
                 "Stage-1 Greedy completion contract neighborhood proof is "
                 "incomplete"
@@ -632,10 +641,7 @@ def _validate_bo_history_proof(
         result: SearchResult,
         space: Stage1SearchSpace,
         ) -> None:
-    if result.termination_reason not in {
-            "no_improvement_convergence", "evaluation_cap",
-            "candidate_space_exhausted",
-    }:
+    if result.termination_reason != "consecutive_no_improvement":
         raise RuntimeError(
             "Stage-1 BO-RF completion contract has an invalid termination reason"
         )
@@ -654,7 +660,6 @@ def _validate_bo_history_proof(
         )
     initial_count = min(
         int(result.config.bo_initial_design_size),
-        int(result.config.evaluation_cap),
         int(space.cardinality),
     )
     initial_row = result.history[0]
@@ -727,21 +732,7 @@ def _validate_bo_history_proof(
         raise RuntimeError(
             "Stage-1 BO-RF completion contract leaves acquisitions unassigned"
         )
-    if result.termination_reason == "evaluation_cap":
-        if result.evaluation_count != min(
-                int(result.config.evaluation_cap), int(space.cardinality)
-        ):
-            raise RuntimeError(
-                "Stage-1 BO-RF completion contract did not reach its "
-                "evaluation cap"
-            )
-    elif result.termination_reason == "candidate_space_exhausted":
-        if result.evaluation_count != int(space.cardinality):
-            raise RuntimeError(
-                "Stage-1 BO-RF completion contract did not exhaust the "
-                "candidate space"
-            )
-    elif (
+    if (
             not result.history[1:]
             or no_improvement
             < int(result.config.bo_no_improvement_patience)
@@ -755,10 +746,7 @@ def _validate_ga_generation_proof(
         result: SearchResult,
         space: Stage1SearchSpace,
         ) -> None:
-    if result.termination_reason not in {
-            "completed_generations", "evaluation_cap",
-            "candidate_space_exhausted", "ga_no_incumbent_improvement",
-    }:
+    if result.termination_reason != "completed_generations":
         raise RuntimeError(
             "Stage-1 GA completion contract has an invalid termination reason"
         )
@@ -786,7 +774,6 @@ def _validate_ga_generation_proof(
     population_size = min(
         int(result.config.ga_population_size),
         int(space.cardinality),
-        int(result.config.evaluation_cap),
     )
     elite_count = min(
         int(result.config.ga_elite_count),
@@ -821,7 +808,6 @@ def _validate_ga_generation_proof(
     incumbent_key = candidate_rank_key(max(
         population, key=candidate_rank_key,
     ))
-    no_improvement_generations = 0
     cumulative = population_size
     expected_generation = 1
     full_offspring_count = population_size - elite_count
@@ -877,18 +863,9 @@ def _validate_ga_generation_proof(
             population, key=candidate_rank_key,
         ))
         improved = next_incumbent_key > incumbent_key
-        no_improvement_generations = (
-            0 if improved else no_improvement_generations + 1
-        )
-        recorded_no_improvement = row.get("no_improvement_generations")
-        if (
-                row.get("improved") is not improved
-                or type(recorded_no_improvement) is not int
-                or recorded_no_improvement != no_improvement_generations
-        ):
+        if row.get("improved") is not improved:
             raise RuntimeError(
-                "Stage-1 GA completion contract has inconsistent incumbent "
-                "stagnation evidence"
+                "Stage-1 GA completion contract has inconsistent incumbent progress"
             )
         incumbent_key = next_incumbent_key
         cumulative = next_cumulative
@@ -905,67 +882,22 @@ def _validate_ga_generation_proof(
             "Stage-1 GA completion contract records more update rows than "
             "the configured generation count"
         )
-    if result.config.ga_require_full_generations and (
-            result.config.ga_stop_on_no_improvement
-            or result.termination_reason != "completed_generations"
-            or completed_generations != configured_generations
+    expected_count = (
+        population_size
+        + int(result.config.ga_update_generations) * full_offspring_count
+    )
+    if (
+            completed_generations != int(result.config.ga_update_generations)
+            or result.evaluation_count != expected_count
+            or any(
+                int(row.get("new_unique_evaluations", -1))
+                != full_offspring_count
+                for row in update_rows
+            )
     ):
         raise RuntimeError(
-            "Stage-1 GA full-generation completion contract did not finish "
-            "every configured generation"
-        )
-    if result.termination_reason == "ga_no_incumbent_improvement":
-        patience = int(result.config.ga_no_improvement_patience)
-        if (
-                not result.config.ga_stop_on_no_improvement
-                or completed_generations >= int(
-                    result.config.ga_update_generations
-                )
-                or no_improvement_generations != patience
-                or not update_rows
-        ):
-            raise RuntimeError(
-                "Stage-1 GA completion contract lacks a configured-patience "
-                "incumbent stagnation proof"
-            )
-    elif result.termination_reason == "completed_generations":
-        expected_count = (
-            population_size
-            + int(result.config.ga_update_generations)
-            * full_offspring_count
-        )
-        if (
-                completed_generations
-                != int(result.config.ga_update_generations)
-                or result.evaluation_count != expected_count
-                or any(
-                    int(row.get("new_unique_evaluations", -1))
-                    != full_offspring_count
-                    for row in update_rows
-                )
-        ):
-            raise RuntimeError(
-                "Stage-1 GA completion contract does not contain every "
-                "configured generation"
-            )
-    elif result.termination_reason == "evaluation_cap":
-        if completed_generations == int(result.config.ga_update_generations):
-            raise RuntimeError(
-                "Stage-1 GA completion contract reached every configured "
-                "generation before claiming the evaluation cap"
-            )
-        effective_cap = min(
-            int(result.config.evaluation_cap), int(space.cardinality),
-        )
-        unused_budget = effective_cap - result.evaluation_count
-        if not 0 <= unused_budget < full_offspring_count:
-            raise RuntimeError(
-                "Stage-1 GA completion contract did not reach its evaluation cap "
-                "boundary"
-            )
-    elif result.evaluation_count != int(space.cardinality):
-        raise RuntimeError(
-            "Stage-1 GA completion contract did not exhaust the candidate space"
+            "Stage-1 GA completion contract does not contain every configured "
+            "generation"
         )
 
 
@@ -993,7 +925,6 @@ def _validate_completed_search_contract(
         result: SearchResult,
         *,
         constraints: Stage1Constraints | None = None,
-        comparator_smoke: bool = False,
         ) -> None:
     if not result.observations:
         raise RuntimeError(
@@ -1035,22 +966,11 @@ def _validate_completed_search_contract(
             "Stage-1 completion contract best evaluation is absent, stale, "
             "or not best under the configured rank"
         )
-    if comparator_smoke:
-        if (
-                int(result.config.evaluation_cap) != 1
-                or result.evaluation_count != 1
-                or result.termination_reason != "evaluation_cap"
-        ):
-            raise RuntimeError(
-                "Stage-1 comparator smoke must terminate at its single real "
-                "evaluation budget"
-            )
-        return
     if result.algorithm == "greedy":
-        if result.termination_reason != "verified_local_optimum":
+        if result.termination_reason != "consecutive_no_improvement_rounds":
             raise RuntimeError(
-                "Stage-1 Greedy completion contract did not terminate at a "
-                "verified local optimum"
+                "Stage-1 Greedy completion contract did not reach its configured "
+                "no-improvement rounds"
             )
         space = Stage1SearchSpace(len(result.best.action))
         expected_starts = min(
@@ -1062,9 +982,11 @@ def _validate_completed_search_contract(
             for row in result.history
             if (
                 isinstance(row, Mapping)
-                and row.get("phase") == "verified_local_optimum"
+                and row.get("phase") == "no_improvement_round"
                 and row.get("one_opt_verified") is True
                 and row.get("two_opt_verified") is True
+                and int(row.get("no_improvement_rounds", -1))
+                == int(result.config.greedy_no_improvement_rounds)
                 and row.get("start_index") is not None
             )
         }
@@ -1105,7 +1027,6 @@ def _load_finalizing_search_result(
         backend: str,
         config: SearchConfig,
         checkpoint: Mapping[str, Any],
-        comparator_smoke: bool = False,
         ) -> SearchResult:
     """Rebuild derived completion artifacts without running the evaluator."""
 
@@ -1168,7 +1089,6 @@ def _load_finalizing_search_result(
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(checkpoint.get("contract")),
-        comparator_smoke=comparator_smoke,
     )
     return result
 
@@ -1281,7 +1201,6 @@ def load_completed_search_result(output_dir: str | Path) -> SearchResult:
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(checkpoint.get("contract")),
-        comparator_smoke=manifest.get("comparator_smoke") is True,
     )
     return result
 
@@ -1328,14 +1247,7 @@ def _validate_preload_contract(
         raise ValueError("Stage-1 resume metadata must be a JSON object")
     if normalize_search_backend(payload.get("backend")) != backend:
         raise RuntimeError("Stage-1 resume backend does not match")
-    saved_config_payload = dict(payload.get("config") or {})
-    if (
-            backend == "coinn_ga"
-            and config.ga_require_full_generations
-            and "ga_require_full_generations" not in saved_config_payload
-    ):
-        saved_config_payload["ga_require_full_generations"] = True
-    saved_config = SearchConfig.from_dict(saved_config_payload)
+    saved_config = SearchConfig.from_dict(dict(payload.get("config") or {}))
     if saved_config.as_dict() != config.as_dict():
         raise RuntimeError("Stage-1 resume search configuration does not match")
     saved_contract = dict(payload.get("contract") or {})
@@ -1373,7 +1285,6 @@ def persist_search_result(
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(contract),
-        comparator_smoke=(manifest or {}).get("comparator_smoke") is True,
     )
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -1569,9 +1480,6 @@ class Stage1SearchRunner:
                     backend=normalized,
                     config=self.config,
                     checkpoint=preload_metadata,
-                    comparator_smoke=(
-                        self.manifest.get("comparator_smoke") is True
-                    ),
                 )
                 persist_search_result(
                     output_dir=self.output_dir,
@@ -1760,9 +1668,6 @@ class Stage1SearchRunner:
             _validate_completed_search_contract(
                 result,
                 constraints=self.adapter.constraints,
-                comparator_smoke=(
-                    self.manifest.get("comparator_smoke") is True
-                ),
             )
         except Exception as exc:
             publish(progress_payload(

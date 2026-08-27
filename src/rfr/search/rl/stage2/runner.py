@@ -134,9 +134,6 @@ class LayerwiseTrainConfig:
     ppo: LayerwisePPOConfig = field(default_factory=LayerwisePPOConfig)
     absolute_episode_start: int = 0
     planned_total_episodes: Optional[int] = None
-    convergence_resume_state: Optional[Mapping[str, Any]] = None
-    convergence_min_episodes: int = 90_000
-    convergence_patience_updates: int = 100
     online_num_trials_per_step: int = 3
     terminal_eval_batch_size: int = 4
     promotion_validation_trials: int = 15
@@ -758,8 +755,6 @@ def _run_layerwise_training_branch(
     from rfr.search.rl.stage2.layerwise_env import BLBStage2LayerwiseEnv
     from rfr.search.rl.stage2.layerwise_runner import (
         _PROBABILITY_FIELDS,
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
-        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
         CheckpointFileFingerprintTracker,
         StrictSelectionKey,
         _to_plain_mapping,
@@ -796,21 +791,7 @@ def _run_layerwise_training_branch(
     )
     requested_total_episodes = int(train_cfg.total_episodes)
     resolve_layerwise_episode_budget(requested_total_episodes, 0)
-    convergence_patience_updates = int(getattr(
-        train_cfg,
-        "convergence_patience_updates",
-        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-    ))
-    if convergence_patience_updates <= 0:
-        raise ValueError("layerwise convergence patience must be positive")
-    convergence_min_episodes = int(getattr(
-        train_cfg,
-        "convergence_min_episodes",
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
-    ))
-    if convergence_min_episodes < 0:
-        raise ValueError("layerwise convergence minimum episodes must be nonnegative")
-    algorithm_revision = "network_weighted_hml_three_bank_convergence_v12"
+    algorithm_revision = "network_weighted_hml_max_episodes_v13"
     policy_network_id = POLICY_NETWORK_ID
     policy_architecture = policy_network_architecture()
     rl_variant = POLICY_RL_VARIANT
@@ -820,16 +801,9 @@ def _run_layerwise_training_branch(
         "optimization_role": "monitor_only",
     }
     layerwise_termination = {
-        "mode": "convergence_or_max_episodes",
-        "episode_limit": (
-            None if requested_total_episodes == 0 else requested_total_episodes
-        ),
-        "minimum_episodes": convergence_min_episodes,
-        "patience_updates": convergence_patience_updates,
-        "requires_robust_feasible_candidate": True,
-        "frontier_stall_update_windows": convergence_patience_updates,
-        "selected_action_stable_update_windows": convergence_patience_updates,
-        "strict_revalidation_required": True,
+        "mode": "maximum_episodes",
+        "episode_limit": requested_total_episodes,
+        "strict_certification_at_episode_limit": True,
         "strict_revalidation_trials": int(
             authoritative_validation_banks.bank_c.trial_count
         ),
@@ -888,7 +862,9 @@ def _run_layerwise_training_branch(
         getattr(train_cfg, "search_backend", "ppo")
     )
     if search_backend != "ppo":
-        expected_stage1_source = f"stage1_{search_backend}_result"
+        expected_stage1_source = (
+            f"stage1_json:{getattr(evaluator, 'stage1_best_config_input_path', '')}"
+        )
         if str(fixed_source) != expected_stage1_source:
             raise RuntimeError(
                 "two-stage comparator must bind its own Stage-1 result before "
@@ -896,8 +872,6 @@ def _run_layerwise_training_branch(
                 f"got {str(fixed_source)!r}"
             )
         from rfr.search.comparators.common.stage2_runner import (
-            STAGE2_FORMAL_GA_EVALUATIONS,
-            STAGE2_FORMAL_GA_GENERATIONS,
             canonical_strict_validation,
             run_layerwise_search_baseline,
         )
@@ -955,9 +929,6 @@ def _run_layerwise_training_branch(
             },
         }[search_backend]
         search_config = {
-            "evaluation_budget": int(
-                train_cfg.search_evaluation_budget
-            ),
             "initial_design_size": int(
                 train_cfg.search_initial_design_size
             ),
@@ -967,8 +938,14 @@ def _run_layerwise_training_branch(
             "population_size": int(
                 train_cfg.search_population_size
             ),
-            "patience_generations": int(
-                train_cfg.search_patience_generations
+            "bo_no_improvement_patience": int(
+                train_cfg.search_bo_no_improvement_patience
+            ),
+            "greedy_no_improvement_rounds": int(
+                train_cfg.search_greedy_no_improvement_rounds
+            ),
+            "ga_generations": int(
+                train_cfg.search_ga_generations
             ),
             "mutation_max_coordinates": int(
                 train_cfg.search_mutation_max_coordinates
@@ -980,22 +957,6 @@ def _run_layerwise_training_branch(
                 train_cfg.search_rf_min_samples_leaf
             ),
         }
-        if search_backend == "coinn_ga" and bool(
-                getattr(train_cfg, "search_full_validation", True)
-        ):
-            if (
-                    search_config["evaluation_budget"]
-                    != STAGE2_FORMAL_GA_EVALUATIONS
-            ):
-                raise RuntimeError(
-                    "formal Stage-2 GA invocation lacks its exact full-run budget"
-                )
-            search_config.update({
-                "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
-                "ga_stop_on_no_improvement": False,
-                "ga_require_full_generations": True,
-            })
-
         search_contract = {
             "schema_version": "stage2_search_baseline_contract_v3",
             "dataset_protocol_schema": DATASET_PROTOCOL_SCHEMA,
@@ -1077,7 +1038,7 @@ def _run_layerwise_training_branch(
             "stage2_inference_batch_size": stage2_inference_batch_size,
             "stage1_backend": search_backend,
             "stage1_bound_into_stage2": bool(
-                str(fixed_source) == f"stage1_{search_backend}_result"
+                str(fixed_source).startswith("stage1_json:")
             ),
             "stage1_selection_binding": stage1_selection_binding,
             "online_fidelity": {
@@ -1106,11 +1067,7 @@ def _run_layerwise_training_branch(
                 "metric1_std": float(robust_reference.metric1_std_limit),
                 "metric2_std": float(robust_reference.metric2_std_limit),
             },
-            "scientific_status": (
-                "full_search_with_strict_train_probe_gate"
-                if bool(getattr(train_cfg, "search_full_validation", True))
-                else "smoke_only_no_strict_search_gate"
-            ),
+            "scientific_status": "full_search_with_strict_train_probe_gate",
             "algorithm_contract": search_contract,
             "algorithm_contract_hash": search_contract_hash,
         }
@@ -1149,67 +1106,54 @@ def _run_layerwise_training_branch(
         search_manifest["strict_candidate_store"] = os.fspath(
             strict_candidate_store.path
         )
-        strict_validator = None
-        if bool(getattr(train_cfg, "search_full_validation", True)):
-            def strict_validator(search_result):
-                return canonical_strict_validation(
-                    result=search_result,
-                    layerwise_env=layerwise_env,
-                    promotion_base_env=promotion_base_env,
-                    candidate_store=strict_candidate_store,
-                    identity_context=strict_identity_context,
-                    validation_banks=authoritative_validation_banks,
-                    top_n=int(train_cfg.final_selection_top_n),
-                    communication_importance_ratio=communication_ratio,
-                    promotion_probability=float(getattr(
-                        train_cfg,
-                        "promotion_constraint_probability",
-                        0.80,
-                    )),
-                    final_probability=float(getattr(
-                        train_cfg,
-                        "final_constraint_probability",
-                        0.95,
-                    )),
-                )
-
-        pending_strict_context_writer = None
-        if strict_validator is not None:
-            from rfr.search.common.statistical_constraints import (
-                baseline_reference_resume_payload,
+        def strict_validator(search_result):
+            return canonical_strict_validation(
+                result=search_result,
+                layerwise_env=layerwise_env,
+                promotion_base_env=promotion_base_env,
+                candidate_store=strict_candidate_store,
+                identity_context=strict_identity_context,
+                validation_banks=authoritative_validation_banks,
+                top_n=int(train_cfg.final_selection_top_n),
+                communication_importance_ratio=communication_ratio,
+                promotion_probability=float(getattr(
+                    train_cfg,
+                    "promotion_constraint_probability",
+                    0.80,
+                )),
+                final_probability=float(getattr(
+                    train_cfg,
+                    "final_constraint_probability",
+                    0.95,
+                )),
             )
 
-            def pending_strict_context_writer(resume_contract):
-                _write_pending_strict_resume_context(
-                    search_output_dir=search_output_dir,
-                    invocation_contract=invocation_contract,
-                    resume_contract=resume_contract,
-                    clean_baseline_metrics=(
-                        _episode_metrics_resume_payload(
-                            clean_baseline_metrics
-                        )
-                    ),
-                    robust_reference=baseline_reference_resume_payload(
-                        robust_reference
-                    ),
-                    baseline_preflight_metrics=baseline_preflight_metrics,
-                    validation_banks=(
-                        authoritative_validation_banks.resume_payload()
-                    ),
-                    authoritative_robust_summary=(
-                        authoritative_robust_summary
-                    ),
-                    authoritative_validation_example_count=(
-                        authoritative_validation_example_count
-                    ),
-                )
+        from rfr.search.common.statistical_constraints import (
+            baseline_reference_resume_payload,
+        )
+
+        def pending_strict_context_writer(resume_contract):
+            _write_pending_strict_resume_context(
+                search_output_dir=search_output_dir,
+                invocation_contract=invocation_contract,
+                resume_contract=resume_contract,
+                clean_baseline_metrics=(
+                    _episode_metrics_resume_payload(clean_baseline_metrics)
+                ),
+                robust_reference=baseline_reference_resume_payload(
+                    robust_reference
+                ),
+                baseline_preflight_metrics=baseline_preflight_metrics,
+                validation_banks=authoritative_validation_banks.resume_payload(),
+                authoritative_robust_summary=authoritative_robust_summary,
+                authoritative_validation_example_count=(
+                    authoritative_validation_example_count
+                ),
+            )
 
         run_lock.bind_context(sha256_json({
             **search_manifest,
             "search_backend": search_backend,
-            "evaluation_budget": int(
-                train_cfg.search_evaluation_budget
-            ),
             "seed": int(train_cfg.seed),
         }))
         status.set_phase(f"Stage-2 {search_backend} search")
@@ -1218,12 +1162,17 @@ def _run_layerwise_training_branch(
             layerwise_env=layerwise_env,
             robust_reference=robust_reference,
             output_dir=search_output_dir,
-            evaluation_budget=int(train_cfg.search_evaluation_budget),
             seed=int(train_cfg.seed),
             initial_design_size=int(train_cfg.search_initial_design_size),
             candidate_pool_size=int(train_cfg.search_candidate_pool_size),
             population_size=int(train_cfg.search_population_size),
-            patience_generations=int(train_cfg.search_patience_generations),
+            bo_no_improvement_patience=int(
+                train_cfg.search_bo_no_improvement_patience
+            ),
+            greedy_no_improvement_rounds=int(
+                train_cfg.search_greedy_no_improvement_rounds
+            ),
+            ga_generations=int(train_cfg.search_ga_generations),
             mutation_max_coordinates=int(
                 train_cfg.search_mutation_max_coordinates
             ),
@@ -1566,7 +1515,7 @@ def _run_layerwise_training_branch(
                     "counterfactual_six_point_v1"
                 ),
                 "bootstrap_probability_role": "diagnostic_tiebreak_only",
-                "roles": ["strict_frontier", "convergence", "final_selection"],
+                "roles": ["strict_frontier", "final_selection"],
                 "authoritative": True,
             },
         },
@@ -1642,8 +1591,6 @@ def _run_layerwise_training_branch(
             "final_constraint_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
-            "convergence_min_episodes": int(convergence_min_episodes),
-            "convergence_patience_updates": int(convergence_patience_updates),
             "validation_banks": authoritative_validation_banks.contract_payload(),
             "evidence_tiers": {
                 "F1": {
@@ -1729,7 +1676,6 @@ def _run_layerwise_training_branch(
     start_episode = 0
     resumed_best: Dict[str, Any] = {}
     resumed_strict_pareto_frontier: List[Dict[str, Any]] = []
-    resumed_convergence_state: Dict[str, Any] = {}
     resumed_candidate_store_size: Optional[int] = None
     resumed_diagnostics_jsonl_sizes: Optional[Mapping[str, Any]] = None
     resumed_store_file_fingerprints: Optional[Mapping[str, Any]] = None
@@ -1783,7 +1729,6 @@ def _run_layerwise_training_branch(
         resumed_strict_pareto_frontier = [
             dict(row) for row in checkpoint["strict_pareto_frontier"]
         ]
-        resumed_convergence_state = dict(checkpoint.get("convergence_state") or {})
         resumed_candidate_store_size = checkpoint.get("candidate_store_size")
         resumed_diagnostics_jsonl_sizes = checkpoint.get("diagnostics_jsonl_sizes")
         resumed_store_file_fingerprints = checkpoint.get("store_file_fingerprints")
@@ -1813,9 +1758,6 @@ def _run_layerwise_training_branch(
         seed=int(train_cfg.seed),
         absolute_episode_start=int(start_episode),
         planned_total_episodes=int(planned_total_episodes),
-        convergence_resume_state=resumed_convergence_state,
-        convergence_min_episodes=convergence_min_episodes,
-        convergence_patience_updates=convergence_patience_updates,
         ppo=ppo,
         online_num_trials_per_step=int(train_cfg.online_num_trials_per_step),
         terminal_eval_batch_size=int(train_cfg.terminal_eval_batch_size),
@@ -2202,7 +2144,6 @@ def _run_layerwise_training_branch(
             *,
             completed: int,
             strict_best: Optional[Mapping[str, Any]],
-            convergence_state: Optional[Mapping[str, Any]],
             ) -> None:
         nonlocal cuda_rng_role_registry
         best_payload = dict(strict_best or {})
@@ -2244,7 +2185,6 @@ def _run_layerwise_training_branch(
             "blb_v3_best_action_group": checkpoint_best_group,
             "blb_v3_fusion_count_action": True,
             "profile": str(train_cfg.profile),
-            "convergence_state": dict(convergence_state or {}),
             "planned_total_episodes": int(planned_total_episodes),
             "candidate_store_size": int(candidate_store_size),
             "diagnostics_jsonl_sizes": diagnostics_jsonl_sizes,
@@ -2275,7 +2215,6 @@ def _run_layerwise_training_branch(
         save_layerwise_checkpoint(
             completed=0,
             strict_best=strict_best,
-            convergence_state={},
         )
 
     def on_layerwise_episode(record: Any) -> None:
@@ -2369,29 +2308,6 @@ def _run_layerwise_training_branch(
             if best_selection_key is None or selection_key < best_selection_key:
                 best_selection_key = selection_key
                 is_new_best = True
-        convergence_state = {
-            "stall_update_windows": int(record.stall_update_windows),
-            "selected_action_identity": record.selected_action_identity,
-            "selected_action_stable_update_windows": int(
-                record.selected_action_stable_update_windows
-            ),
-            "converged": bool(record.converged),
-            "extension_required": bool(record.extension_required),
-            "plateau_ready": bool(record.plateau_ready),
-            "strict_revalidation_passed": bool(
-                record.strict_revalidation_passed
-            ),
-            "strict_revalidation_status": str(
-                record.strict_revalidation_status
-            ),
-            "termination_reason": str(record.termination_reason),
-            "best_robust_feasible_cost": record.best_robust_feasible_cost,
-            "best_robust_feasible_objective": (
-                None
-                if record.best_robust_feasible_objective is None
-                else list(record.best_robust_feasible_objective)
-            ),
-        }
         episode_stats = EpisodeStats(
                 episode=int(record.episode_index),
                 total_reward=float(record.reward),
@@ -2502,7 +2418,6 @@ def _run_layerwise_training_branch(
                 k_entropy=record.k_entropy,
                 promotion_trial_count=int(record.promoted_trial_count),
                 promotion_status=str(record.promotion_status),
-                convergence_state=convergence_state,
             )
         diag_recorder.record_episode(
             episode_stats=episode_stats,
@@ -2523,7 +2438,8 @@ def _run_layerwise_training_branch(
                 "ppo_resource_score": float(record.ppo_resource_score),
                 "block4_entropy": record.block4_entropy,
                 "k_entropy": record.k_entropy,
-                **convergence_state,
+                "strict_revalidation_status": record.strict_revalidation_status,
+                "termination_reason": record.termination_reason,
             },
         )
 
@@ -2578,37 +2494,14 @@ def _run_layerwise_training_branch(
             nonfinite_update_skipped=bool(
                 metrics.get("nonfinite_update_skipped", False)
             ),
-            convergence_update_counted=bool(
-                metrics.get("convergence_update_counted", True)
-            ),
             return_mean=float(metrics.get("return_mean", 0.0)),
             return_std=float(metrics.get("return_std", 1.0)),
             block4_entropy=metrics.get("block4_entropy"),
             k_entropy=metrics.get("k_entropy"),
-            stall_update_windows=int(metrics.get("stall_update_windows", 0)),
-            selected_action_identity=metrics.get("selected_action_identity"),
-            selected_action_stable_update_windows=int(
-                metrics.get("selected_action_stable_update_windows", 0)
-            ),
-            converged=bool(metrics.get("converged", False)),
-            extension_required=bool(metrics.get("extension_required", False)),
-            plateau_ready=bool(metrics.get("plateau_ready", False)),
-            strict_revalidation_passed=bool(
-                metrics.get("strict_revalidation_passed", False)
-            ),
             strict_revalidation_status=str(
                 metrics.get("strict_revalidation_status", "not_due")
             ),
             termination_reason=str(metrics.get("termination_reason", "running")),
-            best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
-            best_robust_feasible_objective=(
-                None
-                if metrics.get("best_robust_feasible_objective") is None
-                else [
-                    float(value)
-                    for value in metrics["best_robust_feasible_objective"]
-                ]
-            ),
             strict_pareto_frontier=[
                 dict(row) for row in metrics.get("strict_pareto_frontier", [])
             ],
@@ -2655,7 +2548,6 @@ def _run_layerwise_training_branch(
         save_layerwise_checkpoint(
             completed=int(completed),
             strict_best=strict_best,
-            convergence_state=metrics.get("convergence_state"),
         )
         shared_probe_runner = getattr(
             base_env,
@@ -2669,13 +2561,7 @@ def _run_layerwise_training_branch(
             if deferred_gpu_failure is not None:
                 raise deferred_gpu_failure
         raise_if_elastic_gpu_restart_requested(
-            work_remaining=(
-                not bool(record.converged)
-                and (
-                    int(planned_total_episodes) == 0
-                    or int(completed) < int(planned_total_episodes)
-                )
-            ),
+            work_remaining=int(completed) < int(planned_total_episodes),
         )
         status.update_after_ppo_update(
             int(ppo_update_counter),
@@ -2693,7 +2579,6 @@ def _run_layerwise_training_branch(
                 "entropy_recovery_delta": update_stats.entropy_recovery_delta,
                 "nonfinite_minibatches": update_stats.nonfinite_minibatches,
                 "nonfinite_update_skipped": update_stats.nonfinite_update_skipped,
-                "convergence_update_counted": update_stats.convergence_update_counted,
                 "return_mean": update_stats.return_mean,
                 "return_std": update_stats.return_std,
                 "value_explained_variance_post": (
@@ -2713,25 +2598,10 @@ def _run_layerwise_training_branch(
                 "window_mean_invalid": float(update_stats.window_mean_invalid),
                 "block4_entropy": update_stats.block4_entropy,
                 "k_entropy": update_stats.k_entropy,
-                "stall_update_windows": int(update_stats.stall_update_windows),
-                "selected_action_identity": update_stats.selected_action_identity,
-                "selected_action_stable_update_windows": int(
-                    update_stats.selected_action_stable_update_windows
-                ),
-                "converged": bool(update_stats.converged),
-                "extension_required": bool(update_stats.extension_required),
-                "plateau_ready": bool(update_stats.plateau_ready),
-                "strict_revalidation_passed": bool(
-                    update_stats.strict_revalidation_passed
-                ),
                 "strict_revalidation_status": (
                     update_stats.strict_revalidation_status
                 ),
                 "termination_reason": update_stats.termination_reason,
-                "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
-                "best_robust_feasible_objective": (
-                    update_stats.best_robust_feasible_objective
-                ),
                 "strict_pareto_frontier": update_stats.strict_pareto_frontier,
                 "actor_clip_mode": update_stats.actor_clip_mode,
                 "actor_credit_mode": update_stats.actor_credit_mode,
@@ -2843,18 +2713,11 @@ def _run_layerwise_training_branch(
         save_layerwise_checkpoint(
             completed=int(completed_episode_count),
             strict_best=summary.get("strict_best"),
-            convergence_state=summary.get("convergence_state"),
         )
         if summary.get("graceful_stopped", False):
             completion_status = "graceful_stop"
-        elif summary.get("converged", False):
-            completion_status = "converged"
-        elif requested_total_episodes > 0:
-            completion_status = "max_episodes_reached"
         else:
-            raise RuntimeError(
-                "unbounded layerwise training stopped without strict convergence"
-            )
+            completion_status = "maximum_episodes"
         training_completed = True
     except ElasticGPUFailure:
         raise
@@ -2979,7 +2842,7 @@ def _run_layerwise_training_branch(
         "final_evidence": {
             "status": (
                 "strict_revalidation_passed"
-                if summary.get("strict_revalidation_passed", False)
+                if summary.get("strict_revalidation_status") == "passed"
                 else "bank_b_confirmed_not_final_certified"
                 if bank_b_best
                 else "no_candidate"
@@ -3019,22 +2882,8 @@ def _run_layerwise_training_branch(
         "block4_entropy": summary.get("block4_entropy"),
         "k_entropy": summary.get("k_entropy"),
         "precision_preset_entropy": summary.get("k_entropy"),
-        "stall_update_windows": summary.get("stall_update_windows"),
-        "selected_action_identity": summary.get("selected_action_identity"),
-        "selected_action_stable_update_windows": summary.get(
-            "selected_action_stable_update_windows"
-        ),
-        "converged": bool(summary.get("converged", False)),
-        "extension_required": bool(summary.get("extension_required", False)),
-        "plateau_ready": bool(summary.get("plateau_ready", False)),
-        "strict_revalidation_passed": bool(
-            summary.get("strict_revalidation_passed", False)
-        ),
         "strict_revalidation_status": str(
             summary.get("strict_revalidation_status", "not_due")
-        ),
-        "recommended_extension_episodes": int(
-            summary.get("recommended_extension_episodes", 0) or 0
         ),
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
@@ -3222,16 +3071,6 @@ def _run_layerwise_training_branch(
             "block4_entropy": summary.get("block4_entropy"),
             "k_entropy": summary.get("k_entropy"),
             "precision_preset_entropy": summary.get("k_entropy"),
-            "selected_action_identity": summary.get("selected_action_identity"),
-            "selected_action_stable_update_windows": summary.get(
-                "selected_action_stable_update_windows"
-            ),
-            "converged": bool(summary.get("converged", False)),
-            "extension_required": bool(summary.get("extension_required", False)),
-            "plateau_ready": bool(summary.get("plateau_ready", False)),
-            "strict_revalidation_passed": bool(
-                summary.get("strict_revalidation_passed", False)
-            ),
             "strict_revalidation_status": str(
                 summary.get("strict_revalidation_status", "not_due")
             ),
@@ -3336,12 +3175,12 @@ def _build_search_invocation_contract(
     scientific_parameters = {
         name: getattr(train_cfg, name, default)
         for name, default in (
-            ("search_full_validation", True),
-            ("search_evaluation_budget", 0),
             ("search_initial_design_size", 8),
             ("search_candidate_pool_size", 512),
             ("search_population_size", 24),
-            ("search_patience_generations", 5),
+            ("search_bo_no_improvement_patience", 2_000),
+            ("search_greedy_no_improvement_rounds", 1),
+            ("search_ga_generations", 200),
             ("search_mutation_max_coordinates", 3),
             ("search_rf_n_estimators", 128),
             ("search_rf_min_samples_leaf", 2),
@@ -4003,9 +3842,7 @@ def _preflight_pending_strict_search_resume(
     backend = normalize_search_backend(
         getattr(train_cfg, "search_backend", "ppo")
     )
-    if backend == "ppo" or not bool(
-            getattr(train_cfg, "search_full_validation", True)
-    ):
+    if backend == "ppo":
         return None
     search_output_dir = os.path.join(
         blb_progress_dir, f"search_{backend}",
@@ -4506,14 +4343,12 @@ def _run_layerwise_via_runner_locked(
             _resolve_robust_baseline_config(train_cfg, ev)
         )
         from rfr.search.rl.stage2.layerwise_runner import (
-            validate_layerwise_three_bank_convergence_config,
             validate_layerwise_validation_bank_config,
         )
 
         configured_baseline_groups, configured_baseline_trials = (
             validate_layerwise_validation_bank_config(train_cfg)
         )
-        validate_layerwise_three_bank_convergence_config(train_cfg)
         restored_pending_evidence = _restore_pending_strict_resume_evidence(
             pending_strict_resume_context,
             precision_tolerance=precision_tolerance,
@@ -4838,14 +4673,12 @@ def _run_layerwise_via_runner_locked(
             )
             if decision_path == "layerwise":
                 from rfr.search.rl.stage2.layerwise_runner import (
-                    validate_layerwise_three_bank_convergence_config,
                     validate_layerwise_validation_bank_config,
                 )
 
                 configured_baseline_groups, configured_baseline_trials = (
                     validate_layerwise_validation_bank_config(train_cfg)
                 )
-                validate_layerwise_three_bank_convergence_config(train_cfg)
             else:
                 configured_baseline_groups = int(
                     getattr(train_cfg, "baseline_groups", 5)

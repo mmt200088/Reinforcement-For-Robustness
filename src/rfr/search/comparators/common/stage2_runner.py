@@ -39,14 +39,6 @@ from rfr.search.comparators.coinn_ga.stage2 import (
 from rfr.search.rl.stage2.seed_utils import derive_layerwise_online_evaluation_seeds
 
 
-STAGE2_FORMAL_GA_GENERATIONS = 200
-STAGE2_FORMAL_GA_POPULATION_SIZE = 64
-STAGE2_FORMAL_GA_ELITE_COUNT = 7
-STAGE2_FORMAL_GA_EVALUATIONS = (
-    STAGE2_FORMAL_GA_POPULATION_SIZE
-    + STAGE2_FORMAL_GA_GENERATIONS
-    * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
-)
 SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
@@ -1586,45 +1578,16 @@ def canonical_strict_validation(
 def _validate_ga_completion_proof(
         result: SearchResult,
         *,
-        patience_generations: int,
-        generation_cap: int,
-        maximum_evaluations: int,
-        stop_on_no_improvement: bool = True,
-        require_full_generations: bool = False,
+        generation_count: int,
         ) -> None:
     """Validate COINN-GA completion from persisted search evidence."""
 
-    patience = int(patience_generations)
-    generation_limit = int(generation_cap)
-    evaluation_limit = int(maximum_evaluations)
-    if (
-            patience <= 0
-            or generation_limit <= 0
-            or evaluation_limit <= 0
-            or type(stop_on_no_improvement) is not bool
-            or type(require_full_generations) is not bool
-            or (require_full_generations and stop_on_no_improvement)
-    ):
+    expected_generations = int(generation_count)
+    if expected_generations <= 0:
+        raise RuntimeError("COINN-GA generation count must be positive")
+    if result.termination_reason != "completed_generations":
         raise RuntimeError(
-            "COINN-GA completion proof has inconsistent safety caps"
-        )
-    if require_full_generations and result.termination_reason != "generation_limit":
-        raise RuntimeError(
-            "COINN-GA full-generation completion proof requires the exact cap"
-        )
-    if (
-            not require_full_generations
-            and result.termination_reason not in {
-                "ga_no_incumbent_improvement", "generation_limit",
-            }
-    ):
-        raise RuntimeError(
-            "COINN-GA lacks native incumbent stagnation or "
-            "generation-cap completion proof"
-        )
-    if result.evaluation_count > evaluation_limit:
-        raise RuntimeError(
-            "COINN-GA exceeded its maximum inference budget"
+            "COINN-GA did not terminate after every configured generation"
         )
 
     initial_rows = [
@@ -1683,7 +1646,6 @@ def _validate_ga_completion_proof(
 
     cumulative_observations = initial_observation_count
     cumulative_evaluations = population_size
-    no_improvement_generations = 0
     expected_generation = 1
     for row in update_rows:
         if (
@@ -1750,17 +1712,9 @@ def _validate_ga_completion_proof(
         improved = (
             candidate_rank_key(current_best) > candidate_rank_key(previous_best)
         )
-        no_improvement_generations = (
-            0 if improved else no_improvement_generations + 1
-        )
-        recorded_stagnation = row.get("no_improvement_generations")
-        if (
-                row.get("improved") is not improved
-                or type(recorded_stagnation) is not int
-                or recorded_stagnation != no_improvement_generations
-        ):
+        if row.get("improved") is not improved:
             raise RuntimeError(
-                "COINN-GA has inconsistent incumbent stagnation evidence"
+                "COINN-GA has inconsistent incumbent progress evidence"
             )
 
         population = [*expected_elites, *offspring]
@@ -1776,31 +1730,13 @@ def _validate_ga_completion_proof(
             "COINN-GA completion proof leaves observations unassigned"
         )
     completed_generations = expected_generation - 1
-    if require_full_generations:
-        if (
-                completed_generations != generation_limit
-                or result.evaluation_count
-                != population_size + generation_limit * offspring_count
-        ):
-            raise RuntimeError(
-                "COINN-GA full-generation completion proof is incomplete"
-            )
-    elif result.termination_reason == "ga_no_incumbent_improvement":
-        if (
-                not stop_on_no_improvement
-                or completed_generations >= generation_limit
-                or no_improvement_generations != patience
-        ):
-            raise RuntimeError(
-                "COINN-GA lacks a five-generation incumbent stagnation proof"
-            )
-    elif (
-            completed_generations != generation_limit
+    if (
+            completed_generations != expected_generations
             or result.evaluation_count
-            != population_size + generation_limit * offspring_count
+            != population_size + expected_generations * offspring_count
     ):
         raise RuntimeError(
-            "COINN-GA generation safety-cap proof is incomplete"
+            "COINN-GA full-generation completion proof is incomplete"
         )
 
 
@@ -1839,9 +1775,11 @@ def _load_plain_completed_search_run(
             "completed Stage-2 selected configuration must be an object or null"
         )
 
-    strict_validation = None
     status = str(manifest.get("status") or "")
-    if status != "smoke_only_complete":
+    if status not in {"complete_strict_feasible", "complete_least_violating"}:
+        raise RuntimeError("completed Stage-2 manifest has no strict result")
+    strict_validation = None
+    if True:
         strict_path = os.path.join(output_dir, "strict_validation.json")
         if not os.path.isfile(strict_path):
             raise RuntimeError(
@@ -1943,18 +1881,19 @@ def run_layerwise_search_baseline(
         layerwise_env: Any,
         robust_reference: Any,
         output_dir: str,
-        evaluation_budget: int,
         seed: int,
         initial_design_size: int,
         candidate_pool_size: int,
         population_size: int,
-        patience_generations: int,
+        bo_no_improvement_patience: int,
+        greedy_no_improvement_rounds: int,
+        ga_generations: int,
         mutation_max_coordinates: int,
         rf_n_estimators: int,
         rf_min_samples_leaf: int,
         communication_importance_ratio: float,
         manifest: Mapping[str, Any],
-        strict_validator: Callable[[SearchResult], Mapping[str, Any]] | None = None,
+        strict_validator: Callable[[SearchResult], Mapping[str, Any]],
         pending_strict_context_writer: Callable[[Mapping[str, Any]], None] | None = None,
         resume: bool = True,
         ) -> dict[str, Any]:
@@ -1977,71 +1916,55 @@ def run_layerwise_search_baseline(
         )
     if normalized_backend == "ppo":
         raise ValueError("run_layerwise_search_baseline requires a non-PPO backend")
-    budget = int(evaluation_budget)
-    if budget <= 0:
-        raise ValueError("search evaluation budget must be positive")
-
     os.makedirs(output_dir, exist_ok=True)
     observation_path = os.path.join(output_dir, "observations.jsonl")
     manifest_path = os.path.join(output_dir, "manifest.json")
     strict_validation_path = os.path.join(
         output_dir, "strict_validation.json",
     )
-    strict_run = strict_validator is not None
     ga_elite_count = min(7, max(1, int(population_size) - 1))
-    formal_ga_full_run = bool(
-        strict_run and normalized_backend == "coinn_ga"
-    )
-    ga_generations = STAGE2_FORMAL_GA_GENERATIONS
-    ga_maximum_evaluations = int(
+    ga_generations = int(ga_generations)
+    ga_expected_evaluations = int(
         int(population_size)
         + ga_generations * (int(population_size) - int(ga_elite_count))
     )
-    ga_stop_on_no_improvement = False
-    ga_require_full_generations = formal_ga_full_run
-    if strict_run and int(seed) != 42:
+    if int(seed) != 42:
         raise ValueError("Stage-2 comparators with strict validation require seed 42")
     if (
-            strict_run
-            and normalized_backend == "coinn_ga"
+            normalized_backend == "coinn_ga"
             and (
                 int(population_size) != 64
                 or int(ga_elite_count) != 7
                 or int(mutation_max_coordinates) != 4
-                or int(patience_generations) != 5
-                or budget != STAGE2_FORMAL_GA_EVALUATIONS
+                or ga_generations <= 0
             )
     ):
         raise ValueError(
-            "strict Stage-2 COINN-GA requires P64/E7, patience 5 as a "
-            "diagnostic counter, the 200-generation full-run contract, a "
-            "four-layer mutation cap, and the 11,464-inference full-run "
-            "contract"
+            "strict Stage-2 COINN-GA requires P64/E7, a positive configured "
+            "generation count, and a four-layer mutation cap"
         )
     if (
-            strict_run
-            and normalized_backend == "bo_rf"
+            normalized_backend == "bo_rf"
             and (
-                budget != 50_000
-                or int(initial_design_size) != 64
+                int(initial_design_size) != 64
                 or int(candidate_pool_size) != 2_048
-                or int(patience_generations) != 2_000
+                or int(bo_no_improvement_patience) <= 0
                 or int(rf_n_estimators) != 128
                 or int(rf_min_samples_leaf) != 2
             )
     ):
         raise ValueError(
-            "strict Stage-2 Bayesian RF requires evaluation cap 50,000, "
-            "initial design 64, candidate pool 2,048, patience 2,000, "
-            "128 trees, and minimum leaf size 2"
+            "strict Stage-2 Bayesian RF requires initial design 64, candidate "
+            "pool 2,048, a positive no-improvement limit, 128 trees, and "
+            "minimum leaf size 2"
         )
-    if strict_run and normalized_backend == "greedy":
-        expected_greedy_cap = 6 ** int(layerwise_env.horizon)
-        if budget != expected_greedy_cap:
-            raise ValueError(
-                "strict Stage-2 Greedy requires the full action-space safety "
-                f"cap {expected_greedy_cap}"
-            )
+    if (
+            normalized_backend == "greedy"
+            and int(greedy_no_improvement_rounds) <= 0
+    ):
+        raise ValueError(
+            "strict Stage-2 Greedy requires a positive no-improvement round limit"
+        )
 
     search_config_payload = {
         "initial_design_size": int(initial_design_size),
@@ -2050,10 +1973,9 @@ def run_layerwise_search_baseline(
         "ga_population_size": int(population_size),
         "ga_elite_count": int(ga_elite_count),
         "ga_generations": int(ga_generations),
-        "ga_maximum_evaluations": ga_maximum_evaluations,
-        "ga_stop_on_no_improvement": bool(ga_stop_on_no_improvement),
-        "ga_require_full_generations": bool(ga_require_full_generations),
-        "patience_generations": int(patience_generations),
+        "ga_expected_inference_evaluations": ga_expected_evaluations,
+        "bo_no_improvement_patience": int(bo_no_improvement_patience),
+        "greedy_no_improvement_rounds": int(greedy_no_improvement_rounds),
         "mutation_max_coordinates": int(mutation_max_coordinates),
         "rf_n_estimators": int(rf_n_estimators),
         "rf_min_samples_leaf": int(rf_min_samples_leaf),
@@ -2067,13 +1989,12 @@ def run_layerwise_search_baseline(
         "constraint_limits": limits_from_reference(robust_reference).as_dict(),
         "trials_per_action": expected_trials,
         "search_backend": normalized_backend,
-        "evaluation_budget": budget,
         "seed": int(seed),
         "communication_importance_ratio": float(
             communication_importance_ratio
         ),
         "search_config": search_config_payload,
-        "strict_validation_requested": bool(strict_run),
+        "strict_validation_requested": True,
     }, stringify_unknown=True)
 
     preload: tuple[SearchEvaluation, ...] = ()
@@ -2107,7 +2028,6 @@ def run_layerwise_search_baseline(
         completed_statuses = {
             "complete_strict_feasible",
             "complete_least_violating",
-            "smoke_only_complete",
         }
         resume_contract_matches = (
             existing_manifest.get("resume_contract") == resume_contract
@@ -2136,9 +2056,7 @@ def run_layerwise_search_baseline(
 
     strict_candidate_store = None
     strict_candidate_store_checkpoint_size = None
-    strict_candidate_store_path = (
-        manifest.get("strict_candidate_store") if strict_run else None
-    )
+    strict_candidate_store_path = manifest.get("strict_candidate_store")
     if strict_candidate_store_path:
         owned_store_path = os.fspath(strict_candidate_store_path)
         if not os.path.isabs(owned_store_path):
@@ -2162,10 +2080,6 @@ def run_layerwise_search_baseline(
                 )
 
     if pending_strict_context_writer is not None:
-        if not strict_run:
-            raise ValueError(
-                "pending strict context writer requires strict validation"
-            )
         pending_strict_context_writer(dict(resume_contract))
 
     recovered_online_wall_seconds = float(
@@ -2195,17 +2109,13 @@ def run_layerwise_search_baseline(
             if persisted_search_result is not None
             else "running"
         ),
-        "scientific_status": (
-            "full_search_with_strict_train_probe_gate"
-            if strict_run else "smoke_only_no_strict_search_gate"
-        ),
-        "evaluation_budget": budget,
+        "scientific_status": "full_search_with_strict_train_probe_gate",
         "seed": int(seed),
         "communication_importance_ratio": float(
             communication_importance_ratio
         ),
         "search_config": search_config_payload,
-        "strict_validation_requested": bool(strict_run),
+        "strict_validation_requested": True,
         "resume_contract": resume_contract,
         "resume_semantics": (
             "deterministic observation replay; completed observations are not "
@@ -2243,17 +2153,14 @@ def run_layerwise_search_baseline(
     _atomic_json(manifest_path, run_manifest)
 
     config = SearchConfig(
-        evaluation_budget=budget,
         seed=int(seed),
         initial_design_size=int(initial_design_size),
         candidate_pool_size=int(candidate_pool_size),
-        population_size=int(population_size),
         ga_population_size=int(population_size),
         ga_elite_count=int(ga_elite_count),
         ga_generations=int(ga_generations),
-        ga_stop_on_no_improvement=bool(ga_stop_on_no_improvement),
-        ga_require_full_generations=bool(ga_require_full_generations),
-        patience_generations=int(patience_generations),
+        bo_no_improvement_patience=int(bo_no_improvement_patience),
+        greedy_no_improvement_rounds=int(greedy_no_improvement_rounds),
         mutation_max_coordinates=int(mutation_max_coordinates),
         rf_n_estimators=int(rf_n_estimators),
         rf_min_samples_leaf=int(rf_min_samples_leaf),
@@ -2294,40 +2201,27 @@ def run_layerwise_search_baseline(
             observation_rows=None,
         )
         contract_error = None
-        if strict_run and normalized_backend == "greedy":
-            if result.termination_reason != "verified_local_optima":
+        if normalized_backend == "greedy":
+            if result.termination_reason != "consecutive_no_improvement_rounds":
                 contract_error = (
-                    "strict Greedy search stopped before verifying complete "
-                    "1-opt and 2-opt neighborhoods"
+                    "strict Greedy search stopped before reaching its configured "
+                    "complete-neighborhood no-improvement rounds"
                 )
-        elif strict_run and normalized_backend == "coinn_ga":
+        elif normalized_backend == "coinn_ga":
             try:
                 _validate_ga_completion_proof(
                     result,
-                    patience_generations=int(patience_generations),
-                    generation_cap=int(ga_generations),
-                    maximum_evaluations=ga_maximum_evaluations,
-                    stop_on_no_improvement=bool(
-                        ga_stop_on_no_improvement
-                    ),
-                    require_full_generations=bool(
-                        ga_require_full_generations
-                    ),
+                    generation_count=int(ga_generations),
                 )
             except RuntimeError as exc:
                 contract_error = str(exc)
         elif (
-                strict_run
-                and normalized_backend == "bo_rf"
-                and result.termination_reason not in {
-                    "bo_no_improvement",
-                    "evaluation_budget",
-                    "candidate_space_exhausted",
-                }
+                normalized_backend == "bo_rf"
+                and result.termination_reason != "consecutive_no_improvement"
         ):
             contract_error = (
-                "strict BO-RF stopped outside native convergence or its "
-                "evaluation safety cap"
+                "strict BO-RF stopped before reaching its configured "
+                "consecutive no-improvement evaluations"
             )
         if contract_error is not None:
             incomplete_manifest = {
@@ -2375,10 +2269,10 @@ def run_layerwise_search_baseline(
 
     strict_validation = None
     selected: SearchEvaluation | None = online_best
-    selection_status = "online_best_smoke_only"
+    selection_status = "pending_strict_validation"
     strict_feasible = False
     strict_validation_wall_seconds = 0.0
-    if strict_run:
+    if True:
         strict_payload_from_artifact = None
         if (
                 existing_manifest is not None
@@ -2599,7 +2493,7 @@ def run_layerwise_search_baseline(
     )
     strict_attempt_count = int(
         run_manifest.get("strict_attempt_count", 0)
-        + (1 if strict_run else 0)
+        + 1
     )
     strict_attempt_wall_seconds_total = float(
         run_manifest.get("strict_attempt_wall_seconds_total", 0.0)
@@ -2608,12 +2502,8 @@ def run_layerwise_search_baseline(
     completed_manifest = {
         **run_manifest,
         "status": (
-            "smoke_only_complete"
-            if not strict_run
-            else (
-                "complete_strict_feasible"
-                if strict_feasible else "complete_least_violating"
-            )
+            "complete_strict_feasible"
+            if strict_feasible else "complete_least_violating"
         ),
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "evaluation_count": int(result.evaluation_count),
@@ -2672,7 +2562,7 @@ def run_layerwise_search_baseline(
             "communication"
         ),
         "termination_reason": str(result.termination_reason),
-        "strict_validation_enabled": bool(strict_run),
+        "strict_validation_enabled": True,
         "strict_validation_passed": bool(strict_feasible),
         "strict_feasible": bool(strict_feasible),
         "selection_status": selection_status,

@@ -1253,7 +1253,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_rl_episodes=0,
                  stage1_rl_episodes_specified=False,
                  stage2_rl_episodes_specified=False,
-                 stage1_entropy_stop_threshold=None,
                  stage1_rl_lr=None,
                  stage2_rl_lr=None,
                  stage1_rl_devices="",
@@ -1316,19 +1315,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_online_constraint_probability=0.50,
                   blb_v3_promotion_constraint_probability=0.80,
                   blb_v3_final_constraint_probability=0.95,
-                  blb_v3_min_convergence_episodes=90000,
-                  blb_v3_convergence_patience_updates=100,
                   blb_v3_search_backend="ppo",
-                  blb_v3_search_evaluation_budget=0,
                   blb_v3_search_initial_design_size=64,
                   blb_v3_search_candidate_pool_size=2048,
                   blb_v3_search_population_size=64,
-                  blb_v3_search_patience_generations=100,
                   blb_v3_search_mutation_max_coordinates=3,
                   blb_v3_search_rf_n_estimators=128,
                   blb_v3_search_rf_min_samples_leaf=2,
-                  blb_v3_search_full_validation=True,
-                  comparator_smoke=False,
+                  comparator_bo_stage1_no_improvement=1000,
+                  comparator_bo_stage2_no_improvement=2000,
+                  comparator_greedy_stage1_no_improvement_rounds=1,
+                  comparator_greedy_stage2_no_improvement_rounds=1,
+                  comparator_ga_stage1_generations=200,
+                  comparator_ga_stage2_generations=200,
                   comparator_stage1_only=False,
                   glue_data_protocol=None,
                   mrpc_reproducibility=None):
@@ -1397,39 +1396,13 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
         self._last_applied_config = None
-        if stage1_entropy_stop_threshold in (None, ""):
-            self.stage1_entropy_stop_threshold = None
-        else:
-            self.stage1_entropy_stop_threshold = float(stage1_entropy_stop_threshold)
-            if self.stage1_entropy_stop_threshold <= 0:
-                raise ValueError(
-                    "stage1_entropy_stop_threshold must be a positive float "
-                    f"when set, got {stage1_entropy_stop_threshold!r}"
-                )
-        try:
-            _stage1_episode_limit_raw = int(stage1_rl_episodes)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"stage1_rl_episodes must be an integer, got {stage1_rl_episodes!r}"
-            ) from exc
-        self.stage1_rl_unbounded_until_entropy = _stage1_episode_limit_raw <= 0
-        if self.stage1_rl_unbounded_until_entropy:
-            if self.stage1_entropy_stop_threshold is None:
-                raise ValueError(
-                    "stage1_rl_episodes <= 0 means unbounded Stage-1 training "
-                    "and requires stage1_entropy_stop_threshold"
-                )
-            self.stage1_rl_episodes = _stage1_episode_limit_raw
-            self.stage1_rl_episode_limit = None
-        else:
-            self.stage1_rl_episodes = self._coerce_positive_int(
-                stage1_rl_episodes, 'stage1_rl_episodes'
-            )
-            self.stage1_rl_episode_limit = int(self.stage1_rl_episodes)
+        self.stage1_rl_episodes = self._coerce_positive_int(
+            stage1_rl_episodes, 'stage1_rl_episodes'
+        )
+        self.stage1_rl_episode_limit = int(self.stage1_rl_episodes)
         self.stage2_rl_episodes = self._coerce_nonnegative_int(
             stage2_rl_episodes, 'stage2_rl_episodes'
         )
-        self.stage2_rl_unbounded_until_convergence = self.stage2_rl_episodes == 0
         self.stage1_rl_episodes_specified = self._coerce_bool_flag(
             stage1_rl_episodes_specified, 'stage1_rl_episodes_specified'
         )
@@ -1626,11 +1599,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             else:
                 f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
-            _stage1_episode_desc = (
-                f"unbounded until entropy < {self.stage1_entropy_stop_threshold:.6f}"
-                if self.stage1_rl_unbounded_until_entropy
-                else str(self.stage1_rl_episodes)
-            )
             f.write(
                 f"[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr={self.stage1_rl_lr_raw!r} 解析为 -> "
                 f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
@@ -1638,20 +1606,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
             )
             f.write(
-                f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {_stage1_episode_desc} | "
+                f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
                 f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
             )
-            if self.stage1_entropy_stop_threshold is not None:
-                f.write(
-                    "[信息] Stage-1 entropy convergence stop enabled: "
-                    f"entropy < {self.stage1_entropy_stop_threshold:.6f}\n"
-                )
             if self.run_output_dir:
                 f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
 
 
         self.current_episode = 0
-        self.total_episodes = self.stage1_rl_episode_limit or PPO_MAX_EPISODES
+        self.total_episodes = self.stage1_rl_episode_limit
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
         self.current_lr = self.stage1_ppo_lr_initial
 
@@ -1725,7 +1688,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if self.skip_stage1_rl and (
             self.stage1_rl_episodes_specified
-            or self.stage1_rl_unbounded_until_entropy
             or self.stage1_rl_episodes != PPO_MAX_EPISODES
         ):
             raise ValueError(
@@ -1741,11 +1703,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             self.final_eval_config_source = 'search'
 
-        if (
-            (not self.skip_stage1_rl)
-            and not self.stage1_rl_unbounded_until_entropy
-            and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL
-        ):
+        if not self.skip_stage1_rl and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL:
             raise ValueError(
                 f"stage1_rl_episodes={self.stage1_rl_episode_limit} is too small. "
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-1 PPO can update at least once."
@@ -1895,17 +1853,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             raise ValueError(
                 "constraint probabilities must satisfy online <= promotion <= final"
             )
-        self.blb_v3_min_convergence_episodes = int(
-            blb_v3_min_convergence_episodes
-        )
-        self.blb_v3_convergence_patience_updates = int(
-            blb_v3_convergence_patience_updates
-        )
-        if self.blb_v3_min_convergence_episodes < 90_000:
-            raise ValueError("minimum convergence episode must be at least 90000")
-        if self.blb_v3_convergence_patience_updates < 100:
-            raise ValueError("convergence patience must be at least 100 updates")
-
         from rfr.search.comparators.common.stage2_core import (
             normalize_search_backend,
             validate_comparator_scientific_parameters,
@@ -1913,9 +1860,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self.blb_v3_search_backend = normalize_search_backend(
             blb_v3_search_backend
-        )
-        self.blb_v3_search_evaluation_budget = int(
-            blb_v3_search_evaluation_budget
         )
         self.blb_v3_search_initial_design_size = int(
             blb_v3_search_initial_design_size
@@ -1926,9 +1870,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_search_population_size = int(
             blb_v3_search_population_size
         )
-        self.blb_v3_search_patience_generations = int(
-            blb_v3_search_patience_generations
-        )
         self.blb_v3_search_mutation_max_coordinates = int(
             blb_v3_search_mutation_max_coordinates
         )
@@ -1938,17 +1879,39 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_search_rf_min_samples_leaf = int(
             blb_v3_search_rf_min_samples_leaf
         )
-        self.blb_v3_search_full_validation = self._coerce_bool_flag(
-            blb_v3_search_full_validation, "blb_v3_search_full_validation"
+        self.comparator_bo_stage1_no_improvement = self._coerce_positive_int(
+            comparator_bo_stage1_no_improvement,
+            "comparator_bo_stage1_no_improvement",
         )
-        self.comparator_smoke = self._coerce_bool_flag(
-            comparator_smoke, "comparator_smoke"
+        self.comparator_bo_stage2_no_improvement = self._coerce_positive_int(
+            comparator_bo_stage2_no_improvement,
+            "comparator_bo_stage2_no_improvement",
+        )
+        self.comparator_greedy_stage1_no_improvement_rounds = (
+            self._coerce_positive_int(
+                comparator_greedy_stage1_no_improvement_rounds,
+                "comparator_greedy_stage1_no_improvement_rounds",
+            )
+        )
+        self.comparator_greedy_stage2_no_improvement_rounds = (
+            self._coerce_positive_int(
+                comparator_greedy_stage2_no_improvement_rounds,
+                "comparator_greedy_stage2_no_improvement_rounds",
+            )
+        )
+        self.comparator_ga_stage1_generations = self._coerce_positive_int(
+            comparator_ga_stage1_generations,
+            "comparator_ga_stage1_generations",
+        )
+        self.comparator_ga_stage2_generations = self._coerce_positive_int(
+            comparator_ga_stage2_generations,
+            "comparator_ga_stage2_generations",
         )
         self.comparator_stage1_only = self._coerce_bool_flag(
             comparator_stage1_only, "comparator_stage1_only"
         )
         if self.blb_v3_search_backend == "ppo":
-            if self.comparator_smoke or self.comparator_stage1_only:
+            if self.comparator_stage1_only:
                 raise ValueError("comparator flags require a comparator backend")
         else:
             if self.mrpc_reproducibility is None:
@@ -1993,48 +1956,32 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             if evidence_contract != (8, 3, 4096, 0.50, 0.80, 0.95):
                 raise ValueError("formal comparator evidence contract mismatch")
-            if self.comparator_smoke:
-                if (
-                    self.blb_v3_search_evaluation_budget != 1
-                    or self.blb_v3_search_full_validation
-                    or int(self.stage2_k_trials) != 3
-                    or not self.skip_final_eval
-                ):
-                    raise ValueError("comparator smoke contract mismatch")
-            else:
-                expected_budget = {
-                    "bo_rf": 10_000 if self.comparator_stage1_only else 50_000,
-                    "greedy": 6**12,
-                    "coinn_ga": 11_464,
-                }[self.blb_v3_search_backend]
-                if self.blb_v3_search_evaluation_budget != expected_budget:
-                    raise ValueError("formal comparator evaluation budget mismatch")
             if self.blb_v3_search_backend == "coinn_ga" and (
                 self.blb_v3_search_population_size != 64
-                or self.blb_v3_search_patience_generations != 5
+                or self.comparator_ga_stage1_generations <= 0
+                or self.comparator_ga_stage2_generations <= 0
             ):
                 raise ValueError("formal COINN-GA contract mismatch")
             if self.blb_v3_search_backend == "bo_rf" and (
                 self.blb_v3_search_initial_design_size != 64
                 or self.blb_v3_search_candidate_pool_size != 2_048
-                or self.blb_v3_search_patience_generations
-                != (1_000 if self.comparator_stage1_only else 2_000)
+                or self.comparator_bo_stage1_no_improvement <= 0
+                or self.comparator_bo_stage2_no_improvement <= 0
                 or self.blb_v3_search_rf_n_estimators != 128
                 or self.blb_v3_search_rf_min_samples_leaf != 2
             ):
                 raise ValueError("formal BO-RF contract mismatch")
+            if self.blb_v3_search_backend == "greedy" and (
+                self.comparator_greedy_stage1_no_improvement_rounds <= 0
+                or self.comparator_greedy_stage2_no_improvement_rounds <= 0
+            ):
+                raise ValueError("formal Greedy contract mismatch")
             if self.comparator_stage1_only:
                 if self.skip_stage1_rl or not self.skip_noise_rl or not self.skip_final_eval:
                     raise ValueError("Stage-1-only comparator routing mismatch")
             elif self.skip_stage1_rl or self.skip_noise_rl:
                 raise ValueError("two-stage comparator must run both searches")
-            if (
-                not self.comparator_smoke
-                and (
-                    not self.blb_v3_search_full_validation
-                    or self.blb_v3_final_selection_top_n != 5
-                )
-            ):
+            if self.blb_v3_final_selection_top_n != 5:
                 raise ValueError("formal comparator strict top-5 contract mismatch")
             if self.blb_v3_search_mutation_max_coordinates != 4:
                 raise ValueError("formal comparator mutation cap mismatch")
@@ -2045,7 +1992,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.blb_v3_promotion_validation_trials,
                 self.blb_v3_final_selection_validation_trials,
             )
-            if not self.comparator_smoke and trial_contract != (5, 3, 3, 15, 15):
+            if trial_contract != (5, 3, 3, 15, 15):
                 raise ValueError("formal comparator trial contract mismatch")
             constraint_contract = (
                 float(self.error_threshold),
@@ -2721,11 +2668,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 ]
             f.write("\n".join(header_lines))
         with open(self.noise_log_file, "a", encoding="utf-8") as f:
-            _stage1_episode_desc = (
-                f"unbounded until entropy < {self.stage1_entropy_stop_threshold:.6f}"
-                if self.stage1_rl_unbounded_until_entropy
-                else str(self.stage1_rl_episodes)
-            )
             f.write(
                 "【学习率配置】\n"
                 f"  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw={self.stage1_rl_lr_raw!r} -> "
@@ -2735,7 +2677,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             f.write(
                 "【训练轮数配置】\n"
-                f"  - 一阶段 RL 回合数（stage-1 episodes）：{_stage1_episode_desc}\n"
+                f"  - 一阶段 RL 回合数（stage-1 episodes）：{self.stage1_rl_episodes}\n"
                 f"  - 二阶段噪声 RL 回合数（stage-2 episodes）：{self.stage2_rl_episodes}\n"
             )
             if self.run_output_dir:
@@ -4711,8 +4653,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 not self.skip_stage1_rl
                 and self.blb_v3_search_backend != "ppo"
         ):
-            from dataclasses import replace
-
             from rfr.common.json_utils import read_json_file
             from rfr.search.comparators.common.stage1_core import (
                 Stage1Constraints,
@@ -4751,19 +4691,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "Stage-1 comparator runtime thresholds do not match the "
                     "0.1% MRPC limits"
                 )
-            stage1_search_config = stage1_comparator_search_config(backend)
+            stage1_search_config = stage1_comparator_search_config(
+                backend,
+                bo_no_improvement_patience=(
+                    self.comparator_bo_stage1_no_improvement
+                ),
+                greedy_no_improvement_rounds=(
+                    self.comparator_greedy_stage1_no_improvement_rounds
+                ),
+                ga_update_generations=(
+                    self.comparator_ga_stage1_generations
+                ),
+            )
             validate_stage1_comparator_setup(
                 backend=backend,
                 config=stage1_search_config,
                 num_layers=int(self.total_layers),
                 constraints=stage1_constraints,
             )
-            if self.comparator_smoke:
-                stage1_search_config = replace(
-                    stage1_search_config,
-                    evaluation_cap=1,
-                    ga_require_full_generations=False,
-                )
             stage1_output_dir = os.path.join(
                 self.run_output_dir
                 or os.path.dirname(self.stage1_step_info_file),
@@ -4812,7 +4757,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                         "dataset": str(self.data_path),
                         "split": TRAIN_PROBE_SPLIT,
                         "dataset_protocol_hash": self.dataset_protocol_hash,
-                        "comparator_smoke": bool(self.comparator_smoke),
                         "stage1_bound_into_stage2": not self.comparator_stage1_only,
                         "stage2_backend": (
                             None if self.comparator_stage1_only else backend
@@ -4863,32 +4807,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "Stage-1 comparator produced no valid configuration"
                 )
             if (
-                    not self.comparator_smoke
-                    and backend == "greedy"
+                    backend == "greedy"
                     and stage1_comparator_result.termination_reason
-                    != "verified_local_optimum"
+                    != "consecutive_no_improvement_rounds"
             ):
                 raise RuntimeError(
                     "Stage-1 Greedy did not verify every 1-opt and 2-opt "
                     "local optimum"
                 )
             if (
-                    not self.comparator_smoke
-                    and backend == "coinn_ga"
+                    backend == "coinn_ga"
                     and (
                         stage1_comparator_result.termination_reason
                         != "completed_generations"
                         or int(
                             stage1_comparator_result.config.ga_update_generations
-                        ) != 200
-                        or stage1_comparator_result.config.ga_stop_on_no_improvement
-                        or not stage1_comparator_result.config.ga_require_full_generations
-                        or stage1_comparator_result.evaluation_count != 11_464
+                        ) != self.comparator_ga_stage1_generations
                     )
             ):
                 raise RuntimeError(
-                    "Stage-1 COINN-GA did not satisfy the 200-generation "
-                    "full-run contract and 11,464-inference full-run contract"
+                    "Stage-1 COINN-GA did not satisfy its configured full-generation "
+                    "contract"
                 )
 
             stage1_result_path = os.path.join(
@@ -5136,13 +5075,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "search_algorithm": self.search_algorithm,
                 "dataset_protocol_hash": self.dataset_protocol_hash,
                 "rl_algo": "ppo",
-                "stage1_episodes_requested": (
-                    None
-                    if self.stage1_rl_unbounded_until_entropy
-                    else int(self.stage1_rl_episode_limit)
-                ),
-                "stage1_unbounded_until_entropy": bool(self.stage1_rl_unbounded_until_entropy),
-                "stage1_entropy_stop_threshold": self.stage1_entropy_stop_threshold,
+                "stage1_episodes_requested": int(self.stage1_rl_episode_limit),
+                "termination": "maximum_episodes",
                 "ppo_update_interval": int(PPO_UPDATE_INTERVAL),
                 "ppo_lr_initial": float(self.stage1_ppo_lr_initial),
                 "stage1_rl_devices": self.stage1_rl_devices,
@@ -5319,17 +5253,11 @@ class LayerImportanceEvaluator(TrainerCallback):
 
 
                 step_info_chunk_anchor[0] = stage1_resume_start_episode
-                if self.stage1_rl_unbounded_until_entropy:
-                    self.log(
-                        f"  已恢复至回合 {stage1_resume_start_episode}，"
-                        f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 "
-                        f"entropy < {self.stage1_entropy_stop_threshold:.6f}"
-                    )
-                else:
-                    self.log(
-                        f"  已恢复至回合 {stage1_resume_start_episode}，"
-                        f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
-                    )
+                self.log(
+                    f"  已恢复至回合 {stage1_resume_start_episode}，"
+                    f"将从回合 {stage1_resume_start_episode + 1} "
+                    f"继续训练至 {self.stage1_rl_episodes}"
+                )
                 if (
                     self.stage1_rl_episode_limit is not None
                     and stage1_resume_start_episode >= self.stage1_rl_episode_limit
@@ -5342,10 +5270,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             _stage1_rl_t0 = time.time()
             stage1_completed_episodes = int(stage1_resume_start_episode)
             stage1_stop_reason = "max_episodes"
-            _stage1_episode_iter = (
-                itertools.count(stage1_resume_start_episode)
-                if self.stage1_rl_unbounded_until_entropy
-                else range(stage1_resume_start_episode, self.stage1_rl_episode_limit)
+            _stage1_episode_iter = range(
+                stage1_resume_start_episode, self.stage1_rl_episode_limit,
             )
             for episode in _stage1_episode_iter:
 
@@ -5356,11 +5282,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if _stage1_parallel_runner is not None:
                     if not _stage1_parallel_stash:
                         _window_idx_for_runner = episode // PPO_UPDATE_INTERVAL
-                        if self.stage1_rl_unbounded_until_entropy:
-                            _window_size = PPO_UPDATE_INTERVAL
-                        else:
-                            _remaining_total = self.stage1_rl_episode_limit - episode
-                            _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
+                        _remaining_total = self.stage1_rl_episode_limit - episode
+                        _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
                         _stage1_parallel_window_t0 = time.time()
                         _stage1_parallel_window_idx = _window_idx_for_runner
                         _stage1_parallel_replay_seconds = 0.0
@@ -5707,10 +5630,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                     gtrxl_ppo_update_count += 1
                     buffer.clear()
                     episode_entropies.append(entropy)
-                    stage1_entropy_converged = (
-                        self.stage1_entropy_stop_threshold is not None
-                        and float(entropy) < self.stage1_entropy_stop_threshold
-                    )
                     _stage1_parallel_update_payload = None
                     if (
                             _stage1_parallel_runner is not None
@@ -5829,32 +5748,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                             _s1_best_lines.append(f"  Softmax: {list(best_config.get('softmax', []))}")
                         else:
                             _s1_best_lines.append("Reward-Best: 尚未找到")
-                        if self.stage1_rl_unbounded_until_entropy:
-                            _s1_progress_title = (
-                                f"Stage-1 RL 进度 · 回合 {episode + 1} / entropy<"
-                                f"{self.stage1_entropy_stop_threshold:.4f}"
-                            )
-                            _s1_progress_lines = [
-                                "进度: unbounded until entropy convergence",
-                                *_s1_best_lines,
-                                f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
-                                f"平均每回合: {_fmt_elapsed(_s1_avg_ep)}  "
-                                f"PPO 更新: {gtrxl_ppo_update_count} 次",
-                            ]
-                        else:
-                            _s1_remain = self.stage1_rl_episode_limit - (episode + 1)
-                            _s1_eta = _s1_avg_ep * _s1_remain
-                            _s1_progress_title = (
-                                f"Stage-1 RL 进度 · 回合 {episode + 1} / {self.stage1_rl_episode_limit}"
-                            )
-                            _s1_progress_lines = [
-                                _progress_bar(episode + 1, self.stage1_rl_episode_limit),
-                                *_s1_best_lines,
-                                f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
-                                f"预计剩余: {'until entropy stop' if _s1_eta is None else _fmt_elapsed(_s1_eta)}  "
-                                f"预计完成: {'until entropy stop' if _s1_eta is None else _fmt_eta_finish(_s1_eta)}  "
-                                f"PPO 更新: {gtrxl_ppo_update_count} 次",
-                            ]
+                        _s1_remain = self.stage1_rl_episode_limit - (episode + 1)
+                        _s1_eta = _s1_avg_ep * _s1_remain
+                        _s1_progress_title = (
+                            f"Stage-1 RL 进度 · 回合 {episode + 1} / "
+                            f"{self.stage1_rl_episode_limit}"
+                        )
+                        _s1_progress_lines = [
+                            _progress_bar(episode + 1, self.stage1_rl_episode_limit),
+                            *_s1_best_lines,
+                            f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
+                            f"预计剩余: {_fmt_elapsed(_s1_eta)}  "
+                            f"预计完成: {_fmt_eta_finish(_s1_eta)}  "
+                            f"PPO 更新: {gtrxl_ppo_update_count} 次",
+                        ]
                         _log_rounded_box(
                             self.log,
                             [
@@ -5896,13 +5803,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     window_best_cost = float('inf')
                     window_best_config = None
 
-                    if (
-                            not stage1_entropy_converged
-                            and (
-                                self.stage1_rl_unbounded_until_entropy
-                                or (episode + 1) < self.stage1_rl_episode_limit
-                            )
-                    ):
+                    if (episode + 1) < self.stage1_rl_episode_limit:
                         env.prev_episode_metrics = {
                             "loss": proxy_base_loss,
                             "metric1": proxy_base_p,
@@ -5954,10 +5855,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         detail_file_sizes=_stage1_detail_file_sizes,
                         cuda_rng_role_registry=_stage1_cuda_rng_role_registry,
                     )
-                    if (
-                        not stage1_entropy_converged
-                        and not _stage1_reached_episode_cap
-                    ):
+                    if not _stage1_reached_episode_cap:
                         if _stage1_parallel_runner is not None:
                             _deferred_gpu_failure = (
                                 _stage1_parallel_runner.pop_deferred_gpu_failure()
@@ -5965,29 +5863,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                             if _deferred_gpu_failure is not None:
                                 raise _deferred_gpu_failure
                         raise_if_elastic_gpu_restart_requested()
-                    if (
-                        self.stage1_entropy_stop_threshold is not None
-                        and entropy <= self.stage1_entropy_stop_threshold
-                    ):
-                        stage1_entropy_converged = True
-                        stage1_stop_reason = "entropy_converged"
-                        self.log(
-                            "Stage-1 entropy convergence reached: "
-                            f"entropy={entropy:.6f} <= threshold={self.stage1_entropy_stop_threshold:.6f} "
-                            f"at episode {episode + 1}"
-                        )
-                        break
-
-                    if stage1_entropy_converged:
-                        stage1_stop_reason = "entropy_converged"
-                        self.log(
-                            "\n  [收敛] Stage-1 entropy convergence reached: "
-                            f"entropy={entropy:.4f} < threshold={self.stage1_entropy_stop_threshold:.4f}; "
-                            f"stopping at episode {episode + 1}."
-                        )
-                        break
-
-
                 if is_graceful_stop_requested(stage1_stop_flag_path):
                     self.log(
                         f"\n  [优雅停止] 已检测到停止请求，正在保存 Stage-1 checkpoint "
@@ -6052,11 +5927,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             self.run_output_dir, "stage1_search", "in_progress",
                             extra_fields={
                                 "completed_episodes": episode + 1,
-                                "total_episodes": (
-                                    None
-                                    if self.stage1_rl_unbounded_until_entropy
-                                    else int(self.stage1_rl_episode_limit)
-                                ),
+                                "total_episodes": int(self.stage1_rl_episode_limit),
                                 "stopped_by": "graceful_stop",
                             },
                         )
@@ -6128,11 +5999,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     extra_fields={
                         "episodes": int(stage1_completed_episodes),
                         "completed_episodes": int(stage1_completed_episodes),
-                        "target_episodes": (
-                            None
-                            if self.stage1_rl_unbounded_until_entropy
-                            else int(self.stage1_rl_episode_limit)
-                        ),
+                        "target_episodes": int(self.stage1_rl_episode_limit),
                         "stop_reason": stage1_stop_reason,
                         "best_reward": float(best_reward),
                         "best_cost": float(best_cost),
@@ -6142,11 +6009,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "status": "completed",
                 "stop_reason": stage1_stop_reason,
                 "completed_episodes": int(stage1_completed_episodes),
-                "target_episodes": (
-                    None
-                    if self.stage1_rl_unbounded_until_entropy
-                    else int(self.stage1_rl_episode_limit)
-                ),
+                "target_episodes": int(self.stage1_rl_episode_limit),
                 "ppo_updates": int(gtrxl_ppo_update_count),
                 "best_reward": float(best_reward),
                 "best_cost": float(best_cost),

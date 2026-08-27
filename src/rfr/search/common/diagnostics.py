@@ -126,7 +126,6 @@ class EpisodeStats:
     k_entropy: Optional[float] = None
     promotion_trial_count: int = 0
     promotion_status: str = ""
-    convergence_state: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
 
@@ -156,22 +155,12 @@ class PPOUpdateStats:
     entropy_recovery_delta: float = 0.0
     nonfinite_minibatches: int = 0
     nonfinite_update_skipped: bool = False
-    convergence_update_counted: bool = True
     return_mean: float = 0.0
     return_std: float = 1.0
     block4_entropy: Optional[float] = None
     k_entropy: Optional[float] = None
-    stall_update_windows: int = 0
-    selected_action_identity: Optional[str] = None
-    selected_action_stable_update_windows: int = 0
-    converged: bool = False
-    extension_required: bool = False
-    plateau_ready: bool = False
-    strict_revalidation_passed: bool = False
     strict_revalidation_status: str = "not_due"
     termination_reason: str = "running"
-    best_robust_feasible_cost: Optional[float] = None
-    best_robust_feasible_objective: Optional[List[float]] = None
     strict_pareto_frontier: List[Dict[str, Any]] = field(default_factory=list)
     actor_clip_mode: str = "joint"
     actor_credit_mode: str = "scalar_gae"

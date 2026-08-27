@@ -649,13 +649,12 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[float, ...]:
 
 @dataclass(frozen=True)
 class SearchConfig:
-    evaluation_budget: int
     seed: int = 42
     initial_design_size: int = 64
     candidate_pool_size: int = 512
 
-    population_size: int = 64
-    patience_generations: int = 20
+    bo_no_improvement_patience: int = 2_000
+    greedy_no_improvement_rounds: int = 1
     mutation_max_coordinates: int = 4
     rf_n_estimators: int = 128
     rf_min_samples_leaf: int = 2
@@ -663,16 +662,14 @@ class SearchConfig:
     communication_importance_ratio: float = 1.0
     ga_population_size: int = 64
     ga_elite_count: int = 7
-    ga_generations: int = 800
-    ga_stop_on_no_improvement: bool = True
-    ga_require_full_generations: bool = False
-    observation_attempt_limit: Optional[int] = None
+    ga_generations: int = 200
 
     def __post_init__(self) -> None:
         for name in (
-                "evaluation_budget", "initial_design_size",
-                "candidate_pool_size", "population_size",
-                "patience_generations", "mutation_max_coordinates",
+                "initial_design_size", "candidate_pool_size",
+                "bo_no_improvement_patience",
+                "greedy_no_improvement_rounds",
+                "mutation_max_coordinates",
                 "rf_n_estimators", "rf_min_samples_leaf",
                 "ga_population_size", "ga_elite_count", "ga_generations",
         ):
@@ -682,22 +679,6 @@ class SearchConfig:
             raise ValueError("mutation_max_coordinates must be at most 4")
         if int(self.ga_elite_count) >= int(self.ga_population_size):
             raise ValueError("ga_elite_count must be smaller than ga_population_size")
-        for name in (
-                "ga_stop_on_no_improvement",
-                "ga_require_full_generations",
-        ):
-            if type(getattr(self, name)) is not bool:
-                raise ValueError(f"{name} must be boolean")
-        if self.ga_require_full_generations and self.ga_stop_on_no_improvement:
-            raise ValueError(
-                "ga_require_full_generations is incompatible with "
-                "ga_stop_on_no_improvement"
-            )
-        if (
-                self.observation_attempt_limit is not None
-                and int(self.observation_attempt_limit) <= 0
-        ):
-            raise ValueError("observation_attempt_limit must be positive")
         if not math.isfinite(float(self.acquisition_exploration)):
             raise ValueError("acquisition_exploration must be finite")
         if float(self.acquisition_exploration) < 0.0:
@@ -784,8 +765,6 @@ class _EvaluationCache:
             self,
             space: LayerwiseSearchSpace,
             evaluator: EvaluationFn,
-            budget: int,
-            observation_attempt_limit: Optional[int] = None,
             *,
             preload: Iterable[SearchEvaluation] = (),
             checkpoint_callback: Optional[CheckpointCallback] = None,
@@ -795,16 +774,7 @@ class _EvaluationCache:
             ):
         self.space = space
         self.evaluator = evaluator
-        self.budget = min(int(budget), int(space.cardinality))
-        default_attempt_limit = max(1024, 10 * self.budget)
-        configured_limit = (
-            default_attempt_limit
-            if observation_attempt_limit is None
-            else int(observation_attempt_limit)
-        )
-        self.observation_attempt_limit = min(
-            int(space.cardinality), configured_limit,
-        )
+        self.capacity = int(space.cardinality)
         self._by_action: dict[ActionMatrix, SearchEvaluation] = {}
         self._ordered: list[SearchEvaluation] = []
         self._best: Optional[SearchEvaluation] = None
@@ -816,10 +786,8 @@ class _EvaluationCache:
         self.incremental_checkpoint_callback = incremental_checkpoint_callback
         for evaluation in preload:
             self.add_preloaded(evaluation)
-        if sum(item.inference_performed for item in self._replay) > self.budget:
-            raise ValueError("preloaded observations exceed the inference budget")
-        if len(self._replay) > self.observation_attempt_limit:
-            raise ValueError("preloaded observations exceed the observation guard")
+        if len(self._replay) > self.capacity:
+            raise ValueError("preloaded observations exceed the action space")
 
     def _record(self, evaluation: SearchEvaluation) -> None:
         self._by_action[evaluation.action_matrix] = evaluation
@@ -854,7 +822,7 @@ class _EvaluationCache:
 
     @property
     def remaining(self) -> int:
-        return max(0, self.budget - self._inference_count)
+        return max(0, self.capacity - len(self._ordered))
 
     @property
     def evaluation_count(self) -> int:
@@ -865,12 +833,8 @@ class _EvaluationCache:
         return len(self._ordered)
 
     @property
-    def observation_guard_reached(self) -> bool:
-        return self.observation_count >= self.observation_attempt_limit
-
-    @property
     def can_observe(self) -> bool:
-        return bool(self.remaining > 0 and not self.observation_guard_reached)
+        return self.remaining > 0
 
     @property
     def observations(self) -> tuple[SearchEvaluation, ...]:
@@ -888,9 +852,7 @@ class _EvaluationCache:
         if cached is not None:
             return cached
         if self.remaining <= 0:
-            raise RuntimeError("search model-inference budget exhausted")
-        if self.observation_guard_reached:
-            raise RuntimeError("search observation attempt guard exhausted")
+            raise RuntimeError("search action space exhausted")
         replayed = self._replay_index < len(self._replay)
         if replayed:
             observed = self._replay[self._replay_index]
@@ -920,14 +882,6 @@ class _EvaluationCache:
         if self._best is None:
             raise RuntimeError("search produced no observations")
         return self._best
-
-
-def _cache_stop_reason(cache: _EvaluationCache) -> str:
-    if cache.remaining <= 0:
-        return "evaluation_budget"
-    if cache.observation_guard_reached:
-        return "observation_attempt_guard"
-    return "candidate_space_exhausted"
 
 
 def _resource_score(

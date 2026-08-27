@@ -92,15 +92,15 @@ class BLBStage2TrainConfig:
     ppo: LayerwisePPOConfig = field(default_factory=LayerwisePPOConfig)
 
     search_backend: str = "ppo"
-    search_evaluation_budget: int = 0
     search_initial_design_size: int = 64
     search_candidate_pool_size: int = 2048
     search_population_size: int = 64
-    search_patience_generations: int = 100
+    search_bo_no_improvement_patience: int = 2_000
+    search_greedy_no_improvement_rounds: int = 1
+    search_ga_generations: int = 200
     search_mutation_max_coordinates: int = 3
     search_rf_n_estimators: int = 128
     search_rf_min_samples_leaf: int = 2
-    search_full_validation: bool = True
 
     num_trials_per_step: int = 3
     probe_batch_count: int = 4
@@ -129,8 +129,6 @@ class BLBStage2TrainConfig:
     final_constraint_probability: float = 0.95
     stage2_stability_multiplier: float = 2.0
     communication_importance_ratio: float = 1.0
-    convergence_min_episodes: int = 90_000
-    convergence_patience_updates: int = 100
 
     def __post_init__(self) -> None:
         from rfr.search.common.precision_presets import validate_communication_importance_ratio
@@ -144,14 +142,13 @@ class BLBStage2TrainConfig:
         if self.rollout_size <= 0:
             raise ValueError("rollout_size must be positive")
         self.seed = int(self.seed)
-        self.search_evaluation_budget = int(self.search_evaluation_budget)
-        if self.search_evaluation_budget < 0:
-            raise ValueError("search_evaluation_budget must be nonnegative")
         for name in (
             "search_initial_design_size",
             "search_candidate_pool_size",
             "search_population_size",
-            "search_patience_generations",
+            "search_bo_no_improvement_patience",
+            "search_greedy_no_improvement_rounds",
+            "search_ga_generations",
             "search_mutation_max_coordinates",
             "search_rf_n_estimators",
             "search_rf_min_samples_leaf",
@@ -200,12 +197,6 @@ class BLBStage2TrainConfig:
             self.promotion_constraint_probability,
             self.final_constraint_probability,
         ) = probabilities
-        self.convergence_min_episodes = int(self.convergence_min_episodes)
-        self.convergence_patience_updates = int(self.convergence_patience_updates)
-        if self.convergence_min_episodes < 90_000:
-            raise ValueError("convergence_min_episodes must be at least 90000")
-        if self.convergence_patience_updates < 100:
-            raise ValueError("convergence_patience_updates must be at least 100")
 
 
 class BLBStage2RLRunner:
@@ -283,9 +274,6 @@ class BLBStage2RLRunner:
                 or os.path.join(_repo_root(), "configs/preparation/rescale")
             ),
             search_backend=getattr(evaluator, "blb_v3_search_backend", "ppo"),
-            search_evaluation_budget=int(
-                getattr(evaluator, "blb_v3_search_evaluation_budget", 0)
-            ),
             search_initial_design_size=int(
                 getattr(evaluator, "blb_v3_search_initial_design_size", 64)
             ),
@@ -295,9 +283,15 @@ class BLBStage2RLRunner:
             search_population_size=int(
                 getattr(evaluator, "blb_v3_search_population_size", 64)
             ),
-            search_patience_generations=int(
-                getattr(evaluator, "blb_v3_search_patience_generations", 100)
-            ),
+            search_bo_no_improvement_patience=int(getattr(
+                evaluator, "comparator_bo_stage2_no_improvement", 2_000,
+            )),
+            search_greedy_no_improvement_rounds=int(getattr(
+                evaluator, "comparator_greedy_stage2_no_improvement_rounds", 1,
+            )),
+            search_ga_generations=int(getattr(
+                evaluator, "comparator_ga_stage2_generations", 200,
+            )),
             search_mutation_max_coordinates=int(
                 getattr(evaluator, "blb_v3_search_mutation_max_coordinates", 3)
             ),
@@ -306,9 +300,6 @@ class BLBStage2RLRunner:
             ),
             search_rf_min_samples_leaf=int(
                 getattr(evaluator, "blb_v3_search_rf_min_samples_leaf", 2)
-            ),
-            search_full_validation=bool(
-                getattr(evaluator, "blb_v3_search_full_validation", True)
             ),
             rollout_size=int(getattr(evaluator, "blb_v3_rollout_size", None) or 120),
             eval_interval=int(getattr(evaluator, "blb_v3_eval_interval", None) or 100),
@@ -356,12 +347,6 @@ class BLBStage2RLRunner:
             communication_importance_ratio=float(
                 getattr(evaluator, "stage2_communication_importance_ratio", 1.0)
             ),
-            convergence_min_episodes=int(
-                getattr(evaluator, "blb_v3_min_convergence_episodes", 90_000)
-            ),
-            convergence_patience_updates=int(
-                getattr(evaluator, "blb_v3_convergence_patience_updates", 100)
-            ),
         )
         config.ppo.lr = float(
             getattr(evaluator, "stage2_ppo_lr_initial", config.ppo.lr)
@@ -371,8 +356,6 @@ class BLBStage2RLRunner:
         )
         if config.total_episodes > 0:
             config.rollout_size = min(config.rollout_size, config.total_episodes)
-        if config.search_backend != "ppo" and config.search_evaluation_budget <= 0:
-            raise ValueError("comparator search requires a positive evaluation budget")
         return config
 
     def _build_probe_batches(

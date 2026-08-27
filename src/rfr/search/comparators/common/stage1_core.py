@@ -443,7 +443,6 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[Any, ...]:
 class SearchConfig:
     """Serializable configuration for all three canonical baselines."""
 
-    evaluation_cap: int = 45_664
     seed: int = 42
 
     bo_initial_design_size: int = 64
@@ -454,13 +453,11 @@ class SearchConfig:
     acquisition_exploration: float = 0.05
 
     greedy_max_starts: int = 3
+    greedy_no_improvement_rounds: int = 1
 
     ga_population_size: int = 64
     ga_elite_count: int = 7
     ga_update_generations: int = 800
-    ga_no_improvement_patience: int = 5
-    ga_stop_on_no_improvement: bool = True
-    ga_require_full_generations: bool = False
 
     ga_tournament_size: int = 3
     ga_crossover_probability: float = 0.0
@@ -473,17 +470,16 @@ class SearchConfig:
 
     def __post_init__(self) -> None:
         positive = (
-            "evaluation_cap",
             "bo_initial_design_size",
             "bo_candidate_pool_size",
             "bo_no_improvement_patience",
             "rf_n_estimators",
             "rf_min_samples_leaf",
             "greedy_max_starts",
+            "greedy_no_improvement_rounds",
             "ga_population_size",
             "ga_elite_count",
             "ga_update_generations",
-            "ga_no_improvement_patience",
             "ga_tournament_size",
             "ga_mutation_max_layers",
             "ga_duplicate_attempts",
@@ -492,17 +488,6 @@ class SearchConfig:
         for name in positive:
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name} must be positive")
-        for name in (
-                "ga_stop_on_no_improvement",
-                "ga_require_full_generations",
-        ):
-            if type(getattr(self, name)) is not bool:
-                raise ValueError(f"{name} must be a boolean")
-        if self.ga_require_full_generations and self.ga_stop_on_no_improvement:
-            raise ValueError(
-                "ga_require_full_generations is incompatible with "
-                "ga_stop_on_no_improvement"
-            )
         if int(self.ga_elite_count) >= int(self.ga_population_size):
             raise ValueError("ga_elite_count must be smaller than ga_population_size")
         for name in (
@@ -550,34 +535,29 @@ def _stage1_comparator_error(reason: str) -> RuntimeError:
     return RuntimeError(f"Stage-1 comparator protocol violation: {reason}")
 
 
-def stage1_comparator_search_config(backend: Any) -> SearchConfig:
+def stage1_comparator_search_config(
+        backend: Any,
+        *,
+        bo_no_improvement_patience: int = 1_000,
+        greedy_no_improvement_rounds: int = 1,
+        ga_update_generations: int = 200,
+        ) -> SearchConfig:
     """Return the reproducible MRPC search parameters for one comparator."""
 
     normalized = normalize_search_backend(backend)
-    ga_update_generations = 200 if normalized == "coinn_ga" else 800
-    evaluation_caps = {
-        "bo_rf": 10_000,
-        "greedy": 3 ** STAGE1_COMPARATOR_NUM_LAYERS,
-        "coinn_ga": 64 + ga_update_generations * (64 - 7),
-    }
     return SearchConfig(
-        evaluation_cap=evaluation_caps[normalized],
         seed=42,
         bo_initial_design_size=64,
         bo_candidate_pool_size=2_048,
-        bo_no_improvement_patience=(
-            1_000 if normalized == "bo_rf" else 100
-        ),
+        bo_no_improvement_patience=int(bo_no_improvement_patience),
         rf_n_estimators=128,
         rf_min_samples_leaf=2,
         acquisition_exploration=0.05,
         greedy_max_starts=3,
+        greedy_no_improvement_rounds=int(greedy_no_improvement_rounds),
         ga_population_size=64,
         ga_elite_count=7,
-        ga_update_generations=ga_update_generations,
-        ga_no_improvement_patience=5,
-        ga_stop_on_no_improvement=normalized != "coinn_ga",
-        ga_require_full_generations=normalized == "coinn_ga",
+        ga_update_generations=int(ga_update_generations),
         ga_tournament_size=3,
         ga_crossover_probability=0.0,
         ga_mutation_max_layers=4,
@@ -628,7 +608,12 @@ def validate_stage1_comparator_setup(
     """Validate reproducible comparator parameters using direct value checks."""
 
     normalized = normalize_search_backend(backend)
-    expected_config = stage1_comparator_search_config(normalized)
+    expected_config = stage1_comparator_search_config(
+        normalized,
+        bo_no_improvement_patience=int(config.bo_no_improvement_patience),
+        greedy_no_improvement_rounds=int(config.greedy_no_improvement_rounds),
+        ga_update_generations=int(config.ga_update_generations),
+    )
     if not isinstance(config, SearchConfig) or config.as_dict() != expected_config.as_dict():
         raise _stage1_comparator_error(
             f"{normalized} search configuration is not the comparator preset"
@@ -715,7 +700,6 @@ class _EvaluationCache:
             *,
             space: Stage1SearchSpace,
             evaluator: EvaluationFn,
-            evaluation_cap: int,
             preload: Iterable[SearchEvaluation] = (),
             checkpoint_callback: Optional[CheckpointCallback] = None,
             incremental_checkpoint_callback: Optional[
@@ -725,7 +709,7 @@ class _EvaluationCache:
             ):
         self.space = space
         self.evaluator = evaluator
-        self.cap = min(int(evaluation_cap), int(space.cardinality))
+        self.cap = int(space.cardinality)
         self.checkpoint_callback = checkpoint_callback
         self.incremental_checkpoint_callback = incremental_checkpoint_callback
         self._by_action: dict[Stage1Action, SearchEvaluation] = {}
@@ -751,7 +735,7 @@ class _EvaluationCache:
                 )
             seen.add(action)
         if len(self._replay_preload) > self.cap:
-            raise ValueError("preloaded observations exceed the evaluation cap")
+            raise ValueError("preloaded observations exceed the action space")
 
     @property
     def remaining(self) -> int:
@@ -823,7 +807,7 @@ class _EvaluationCache:
             self._record(evaluation)
             return evaluation
         if self.remaining <= 0:
-            raise RuntimeError("Stage-1 search evaluation cap exhausted")
+            raise RuntimeError("Stage-1 search action space exhausted")
         evaluation = self.evaluator(owned)
         if not isinstance(evaluation, SearchEvaluation):
             raise TypeError("Stage-1 search evaluator must return SearchEvaluation")

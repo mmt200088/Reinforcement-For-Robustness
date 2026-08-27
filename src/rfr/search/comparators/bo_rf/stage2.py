@@ -167,8 +167,6 @@ def _run_bo_rf(
     cache = _EvaluationCache(
         space,
         evaluator,
-        config.evaluation_budget,
-        config.observation_attempt_limit,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
     )
@@ -176,7 +174,7 @@ def _run_bo_rf(
     design = _structured_initial_design(
         space,
         rng,
-        min(config.initial_design_size, cache.budget),
+        min(config.initial_design_size, space.cardinality),
     )
     for action in design:
         if not cache.can_observe:
@@ -191,7 +189,7 @@ def _run_bo_rf(
     factory = surrogate_factory or _default_surrogate_factory(config)
     iteration = 0
     no_improvement = 0
-    termination = "candidate_space_exhausted"
+    termination = "consecutive_no_improvement"
     while cache.can_observe:
         iteration += 1
         observations = cache.observations
@@ -212,7 +210,10 @@ def _run_bo_rf(
             pool_size=config.candidate_pool_size,
         )
         if not pool:
-            break
+            raise RuntimeError(
+                "Stage-2 BO-RF exhausted the candidate space before reaching "
+                "its consecutive no-improvement limit"
+            )
         pool_features = np.asarray(
             [space.one_hot(action) for action in pool],
             dtype=float,
@@ -286,8 +287,7 @@ def _run_bo_rf(
         improved = (
             candidate_rank_key(cache.best()) > candidate_rank_key(previous_best)
         )
-        if observed.inference_performed:
-            no_improvement = 0 if improved else no_improvement + 1
+        no_improvement = 0 if improved else no_improvement + 1
         history.append(_best_history_row(
             cache,
             phase="feasibility_aware_acquisition",
@@ -308,15 +308,15 @@ def _run_bo_rf(
             ),
             improved=bool(improved),
             inference_performed=bool(observed.inference_performed),
-            no_improvement_iterations=int(no_improvement),
+            no_improvement_evaluations=int(no_improvement),
         ))
-        if no_improvement >= int(config.patience_generations):
-            termination = "bo_no_improvement"
+        if no_improvement >= int(config.bo_no_improvement_patience):
             break
-    if cache.remaining <= 0:
-        termination = "evaluation_budget"
-    elif cache.observation_guard_reached:
-        termination = "observation_attempt_guard"
+    if no_improvement < int(config.bo_no_improvement_patience):
+        raise RuntimeError(
+            "Stage-2 BO-RF exhausted the candidate space before reaching its "
+            "consecutive no-improvement limit"
+        )
     cache.assert_replay_consumed()
     return SearchResult(
         algorithm="bo_rf",

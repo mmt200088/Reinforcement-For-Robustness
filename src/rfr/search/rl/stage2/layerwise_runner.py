@@ -55,8 +55,6 @@ _PROBABILITY_FIELDS = (
 )
 _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
-DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 100
-DEFAULT_CONVERGENCE_MIN_EPISODES = 90_000
 LAYERWISE_VALIDATION_BANK_GROUPS = 5
 LAYERWISE_VALIDATION_TRIALS_PER_GROUP = 3
 LAYERWISE_VALIDATION_BANK_TRIALS = (
@@ -64,7 +62,6 @@ LAYERWISE_VALIDATION_BANK_TRIALS = (
     * LAYERWISE_VALIDATION_TRIALS_PER_GROUP
 )
 StrictSelectionKey = tuple[tuple[float, ...], tuple[int, ...], str]
-ResourceObjective = tuple[float, float]
 _FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
 _FINAL_REVALIDATION_FAILED = "final_revalidation_failed"
 _FINAL_REVALIDATION_RETRYABLE = "failed_evaluation"
@@ -72,7 +69,6 @@ _STRICT_GATE_CONTRACT = (
     "joint_six_point_plus_compute_and_communication_"
     "counterfactual_six_point_v1"
 )
-_UNSET = object()
 
 
 def evidence_identity_context(
@@ -559,33 +555,6 @@ def validate_layerwise_validation_bank_config(train_cfg: Any) -> tuple[int, int]
     return baseline_groups, trials_per_group
 
 
-def validate_layerwise_three_bank_convergence_config(
-        train_cfg: Any,
-        ) -> tuple[int, int]:
-    """Enforce the minimum evidence horizon agreed for three-bank search."""
-    minimum_episodes = int(getattr(
-        train_cfg,
-        "convergence_min_episodes",
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
-    ))
-    patience_updates = int(getattr(
-        train_cfg,
-        "convergence_patience_updates",
-        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-    ))
-    if minimum_episodes < DEFAULT_CONVERGENCE_MIN_EPISODES:
-        raise ValueError(
-            "three-bank convergence requires at least "
-            f"{DEFAULT_CONVERGENCE_MIN_EPISODES} episodes"
-        )
-    if patience_updates < DEFAULT_CONVERGENCE_PATIENCE_UPDATES:
-        raise ValueError(
-            "three-bank convergence requires at least "
-            f"{DEFAULT_CONVERGENCE_PATIENCE_UPDATES} finite PPO updates"
-        )
-    return minimum_episodes, patience_updates
-
-
 def validate_layerwise_episode_limit_extension(
         checkpoint_limit: int,
         requested_limit: int,
@@ -593,13 +562,9 @@ def validate_layerwise_episode_limit_extension(
     """Allow an equal/larger runtime cap without changing search identity."""
     previous = int(checkpoint_limit)
     requested = int(requested_limit)
-    if previous < 0 or requested < 0:
-        raise ValueError("layerwise episode limits must be nonnegative")
-    if previous == 0 and requested != 0:
-        raise RuntimeError(
-            "an unbounded layerwise run cannot become bounded on resume"
-        )
-    if previous > 0 and requested > 0 and requested < previous:
+    if previous <= 0 or requested <= 0:
+        raise ValueError("layerwise episode limits must be positive")
+    if requested < previous:
         raise RuntimeError(
             "layerwise resume cannot shrink the episode limit: "
             f"checkpoint={previous}, requested={requested}"
@@ -1143,339 +1108,18 @@ def redistribute_layerwise_rewards(
     return tuple(float(value) for value in redistributed)
 
 
-@dataclass(frozen=True)
-class LayerwiseConvergenceState:
-    completed_episodes: int
-    block4_entropy: Optional[float]
-    k_entropy: Optional[float]
-    stall_update_windows: int
-    converged: bool
-    extension_required: bool
-    best_robust_feasible_objective: Optional[ResourceObjective]
-    selected_action_identity: Optional[str]
-    selected_action_stable_update_windows: int
-    plateau_ready: bool
-    strict_revalidation_passed: bool
-    termination_reason: str
-
-    @property
-    def best_robust_feasible_cost(self) -> Optional[float]:
-        """Read-only compatibility alias for older report fixtures."""
-        if self.best_robust_feasible_objective is None:
-            return None
-        return float(self.best_robust_feasible_objective[0])
-
-
-def _normalize_resource_objective(
-        value: Optional[Sequence[float]],
-        *,
-        name: str,
-        ) -> Optional[ResourceObjective]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        legacy = _finite(value, name=name)
-        value = (legacy, legacy)
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise ValueError(f"{name} must contain weighted_score and balance_tiebreak")
-    values = tuple(
-        _finite(item, name=f"{name}[{index}]")
-        for index, item in enumerate(value)
-    )
-    if len(values) != 2:
-        raise ValueError(f"{name} must contain exactly two values")
-    weighted_score, balance_tiebreak = values
-    if not (
-            0.0 <= weighted_score <= 1.0
-            and 0.0 <= balance_tiebreak <= 1.0
-    ):
-        raise ValueError(
-            f"{name} values must both be in [0, 1]"
-        )
-    return float(weighted_score), float(balance_tiebreak)
-
-
-def _resolve_resource_objective(
-        objective: Optional[Sequence[float]],
-        legacy_cost: Any,
-        ) -> Optional[ResourceObjective]:
-    if legacy_cost is not _UNSET:
-        if objective is not None:
-            raise ValueError(
-                "provide robust_feasible_objective, not robust_feasible_cost"
-            )
-        if legacy_cost is None:
-            return None
-        cost = _finite(legacy_cost, name="robust_feasible_cost")
-        objective = (cost, cost)
-    return _normalize_resource_objective(
-        objective, name="robust_feasible_objective",
-    )
-
-
-def _objective_compare(left: ResourceObjective, right: ResourceObjective) -> int:
-    for left_value, right_value in zip(left, right):
-        if left_value > right_value + 1.0e-12:
-            return 1
-        if left_value < right_value - 1.0e-12:
-            return -1
-    return 0
-
-
-class LayerwiseConvergenceTracker:
-    """Track robust frontier and exact selected-action stability."""
-
-    def __init__(
-            self,
-            *,
-            patience_updates: int = DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-            minimum_episodes: int = 0,
-            ) -> None:
-        self.patience_updates = int(patience_updates)
-        self.minimum_episodes = int(minimum_episodes)
-        if self.patience_updates <= 0:
-            raise ValueError("patience_updates must be positive")
-        if self.minimum_episodes < 0:
-            raise ValueError("minimum_episodes must be nonnegative")
-        self._best_objective: Optional[ResourceObjective] = None
-        self._current_frontier_objective: Optional[ResourceObjective] = None
-        self._stall_windows = 0
-        self._selected_action_identity: Optional[str] = None
-        self._selected_action_stable_windows = 0
-
-    def state_dict(self) -> dict[str, Any]:
-        best = (
-            None if self._best_objective is None else list(self._best_objective)
-        )
-        current = (
-            None
-            if self._current_frontier_objective is None
-            else list(self._current_frontier_objective)
-        )
-        return {
-            "patience_updates": int(self.patience_updates),
-            "minimum_episodes": int(self.minimum_episodes),
-            "best_robust_feasible_objective": best,
-            "current_robust_feasible_objective": current,
-
-            "best_robust_feasible_cost": (
-                None if best is None else float(best[0])
-            ),
-            "current_robust_feasible_cost": (
-                None if current is None else float(current[0])
-            ),
-            "stall_update_windows": int(self._stall_windows),
-            "selected_action_identity": self._selected_action_identity,
-            "selected_action_stable_update_windows": int(
-                self._selected_action_stable_windows
-            ),
-        }
-
-    def load_state_dict(self, state: Optional[Mapping[str, Any]]) -> None:
-        if not isinstance(state, Mapping):
-            return
-        expected_contract = {
-            "patience_updates": int(self.patience_updates),
-            "minimum_episodes": int(self.minimum_episodes),
-        }
-        for field_name, expected in expected_contract.items():
-            if field_name not in state:
-                continue
-            observed = state.get(field_name)
-            observed = None if observed is None else int(observed)
-            if observed != expected:
-                raise ValueError(
-                    "layerwise convergence contract mismatch: "
-                    f"{field_name} checkpoint={observed!r}, requested={expected!r}"
-                )
-        raw_best = state.get("best_robust_feasible_objective", _UNSET)
-        if raw_best is _UNSET:
-            legacy_best = state.get("best_robust_feasible_cost")
-            raw_best = None if legacy_best is None else (legacy_best, legacy_best)
-        self._best_objective = _normalize_resource_objective(
-            raw_best, name="best_robust_feasible_objective",
-        )
-        raw_current = state.get("current_robust_feasible_objective", _UNSET)
-        if raw_current is _UNSET:
-            legacy_current = state.get("current_robust_feasible_cost")
-            raw_current = (
-                None if legacy_current is None else (legacy_current, legacy_current)
-            )
-        self._current_frontier_objective = _normalize_resource_objective(
-            raw_current, name="current_robust_feasible_objective",
-        )
-        stall_windows = int(state.get("stall_update_windows", 0))
-        if stall_windows < 0:
-            raise ValueError("stall_update_windows must be nonnegative")
-        self._stall_windows = stall_windows
-
-        selected_identity = state.get("selected_action_identity")
-        if selected_identity is not None:
-            selected_identity = str(selected_identity).strip()
-            if not selected_identity:
-                raise ValueError("selected_action_identity cannot be empty")
-        selected_windows = int(state.get("selected_action_stable_update_windows", 0))
-        if selected_windows < 0:
-            raise ValueError("selected_action_stable_update_windows must be nonnegative")
-        if selected_identity is None:
-            selected_windows = 0
-        self._selected_action_identity = selected_identity
-        self._selected_action_stable_windows = selected_windows
-
-    def reconcile_frontier(
-            self,
-            robust_feasible_objective: Optional[Sequence[float]] = None,
-            robust_feasible_action_identity: Optional[str] = None,
-            *,
-            robust_feasible_cost: Any = _UNSET,
-            ) -> None:
-        """Align restored convergence state with the revalidated frontier."""
-        objective = _resolve_resource_objective(
-            robust_feasible_objective, robust_feasible_cost,
-        )
-        if objective is None:
-            if robust_feasible_action_identity is not None:
-                raise ValueError("selected action identity requires a feasible frontier")
-            self._current_frontier_objective = None
-            self._stall_windows = 0
-            self._selected_action_identity = None
-            self._selected_action_stable_windows = 0
-            return
-        if (
-                self._current_frontier_objective is None
-                or _objective_compare(
-                    objective, self._current_frontier_objective,
-                ) != 0
-        ):
-            self._best_objective = objective
-            self._stall_windows = 0
-        self._current_frontier_objective = objective
-
-        selected_identity = (
-            None
-            if robust_feasible_action_identity is None
-            else str(robust_feasible_action_identity).strip()
-        )
-        if selected_identity == "":
-            raise ValueError("robust_feasible_action_identity cannot be empty")
-        if selected_identity != self._selected_action_identity:
-            self._selected_action_identity = selected_identity
-            self._selected_action_stable_windows = 0
-
-    def observe_update(
-            self,
-            *,
-            completed_episodes: int,
-            block4_entropy: Optional[float],
-            k_entropy: Optional[float],
-            robust_feasible_objective: Optional[Sequence[float]] = None,
-            robust_feasible_action_identity: Optional[str] = None,
-            count_patience: bool = True,
-            strict_revalidation_passed: bool = False,
-            robust_feasible_cost: Any = _UNSET,
-            ) -> LayerwiseConvergenceState:
-        episodes = int(completed_episodes)
-        objective = _resolve_resource_objective(
-            robust_feasible_objective, robust_feasible_cost,
-        )
-        if objective is None:
-            if robust_feasible_action_identity is not None:
-                raise ValueError("selected action identity requires a feasible frontier")
-            self._current_frontier_objective = None
-            self._stall_windows = 0
-            self._selected_action_identity = None
-            self._selected_action_stable_windows = 0
-        else:
-            frontier_restarted = self._current_frontier_objective is None
-            frontier_retracted = bool(
-                self._current_frontier_objective is not None
-                and _objective_compare(
-                    objective, self._current_frontier_objective,
-                ) < 0
-            )
-            if frontier_restarted or frontier_retracted:
-                self._best_objective = objective
-                self._stall_windows = 0
-            elif (
-                    self._best_objective is None
-                    or _objective_compare(objective, self._best_objective) > 0
-            ):
-                self._best_objective = objective
-                self._stall_windows = 0
-            elif count_patience:
-                self._stall_windows += 1
-            self._current_frontier_objective = objective
-
-            selected_identity = (
-                None
-                if robust_feasible_action_identity is None
-                else str(robust_feasible_action_identity).strip()
-            )
-            if selected_identity == "":
-                raise ValueError("robust_feasible_action_identity cannot be empty")
-            if selected_identity != self._selected_action_identity:
-                self._selected_action_identity = selected_identity
-                self._selected_action_stable_windows = 0
-            elif selected_identity is not None and count_patience:
-                self._selected_action_stable_windows += 1
-
-        b4 = _diagnostic_entropy(block4_entropy)
-        k_value = _diagnostic_entropy(k_entropy)
-        plateau_ready = bool(
-            episodes >= self.minimum_episodes
-            and objective is not None
-            and self._best_objective is not None
-            and self._stall_windows >= self.patience_updates
-            and self._selected_action_identity is not None
-            and self._selected_action_stable_windows >= self.patience_updates
-        )
-        revalidation_passed = bool(strict_revalidation_passed)
-        converged = bool(plateau_ready and revalidation_passed)
-        termination_reason = "converged" if converged else "running"
-        return LayerwiseConvergenceState(
-            completed_episodes=episodes,
-            block4_entropy=b4,
-            k_entropy=k_value,
-            stall_update_windows=int(self._stall_windows),
-            best_robust_feasible_objective=self._best_objective,
-            selected_action_identity=self._selected_action_identity,
-            selected_action_stable_update_windows=int(
-                self._selected_action_stable_windows
-            ),
-            converged=converged,
-            extension_required=False,
-            plateau_ready=plateau_ready,
-            strict_revalidation_passed=revalidation_passed,
-            termination_reason=termination_reason,
-        )
-
-
-def is_unbounded_layerwise_training(
-        remaining_episodes: int,
-        planned_total_episodes: Optional[int],
-        ) -> bool:
-    """Disambiguate an unbounded run from an exhausted bounded resume."""
-    remaining = int(remaining_episodes)
-    planned = (
-        remaining
-        if planned_total_episodes is None else int(planned_total_episodes)
-    )
-    if remaining < 0 or planned < 0:
-        raise ValueError("layerwise episode counts must be nonnegative")
-    return planned == 0
-
-
 def resolve_layerwise_episode_budget(
         requested_total_episodes: int,
         completed_episodes: int,
         ) -> int:
-    """Return the remaining bounded budget, preserving zero as unbounded."""
+    """Return the remaining configured maximum-episode budget."""
     requested = int(requested_total_episodes)
     completed = int(completed_episodes)
-    if requested < 0 or completed < 0:
-        raise ValueError("layerwise episode counts must be nonnegative")
-    if requested == 0:
-        return 0
+    if requested <= 0 or completed < 0:
+        raise ValueError(
+            "requested layerwise episodes must be positive and completed "
+            "episodes must be nonnegative"
+        )
     if completed > requested:
         raise ValueError(
             f"layerwise checkpoint episode {completed} exceeds requested total {requested}"
@@ -1534,17 +1178,8 @@ class LayerwiseEpisodeRecord:
     step_count: int
     block4_entropy: Optional[float]
     k_entropy: Optional[float]
-    stall_update_windows: int
-    selected_action_identity: Optional[str]
-    selected_action_stable_update_windows: int
-    converged: bool
-    extension_required: bool
-    plateau_ready: bool
-    strict_revalidation_passed: bool
     strict_revalidation_status: str
     termination_reason: str
-    best_robust_feasible_cost: Optional[float]
-    best_robust_feasible_objective: Optional[ResourceObjective]
 
 
 def _to_plain_mapping(value: Any) -> dict[str, Any]:
@@ -3799,26 +3434,9 @@ def train_layerwise(
     ppo_cfg.gae_lambda = 1.0
     update_window = max(1, int(getattr(train_cfg, "update_every_n_episodes", 120)))
     total_episodes = int(getattr(train_cfg, "total_episodes", 0))
+    if total_episodes <= 0:
+        raise ValueError("layerwise training requires a positive episode limit")
     planned_total_episodes = getattr(train_cfg, "planned_total_episodes", None)
-    unbounded_training = is_unbounded_layerwise_training(
-        total_episodes,
-        planned_total_episodes,
-    )
-    convergence_patience_updates = int(getattr(
-        train_cfg,
-        "convergence_patience_updates",
-        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-    ))
-    convergence_min_episodes = int(getattr(
-        train_cfg,
-        "convergence_min_episodes",
-        (DEFAULT_CONVERGENCE_MIN_EPISODES if validation_banks is not None else 0),
-    ))
-    if validation_banks is not None:
-        (
-            convergence_min_episodes,
-            convergence_patience_updates,
-        ) = validate_layerwise_three_bank_convergence_config(train_cfg)
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
     expected_online_trials = int(
@@ -3914,93 +3532,14 @@ def train_layerwise(
         final_assessment_trial_limit=final_validation_trials,
         validation_banks=validation_banks,
     )
-    convergence_resume_state = getattr(train_cfg, "convergence_resume_state", None)
-    convergence_resume_state = (
-        dict(convergence_resume_state)
-        if isinstance(convergence_resume_state, Mapping) else {}
-    )
-    convergence_tracker = LayerwiseConvergenceTracker(
-        patience_updates=convergence_patience_updates,
-        minimum_episodes=convergence_min_episodes,
-    )
-    convergence_tracker.load_state_dict(convergence_resume_state)
-    restored_strict_best = _strict_best_snapshot(accepted_candidates)
-    restored_frontier_objective = (
-        None if restored_strict_best is None
-        else (
-            float(restored_strict_best["ppo_resource_score"]),
-            float(restored_strict_best["robust_floor"]),
-        )
-    )
-    restored_selected_identity = (
-        None if restored_strict_best is None
-        else str(restored_strict_best["candidate_key"])
-    )
-    convergence_tracker.reconcile_frontier(
-        restored_frontier_objective,
-        restored_selected_identity,
-    )
-    restored_tracker_state = convergence_tracker.state_dict()
-    restored_block4_entropy = convergence_resume_state.get("block4_entropy")
-    restored_k_entropy = convergence_resume_state.get("k_entropy")
-    restored_converged = bool(
-        (unbounded_training or validation_banks is not None)
-        and restored_frontier_objective is not None
-        and restored_selected_identity is not None
-        and restored_tracker_state["selected_action_identity"]
-        == restored_selected_identity
-        and int(restored_tracker_state["stall_update_windows"])
-        >= convergence_patience_updates
-        and int(
-            restored_tracker_state["selected_action_stable_update_windows"]
-        ) >= convergence_patience_updates
-        and convergence_resume_state.get("strict_revalidation_passed", False)
-        and convergence_resume_state.get("converged", False)
-    )
-    restored_plateau_ready = bool(
-        absolute_start >= convergence_min_episodes
-        and restored_frontier_objective is not None
-        and restored_selected_identity is not None
-        and int(restored_tracker_state["stall_update_windows"])
-        >= convergence_patience_updates
-        and int(
-            restored_tracker_state["selected_action_stable_update_windows"]
-        ) >= convergence_patience_updates
-    )
-    restored_revalidation_passed = bool(
-        restored_converged
-        and convergence_resume_state.get("strict_revalidation_passed", False)
-    )
-    strict_revalidation_status = str(
-        convergence_resume_state.get("strict_revalidation_status", "not_due")
-    )
-    convergence_state = LayerwiseConvergenceState(
-        completed_episodes=absolute_start,
-        block4_entropy=_diagnostic_entropy(restored_block4_entropy),
-        k_entropy=_diagnostic_entropy(restored_k_entropy),
-        stall_update_windows=int(restored_tracker_state["stall_update_windows"]),
-        best_robust_feasible_objective=(
-            None
-            if restored_tracker_state["best_robust_feasible_objective"] is None
-            else tuple(restored_tracker_state["best_robust_feasible_objective"])
-        ),
-        selected_action_identity=restored_tracker_state["selected_action_identity"],
-        selected_action_stable_update_windows=int(
-            restored_tracker_state["selected_action_stable_update_windows"]
-        ),
-        converged=restored_converged,
-        extension_required=False,
-        plateau_ready=restored_plateau_ready,
-        strict_revalidation_passed=restored_revalidation_passed,
-        termination_reason=("converged" if restored_converged else "running"),
-    )
+    strict_revalidation_status = "not_due"
+    latest_block4_entropy: Optional[float] = None
+    latest_k_entropy: Optional[float] = None
     entropy_samples: list[dict[str, np.ndarray]] = []
     local_episode = 0
     finalized_drafts: list[_LayerwiseEpisodeDraft] = []
     graceful_stopped = False
-    while not convergence_state.converged and (
-            unbounded_training or local_episode < total_episodes
-    ):
+    while local_episode < total_episodes:
         if not finalized_drafts:
             current_pool_generation, current_worker_count = (
                 _probe_pool_state(probe_runner)
@@ -4032,11 +3571,7 @@ def train_layerwise(
             episodes_to_update = update_window - (
                 local_episode % update_window
             )
-            episodes_to_end = (
-                terminal_batch_size
-                if unbounded_training
-                else total_episodes - local_episode
-            )
+            episodes_to_end = total_episodes - local_episode
             collect_count = min(
                 terminal_batch_size,
                 episodes_to_update,
@@ -4419,9 +3954,7 @@ def train_layerwise(
             "block4": None, "k": None,
             "block4_slot_count": 0, "k_slot_count": 0,
         }
-        update_due = completed % update_window == 0 or (
-            not unbounded_training and completed == total_episodes
-        )
+        update_due = completed % update_window == 0 or completed == total_episodes
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
             ppo_metrics = dict(ppo_update_fn(
@@ -4432,45 +3965,22 @@ def train_layerwise(
                 device,
                 ent_coef_override=0.0,
             ))
-            convergence_update_counted = bool(
-                int(ppo_metrics.get("nonfinite_minibatches", 0) or 0) == 0
-                and not bool(ppo_metrics.get("nonfinite_update_skipped", False))
+            entropy_snapshot = _current_policy_entropy(
+                policy, entropy_samples, device,
             )
-            entropy_snapshot = _current_policy_entropy(policy, entropy_samples, device)
+            latest_block4_entropy = entropy_snapshot["block4"]
+            latest_k_entropy = entropy_snapshot["k"]
             strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
-            best_objective = (
-                None if strict_best_snapshot is None
-                else (
-                    float(strict_best_snapshot["ppo_resource_score"]),
-                    float(strict_best_snapshot["robust_floor"]),
-                )
-            )
-            best_action_identity = (
-                None if strict_best_snapshot is None
-                else str(strict_best_snapshot["candidate_key"])
-            )
-            convergence_state = convergence_tracker.observe_update(
-                completed_episodes=absolute_start + completed,
-                block4_entropy=entropy_snapshot["block4"],
-                k_entropy=entropy_snapshot["k"],
-                robust_feasible_objective=best_objective,
-                robust_feasible_action_identity=best_action_identity,
-                count_patience=convergence_update_counted,
-            )
             strict_revalidation_status = "not_due"
             maximum_reached = bool(
-                not unbounded_training
-                and absolute_start + completed
+                absolute_start + completed
                 >= (
                     total_episodes
                     if planned_total_episodes is None
                     else int(planned_total_episodes)
                 )
             )
-            if (
-                    validation_banks is not None
-                    and (convergence_state.plateau_ready or maximum_reached)
-            ):
+            if validation_banks is not None and maximum_reached:
                 strict_revalidation_status, strict_best_snapshot = (
                     _certify_strict_best_candidates(
                         env=env,
@@ -4484,224 +3994,19 @@ def train_layerwise(
                         assess_candidate_fn=assess_candidate_fn,
                         final_probability=final_probability,
                         validation_banks=validation_banks,
-                        exhaustive_fallback=maximum_reached,
+                        exhaustive_fallback=True,
                     )
                 )
-
-                if not convergence_state.converged:
-                    strict_best_snapshot = _strict_best_snapshot(
-                        accepted_candidates,
-                    )
-                    best_objective = (
-                        None if strict_best_snapshot is None
-                        else (
-                            float(strict_best_snapshot["ppo_resource_score"]),
-                            float(strict_best_snapshot["robust_floor"]),
-                        )
-                    )
-                    best_action_identity = (
-                        None if strict_best_snapshot is None
-                        else str(strict_best_snapshot["candidate_key"])
-                    )
-                    convergence_tracker.reconcile_frontier(
-                        best_objective, best_action_identity,
-                    )
-                    convergence_state = convergence_tracker.observe_update(
-                        completed_episodes=absolute_start + completed,
-                        block4_entropy=entropy_snapshot["block4"],
-                        k_entropy=entropy_snapshot["k"],
-                        robust_feasible_objective=best_objective,
-                        robust_feasible_action_identity=best_action_identity,
-                        count_patience=False,
-                        strict_revalidation_passed=(
-                            strict_revalidation_status == "passed"
-                        ),
-                    )
-            if (
-                    validation_banks is None
-                    and unbounded_training
-                    and convergence_state.plateau_ready
-                    and strict_best_snapshot is not None
-            ):
-                revalidation_context = {
-                    **dict(identity_context),
-                    "convergence_revalidation_update": int(
-                        absolute_start + completed
-                    ),
-                    "convergence_revalidation_candidate": str(
-                        strict_best_snapshot["candidate_key"]
-                    ),
-                }
-                revalidation_bootstrap_seed = int(base_seed or 0) + int(
-                    absolute_start + completed
-                )
-                revalidation = promote_candidate_if_eligible(
-                    env=env,
-                    promotion_base_env=authoritative_base_env,
-                    candidate_store=candidate_store,
-                    action_indices=strict_best_snapshot["full_vector"],
-                    identity_context=revalidation_context,
-                    action_matrix=strict_best_snapshot["action_matrix"],
-                    assessment=strict_best_snapshot["assessment"],
-                    priority=3,
-                    variable_cost=float(strict_best_snapshot["variable_cost"]),
-                    frontier_cost=None,
-                    frontier_candidates=None,
-                    boosted_overrides=strict_best_snapshot["boosted_overrides"],
-                    bootstrap_seed=revalidation_bootstrap_seed,
-                    episode_reward=strict_best_snapshot.get("reward"),
-                    assess_candidate_fn=assess_candidate_fn,
-                    prefilter_probability=promotion_probability,
-                    promotion_probability=final_probability,
-                    target_trial_count=final_validation_trials,
-                )
-                revalidation_passed = bool(
-                    revalidation.evidence is not None
-                    and revalidation.evidence.promoted
-                    and int(revalidation.trial_count) >= final_validation_trials
-                    and _assessment_passes(
-                        revalidation.assessment, final_probability,
-                    )
-                )
-                selected_key = str(strict_best_snapshot["candidate_key"])
-                revalidation_status = str(revalidation.status)
-                completed_probability_verdict = bool(
-                    revalidation_passed
-                    or revalidation_status == "failed_probability_gate"
-                )
-                if completed_probability_verdict:
-                    _record_final_revalidation_outcome(
-                        candidate_store=candidate_store,
-                        identity_context=identity_context,
-                        revalidation_identity_context=revalidation_context,
-                        candidate=strict_best_snapshot,
-                        passed=revalidation_passed,
-                        revalidation_status=revalidation_status,
-                        bootstrap_seed=revalidation_bootstrap_seed,
-                        final_probability=final_probability,
-                        final_trial_count=final_validation_trials,
-                    )
-                if revalidation_passed:
-                    selected = accepted_candidates[selected_key]
-                    selected["assessment"] = revalidation.assessment
-                    selected["metrics"] = dict(revalidation.metrics or {})
-                    selected["constraint_safety_margins"] = (
-                        normalized_constraint_safety_margins(
-                            selected["metrics"],
-                            authoritative_base_env.statistical_reference,
-                        )
-                    )
-                    selected["promotion_trials"] = revalidation.evidence.trials
-                    selected["final_revalidation_status"] = "passed"
-                    strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
-                    if (
-                            strict_best_snapshot is not None
-                            and strict_best_snapshot["candidate_key"] == selected_key
-                    ):
-                        strict_revalidation_status = "passed"
-                        convergence_state = convergence_tracker.observe_update(
-                            completed_episodes=absolute_start + completed,
-                            block4_entropy=entropy_snapshot["block4"],
-                            k_entropy=entropy_snapshot["k"],
-                            robust_feasible_objective=(
-                                float(strict_best_snapshot["ppo_resource_score"]),
-                                float(strict_best_snapshot["robust_floor"]),
-                            ),
-                            robust_feasible_action_identity=selected_key,
-                            count_patience=False,
-                            strict_revalidation_passed=True,
-                        )
-                    else:
-                        strict_revalidation_status = (
-                            "winner_changed_after_revalidation"
-                        )
-                else:
-                    strict_revalidation_status = revalidation_status
-                    if revalidation_status == "failed_probability_gate":
-                        accepted_candidates.pop(selected_key, None)
-                    strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
-
-                if not convergence_state.converged:
-                    best_objective = (
-                        None if strict_best_snapshot is None
-                        else (
-                            float(strict_best_snapshot["ppo_resource_score"]),
-                            float(strict_best_snapshot["robust_floor"]),
-                        )
-                    )
-                    best_action_identity = (
-                        None if strict_best_snapshot is None
-                        else str(strict_best_snapshot["candidate_key"])
-                    )
-                    convergence_tracker.reconcile_frontier(
-                        best_objective, best_action_identity,
-                    )
-                    convergence_state = convergence_tracker.observe_update(
-                        completed_episodes=absolute_start + completed,
-                        block4_entropy=entropy_snapshot["block4"],
-                        k_entropy=entropy_snapshot["k"],
-                        robust_feasible_objective=best_objective,
-                        robust_feasible_action_identity=best_action_identity,
-                        count_patience=False,
-                    )
-            if (
-                    validation_banks is None
-                    and not unbounded_training
-                    and completed >= total_episodes
-                    and not convergence_state.converged
-            ):
-                strict_revalidation_status = "not_applicable_bounded"
-                convergence_state = replace(
-                    convergence_state,
-                    strict_revalidation_passed=False,
-                    termination_reason="bounded_budget_exhausted",
-                )
-            elif maximum_reached and not convergence_state.converged:
-                convergence_state = replace(
-                    convergence_state,
-                    strict_revalidation_passed=(
-                        strict_revalidation_status == "passed"
-                    ),
-                    termination_reason="max_episodes_reached",
-                )
-            persisted_convergence_state = {
-                **convergence_tracker.state_dict(),
-                "block4_entropy": convergence_state.block4_entropy,
-                "k_entropy": convergence_state.k_entropy,
-                "converged": convergence_state.converged,
-                "extension_required": convergence_state.extension_required,
-                "plateau_ready": convergence_state.plateau_ready,
-                "strict_revalidation_passed": (
-                    convergence_state.strict_revalidation_passed
-                ),
-                "strict_revalidation_status": strict_revalidation_status,
-                "termination_reason": convergence_state.termination_reason,
-            }
+            elif maximum_reached:
+                strict_revalidation_status = "not_applicable"
             ppo_metrics.update({
                 "completed_episodes": absolute_start + completed,
-                "block4_entropy": entropy_snapshot["block4"],
-                "k_entropy": entropy_snapshot["k"],
-                "stall_update_windows": convergence_state.stall_update_windows,
-                "selected_action_identity": convergence_state.selected_action_identity,
-                "selected_action_stable_update_windows": (
-                    convergence_state.selected_action_stable_update_windows
-                ),
-                "converged": convergence_state.converged,
-                "extension_required": convergence_state.extension_required,
-                "plateau_ready": convergence_state.plateau_ready,
-                "strict_revalidation_passed": (
-                    convergence_state.strict_revalidation_passed
-                ),
+                "block4_entropy": latest_block4_entropy,
+                "k_entropy": latest_k_entropy,
                 "strict_revalidation_status": strict_revalidation_status,
-                "termination_reason": convergence_state.termination_reason,
-                "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
-                "best_robust_feasible_objective": (
-                    None
-                    if convergence_state.best_robust_feasible_objective is None
-                    else list(convergence_state.best_robust_feasible_objective)
+                "termination_reason": (
+                    "maximum_episodes" if maximum_reached else "running"
                 ),
-                "convergence_update_counted": convergence_update_counted,
-                "convergence_state": persisted_convergence_state,
                 "strict_best": strict_best_snapshot,
                 "strict_pareto_frontier": _strict_pareto_snapshots(
                     accepted_candidates
@@ -4713,6 +4018,14 @@ def train_layerwise(
         invalid_steps = sum(
             not bool(_field(info.get("layer_summary", {}), "all_valid", True))
             for info in step_infos
+        )
+        episode_limit_reached = bool(
+            absolute_start + completed
+            >= (
+                total_episodes
+                if planned_total_episodes is None
+                else int(planned_total_episodes)
+            )
         )
         record = LayerwiseEpisodeRecord(
             episode_index=absolute_episode,
@@ -4791,24 +4104,9 @@ def train_layerwise(
             step_count=horizon,
             block4_entropy=entropy_snapshot["block4"],
             k_entropy=entropy_snapshot["k"],
-            stall_update_windows=int(convergence_state.stall_update_windows),
-            selected_action_identity=convergence_state.selected_action_identity,
-            selected_action_stable_update_windows=int(
-                convergence_state.selected_action_stable_update_windows
-            ),
-            converged=bool(convergence_state.converged),
-            extension_required=bool(convergence_state.extension_required),
-            plateau_ready=bool(convergence_state.plateau_ready),
-            strict_revalidation_passed=bool(
-                convergence_state.strict_revalidation_passed
-            ),
             strict_revalidation_status=str(strict_revalidation_status),
-            termination_reason=str(convergence_state.termination_reason),
-            best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
-            best_robust_feasible_objective=(
-                None
-                if convergence_state.best_robust_feasible_objective is None
-                else tuple(convergence_state.best_robust_feasible_objective)
+            termination_reason=(
+                "maximum_episodes" if episode_limit_reached else "running"
             ),
         )
         if retain_history:
@@ -4822,15 +4120,10 @@ def train_layerwise(
             entropy_samples.clear()
             if stop_requested is not None and stop_requested():
                 graceful_stopped = True
-                convergence_state = replace(
-                    convergence_state,
-                    termination_reason="graceful_stop",
-                )
                 break
 
     maximum_boundary_reached = bool(
-        validation_banks is not None
-        and not unbounded_training
+        not graceful_stopped
         and absolute_start + local_episode
         >= (
             total_episodes
@@ -4838,8 +4131,12 @@ def train_layerwise(
             else int(planned_total_episodes)
         )
     )
-    if maximum_boundary_reached and strict_revalidation_status != "passed":
-        strict_revalidation_status, strict_best_snapshot = (
+    if (
+            validation_banks is not None
+            and maximum_boundary_reached
+            and strict_revalidation_status != "passed"
+    ):
+        strict_revalidation_status, _strict_best = (
             _certify_strict_best_candidates(
                 env=env,
                 promotion_base_env=authoritative_base_env,
@@ -4855,52 +4152,12 @@ def train_layerwise(
                 exhaustive_fallback=True,
             )
         )
-        best_objective = (
-            None if strict_best_snapshot is None
-            else (
-                float(strict_best_snapshot["ppo_resource_score"]),
-                float(strict_best_snapshot["robust_floor"]),
-            )
-        )
-        best_action_identity = (
-            None if strict_best_snapshot is None
-            else str(strict_best_snapshot["candidate_key"])
-        )
-        convergence_tracker.reconcile_frontier(
-            best_objective, best_action_identity,
-        )
-        convergence_state = convergence_tracker.observe_update(
-            completed_episodes=absolute_start + local_episode,
-            block4_entropy=convergence_state.block4_entropy,
-            k_entropy=convergence_state.k_entropy,
-            robust_feasible_objective=best_objective,
-            robust_feasible_action_identity=best_action_identity,
-            count_patience=False,
-            strict_revalidation_passed=(
-                strict_revalidation_status == "passed"
-            ),
-        )
+    elif validation_banks is None:
+        strict_revalidation_status = "not_applicable"
 
-    if (
-            not graceful_stopped
-            and not unbounded_training
-            and not convergence_state.converged
-    ):
-        if validation_banks is None:
-            strict_revalidation_status = "not_applicable_bounded"
-            convergence_state = replace(
-                convergence_state,
-                strict_revalidation_passed=False,
-                termination_reason="bounded_budget_exhausted",
-            )
-        else:
-            convergence_state = replace(
-                convergence_state,
-                strict_revalidation_passed=(
-                    strict_revalidation_status == "passed"
-                ),
-                termination_reason="max_episodes_reached",
-            )
+    termination_reason = (
+        "graceful_stop" if graceful_stopped else "maximum_episodes"
+    )
     bank_b_best = _strict_best_snapshot(accepted_candidates)
     final_candidates = accepted_candidates
     if maximum_boundary_reached:
@@ -4911,22 +4168,10 @@ def train_layerwise(
         }
     strict_best = _strict_best_snapshot(final_candidates)
     strict_pareto_frontier = _strict_pareto_snapshots(accepted_candidates)
-    final_convergence_state = {
-        **convergence_tracker.state_dict(),
-        "block4_entropy": convergence_state.block4_entropy,
-        "k_entropy": convergence_state.k_entropy,
-        "converged": convergence_state.converged,
-        "extension_required": convergence_state.extension_required,
-        "plateau_ready": convergence_state.plateau_ready,
-        "strict_revalidation_passed": convergence_state.strict_revalidation_passed,
-        "strict_revalidation_status": strict_revalidation_status,
-        "termination_reason": convergence_state.termination_reason,
-    }
     return {
         "strict_best": strict_best,
         "bank_b_best": bank_b_best,
         "strict_pareto_frontier": strict_pareto_frontier,
-        "convergence_state": final_convergence_state,
         "best_action": (
             list(strict_best["full_vector"]) if strict_best is not None else None
         ),
@@ -4990,20 +4235,10 @@ def train_layerwise(
         "ppo_metrics": ppo_diagnostics,
         "episode_records": records,
         "probe_pool_schedule": probe_pool_schedule,
-        "block4_entropy": convergence_state.block4_entropy,
-        "k_entropy": convergence_state.k_entropy,
-        "stall_update_windows": convergence_state.stall_update_windows,
-        "selected_action_identity": convergence_state.selected_action_identity,
-        "selected_action_stable_update_windows": (
-            convergence_state.selected_action_stable_update_windows
-        ),
-        "converged": convergence_state.converged,
-        "extension_required": convergence_state.extension_required,
-        "plateau_ready": convergence_state.plateau_ready,
-        "strict_revalidation_passed": convergence_state.strict_revalidation_passed,
+        "block4_entropy": latest_block4_entropy,
+        "k_entropy": latest_k_entropy,
         "strict_revalidation_status": strict_revalidation_status,
-        "termination_reason": convergence_state.termination_reason,
+        "termination_reason": termination_reason,
         "graceful_stopped": graceful_stopped,
-        "recommended_extension_episodes": 0,
         "completed_episodes": absolute_start + local_episode,
     }

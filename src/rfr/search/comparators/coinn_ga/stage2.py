@@ -18,7 +18,6 @@ from rfr.search.comparators.common.stage2_core import (
     SearchResult,
     _EvaluationCache,
     _best_history_row,
-    _cache_stop_reason,
     _hamming_distance,
     _maximin_candidate,
     _structured_initial_design,
@@ -275,15 +274,12 @@ def _run_coinn_ga(
     cache = _EvaluationCache(
         space,
         evaluator,
-        config.evaluation_budget,
-        config.observation_attempt_limit,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
     )
     population_target = min(
         int(config.ga_population_size),
         int(space.cardinality),
-        int(cache.budget),
     )
     elite_count = min(
         int(config.ga_elite_count), max(0, population_target - 1),
@@ -344,10 +340,11 @@ def _run_coinn_ga(
         item.action_matrix for item in cache.observations
     }
     completed_generations = 0
-    no_improvement_generations = 0
-    termination = "generation_limit"
     if len(population) < population_target:
-        termination = _cache_stop_reason(cache)
+        raise RuntimeError(
+            "Stage-2 GA could not build its complete inference-reaching "
+            "initial population"
+        )
 
     while (
             len(population) == population_target
@@ -358,26 +355,30 @@ def _run_coinn_ga(
         )
         offspring_target = population_target - elite_count
         if offspring_target <= 0:
-            termination = "candidate_space_exhausted"
-            break
+            raise RuntimeError("Stage-2 GA requires at least one offspring")
         if cache.remaining < offspring_target:
-            termination = "evaluation_budget"
-            break
+            raise RuntimeError(
+                "Stage-2 GA exhausted the action space before every configured "
+                "generation completed"
+            )
         if space.cardinality - cache.observation_count < offspring_target:
-            termination = "candidate_space_exhausted"
-            break
+            raise RuntimeError(
+                "Stage-2 GA exhausted the candidate space before every configured "
+                "generation completed"
+            )
 
         unique_ratio, mean_distance = _population_diversity(space, population)
         offspring: list[SearchEvaluation] = []
         forbidden = observed_actions
         observation_start = cache.observation_count
         previous_best = cache.best()
-        generation_failed = False
 
         while len(offspring) < offspring_target:
             if not cache.can_observe:
-                generation_failed = True
-                break
+                raise RuntimeError(
+                    "Stage-2 GA exhausted the action space while constructing "
+                    "offspring"
+                )
             child, _used_immigrant = _make_ga_child(
                 space,
                 population,
@@ -386,32 +387,13 @@ def _run_coinn_ga(
                 mutation_max_layers=int(config.mutation_max_coordinates),
             )
             if child is None:
-                termination = "mutation_neighborhood_exhausted"
-                generation_failed = True
-                break
+                raise RuntimeError(
+                    "Stage-2 GA could not produce a unique offspring action"
+                )
             forbidden.add(child)
             observed = cache.evaluate(child)
             if observed.inference_performed:
                 offspring.append(observed)
-
-        if generation_failed or len(offspring) != offspring_target:
-            if termination not in {
-                    "candidate_space_exhausted",
-                    "mutation_neighborhood_exhausted",
-            }:
-                termination = _cache_stop_reason(cache)
-            history.append(_best_history_row(
-                cache,
-                phase="ga_generation_aborted",
-                iteration=completed_generations + 1,
-                generation=int(completed_generations + 1),
-                inference_reaching_offspring=int(len(offspring)),
-                offspring_target=int(offspring_target),
-                generation_observations=int(
-                    cache.observation_count - observation_start
-                ),
-            ))
-            break
 
         population = [*elites, *offspring]
         if len(population) != population_target:
@@ -421,9 +403,6 @@ def _run_coinn_ga(
         completed_generations += 1
         improved = (
             candidate_rank_key(cache.best()) > candidate_rank_key(previous_best)
-        )
-        no_improvement_generations = (
-            0 if improved else no_improvement_generations + 1
         )
         post_unique_ratio, post_mean_distance = _population_diversity(
             space, population,
@@ -451,7 +430,6 @@ def _run_coinn_ga(
                 population_target + completed_generations * offspring_target
             ),
             improved=bool(improved),
-            no_improvement_generations=int(no_improvement_generations),
             unique_ratio=float(unique_ratio),
             mean_pairwise_distance=float(mean_distance),
             diversity_triggered=False,
@@ -462,26 +440,9 @@ def _run_coinn_ga(
             post_update_unique_ratio=float(post_unique_ratio),
             post_update_mean_pairwise_distance=float(post_mean_distance),
         ))
-        if (
-                config.ga_stop_on_no_improvement
-                and no_improvement_generations
-                >= int(config.patience_generations)
-        ):
-            termination = "ga_no_incumbent_improvement"
-            break
-
-    if (
-            termination == "generation_limit"
-            and completed_generations >= int(config.ga_generations)
-    ):
-        termination = "generation_limit"
-    if config.ga_require_full_generations and (
-            termination != "generation_limit"
-            or completed_generations != int(config.ga_generations)
-    ):
+    if completed_generations != int(config.ga_generations):
         raise RuntimeError(
-            "COINN-GA full-generation contract ended before every configured "
-            "generation completed"
+            "Stage-2 GA did not complete every configured generation"
         )
     cache.assert_replay_consumed()
     return SearchResult(
@@ -489,7 +450,7 @@ def _run_coinn_ga(
         best=cache.best(),
         observations=cache.observations,
         history=tuple(history),
-        termination_reason=termination,
+        termination_reason="completed_generations",
     )
 
 

@@ -302,7 +302,6 @@ def _run_coinn_ga(
     cache = _EvaluationCache(
         space=space,
         evaluator=evaluator,
-        evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
@@ -347,27 +346,21 @@ def _run_coinn_ga(
     incumbent_key = candidate_rank_key(max(
         population, key=candidate_rank_key,
     ))
-    no_improvement_generations = 0
     offspring_target = population_size - elite_count
-    if config.ga_require_full_generations:
-        required_evaluations = (
-            population_size
-            + int(config.ga_update_generations) * offspring_target
+    required_evaluations = (
+        population_size
+        + int(config.ga_update_generations) * offspring_target
+    )
+    if int(cache.cap) < required_evaluations:
+        raise RuntimeError(
+            "Stage-1 GA action space is too small for every configured generation"
         )
-        if int(cache.cap) < required_evaluations:
-            raise RuntimeError(
-                "Stage-1 GA full-generation contract has insufficient "
-                "evaluation budget"
-            )
     for generation in range(1, int(config.ga_update_generations) + 1):
         if cache.remaining < offspring_target:
-            if config.ga_require_full_generations:
-                raise RuntimeError(
-                    "Stage-1 GA full-generation contract reached an "
-                    "insufficient evaluation budget"
-                )
-            termination = "evaluation_cap"
-            break
+            raise RuntimeError(
+                "Stage-1 GA exhausted the action space before every configured "
+                "generation completed"
+            )
         elites = _select_hamming_diverse_elites(
             space, population, elite_count,
         )
@@ -387,13 +380,9 @@ def _run_coinn_ga(
             actions.append(child)
             blocked.add(child)
         if len(actions) < offspring_target:
-            if config.ga_require_full_generations:
-                raise RuntimeError(
-                    "Stage-1 GA full-generation contract could not produce "
-                    "a full set of unique offspring"
-                )
-            termination = "candidate_space_exhausted"
-            break
+            raise RuntimeError(
+                "Stage-1 GA could not produce a full set of unique offspring"
+            )
         offspring = [cache.evaluate(action) for action in actions]
         population = elites + offspring
         completed_generations = generation
@@ -401,9 +390,6 @@ def _run_coinn_ga(
             population, key=candidate_rank_key,
         ))
         improved = next_incumbent_key > incumbent_key
-        no_improvement_generations = (
-            0 if improved else no_improvement_generations + 1
-        )
         incumbent_key = next_incumbent_key
         next_unique_ratio, next_mean_distance = _population_diversity(space, population)
         history.append(_history_row(
@@ -417,7 +403,6 @@ def _run_coinn_ga(
             elite_policy="best_incumbent_then_hamming_distance_2",
             new_unique_evaluations=len(offspring),
             improved=bool(improved),
-            no_improvement_generations=int(no_improvement_generations),
             diversity_triggered=False,
             scheduled_immigrants=0,
             fallback_immigrants=0,
@@ -428,27 +413,9 @@ def _run_coinn_ga(
             post_update_unique_ratio=float(next_unique_ratio),
             post_update_mean_pairwise_distance=float(next_mean_distance),
         ))
-        if (
-            config.ga_stop_on_no_improvement
-            and no_improvement_generations >= int(
-                config.ga_no_improvement_patience
-            )
-        ):
-            termination = "ga_no_incumbent_improvement"
-            break
-    if (
-            termination == "completed_generations"
-            and completed_generations < int(config.ga_update_generations)
-            and cache.remaining <= 0
-    ):
-        termination = "evaluation_cap"
-    if config.ga_require_full_generations and (
-            termination != "completed_generations"
-            or completed_generations != int(config.ga_update_generations)
-    ):
+    if completed_generations != int(config.ga_update_generations):
         raise RuntimeError(
-            "Stage-1 GA full-generation contract did not complete every "
-            "configured generation"
+            "Stage-1 GA did not complete every configured generation"
         )
     cache.assert_replay_consumed()
     return SearchResult(

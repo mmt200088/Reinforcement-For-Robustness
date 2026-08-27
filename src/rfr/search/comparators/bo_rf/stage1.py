@@ -167,7 +167,6 @@ def _run_bo_rf(
     cache = _EvaluationCache(
         space=space,
         evaluator=evaluator,
-        evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
@@ -190,10 +189,9 @@ def _run_bo_rf(
     incumbent_key = candidate_rank_key(cache.best())
     no_improvement = 0
     iteration = 0
-    termination = "candidate_space_exhausted"
+    termination = "consecutive_no_improvement"
     while cache.remaining > 0:
         if no_improvement >= int(config.bo_no_improvement_patience):
-            termination = "no_improvement_convergence"
             break
         iteration += 1
         observations = cache.observations
@@ -211,8 +209,10 @@ def _run_bo_rf(
             pool_size=int(config.bo_candidate_pool_size),
         )
         if not pool:
-            termination = "candidate_space_exhausted"
-            break
+            raise RuntimeError(
+                "Stage-1 BO-RF exhausted the candidate space before reaching "
+                "its consecutive no-improvement limit"
+            )
         tree_predictions = _tree_predictions(model, space.one_hot(pool))
         if tree_predictions.ndim != 3 or tree_predictions.shape[2] != targets.shape[1]:
             raise RuntimeError(
@@ -304,8 +304,11 @@ def _run_bo_rf(
             no_improvement=int(no_improvement),
             improved=bool(improved),
         ))
-    if cache.remaining <= 0:
-        termination = "evaluation_cap"
+    if no_improvement < int(config.bo_no_improvement_patience):
+        raise RuntimeError(
+            "Stage-1 BO-RF exhausted the candidate space before reaching its "
+            "consecutive no-improvement limit"
+        )
     cache.assert_replay_consumed()
     return SearchResult(
         algorithm="bo_rf",

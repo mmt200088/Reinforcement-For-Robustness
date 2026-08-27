@@ -50,21 +50,22 @@ def _run_greedy(
     cache = _EvaluationCache(
         space=space,
         evaluator=evaluator,
-        evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
         replay_preload_in_order=replay_preload_in_order,
     )
     history: list[dict[str, Any]] = []
-    all_verified = True
     starts = space.anchors[:min(int(config.greedy_max_starts), len(space.anchors))]
     for start_idx, start in enumerate(starts):
         if cache.get(start) is None and cache.remaining <= 0:
-            all_verified = False
-            break
+            raise RuntimeError(
+                "Stage-1 Greedy exhausted the action space before evaluating "
+                "every configured start"
+            )
         current = cache.evaluate(start)
         iteration = 0
+        no_improvement_rounds = 0
         history.append(_history_row(
             cache,
             phase="start",
@@ -78,19 +79,14 @@ def _run_greedy(
                 cache, space.one_opt_neighbors(current.action),
             )
             if not complete:
-                all_verified = False
-                history.append(_history_row(
-                    cache,
-                    phase="one_opt",
-                    iteration=iteration,
-                    start_index=int(start_idx),
-                    neighborhood_complete=False,
-                    accepted=False,
-                ))
-                break
+                raise RuntimeError(
+                    "Stage-1 Greedy exhausted the action space during a 1-opt "
+                    "neighborhood scan"
+                )
             one_best = max(one_evaluations, key=candidate_rank_key, default=current)
             if candidate_rank_key(one_best) > candidate_rank_key(current):
                 current = one_best
+                no_improvement_rounds = 0
                 history.append(_history_row(
                     cache,
                     phase="one_opt",
@@ -106,19 +102,14 @@ def _run_greedy(
                 cache, space.two_opt_neighbors(current.action),
             )
             if not complete:
-                all_verified = False
-                history.append(_history_row(
-                    cache,
-                    phase="two_opt",
-                    iteration=iteration,
-                    start_index=int(start_idx),
-                    neighborhood_complete=False,
-                    accepted=False,
-                ))
-                break
+                raise RuntimeError(
+                    "Stage-1 Greedy exhausted the action space during a 2-opt "
+                    "neighborhood scan"
+                )
             two_best = max(two_evaluations, key=candidate_rank_key, default=current)
             if candidate_rank_key(two_best) > candidate_rank_key(current):
                 current = two_best
+                no_improvement_rounds = 0
                 history.append(_history_row(
                     cache,
                     phase="two_opt",
@@ -130,31 +121,29 @@ def _run_greedy(
                     current_action=list(current.action),
                 ))
                 continue
+            no_improvement_rounds += 1
             history.append(_history_row(
                 cache,
-                phase="verified_local_optimum",
+                phase="no_improvement_round",
                 iteration=iteration,
                 start_index=int(start_idx),
                 one_opt_verified=True,
                 two_opt_verified=True,
+                no_improvement_rounds=int(no_improvement_rounds),
                 current_action=list(current.action),
             ))
-            break
-        if not all_verified and cache.remaining <= 0:
-            break
+            if no_improvement_rounds >= int(
+                    config.greedy_no_improvement_rounds
+            ):
+                break
     cache.assert_replay_consumed()
-    termination = (
-        "verified_local_optimum"
-        if all_verified
-        else "evaluation_cap"
-    )
     return SearchResult(
         algorithm="greedy",
         config=config,
         best=cache.best(),
         observations=cache.observations,
         history=tuple(history),
-        termination_reason=termination,
+        termination_reason="consecutive_no_improvement_rounds",
     )
 
 

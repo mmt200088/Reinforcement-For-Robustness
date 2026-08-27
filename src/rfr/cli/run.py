@@ -626,19 +626,19 @@ def train(
         blb_v3_online_constraint_probability: float = 0.50,
         blb_v3_promotion_constraint_probability: float = 0.80,
         blb_v3_final_constraint_probability: float = 0.95,
-        blb_v3_min_convergence_episodes: int = 90_000,
-        blb_v3_convergence_patience_updates: int = 100,
         blb_v3_search_backend: str = "ppo",
-        blb_v3_search_evaluation_budget: int = 0,
         blb_v3_search_initial_design_size: int = 64,
         blb_v3_search_candidate_pool_size: int = 2048,
         blb_v3_search_population_size: int = 64,
-        blb_v3_search_patience_generations: int = 100,
         blb_v3_search_mutation_max_coordinates: int = 3,
         blb_v3_search_rf_n_estimators: int = 128,
         blb_v3_search_rf_min_samples_leaf: int = 2,
-        blb_v3_search_full_validation: bool = True,
-        comparator_smoke: bool = False,
+        comparator_bo_stage1_no_improvement: int = 1_000,
+        comparator_bo_stage2_no_improvement: int = 2_000,
+        comparator_greedy_stage1_no_improvement_rounds: int = 1,
+        comparator_greedy_stage2_no_improvement_rounds: int = 1,
+        comparator_ga_stage1_generations: int = 200,
+        comparator_ga_stage2_generations: int = 200,
         comparator_stage1_only: bool = False,
 ):
     data_path = validate_dataset(data_path)
@@ -657,13 +657,6 @@ def train(
 
     blb_v3_search_backend = normalize_search_backend(
         blb_v3_search_backend
-    )
-    blb_v3_search_full_validation = parse_bool_flag(
-        blb_v3_search_full_validation,
-        "blb_v3_search_full_validation",
-    )
-    comparator_smoke = parse_bool_flag(
-        comparator_smoke, "comparator_smoke",
     )
     comparator_stage1_only = parse_bool_flag(
         comparator_stage1_only, "comparator_stage1_only",
@@ -704,15 +697,6 @@ def train(
         raise ValueError(
             "constraint probabilities must satisfy online <= promotion <= final"
         )
-    if int(blb_v3_min_convergence_episodes) < 90_000:
-        raise ValueError(
-            "blb_v3_min_convergence_episodes must be at least 90000"
-        )
-    if int(blb_v3_convergence_patience_updates) < 100:
-        raise ValueError(
-            "blb_v3_convergence_patience_updates must be at least 100"
-        )
-
 
     if final_eval_only:
         if skip_final_eval:
@@ -738,7 +722,7 @@ def train(
         stage2_inference_batch_size = parse_positive_int(
             stage2_inference_batch_size, "stage2_inference_batch_size",
         )
-    stage1_rl_episodes = parse_stage1_episode_limit(
+    stage1_rl_episodes = parse_positive_int(
         stage1_rl_episodes, "stage1_rl_episodes"
     )
     stage2_rl_episodes = parse_stage2_episode_limit(
@@ -991,14 +975,7 @@ def train(
         blb_v3_online_constraint_probability=blb_v3_online_constraint_probability,
         blb_v3_promotion_constraint_probability=blb_v3_promotion_constraint_probability,
         blb_v3_final_constraint_probability=blb_v3_final_constraint_probability,
-        blb_v3_min_convergence_episodes=blb_v3_min_convergence_episodes,
-        blb_v3_convergence_patience_updates=(
-            blb_v3_convergence_patience_updates
-        ),
         blb_v3_search_backend=blb_v3_search_backend,
-        blb_v3_search_evaluation_budget=(
-            blb_v3_search_evaluation_budget
-        ),
         blb_v3_search_initial_design_size=(
             blb_v3_search_initial_design_size
         ),
@@ -1006,9 +983,6 @@ def train(
             blb_v3_search_candidate_pool_size
         ),
         blb_v3_search_population_size=blb_v3_search_population_size,
-        blb_v3_search_patience_generations=(
-            blb_v3_search_patience_generations
-        ),
         blb_v3_search_mutation_max_coordinates=(
             blb_v3_search_mutation_max_coordinates
         ),
@@ -1016,10 +990,20 @@ def train(
         blb_v3_search_rf_min_samples_leaf=(
             blb_v3_search_rf_min_samples_leaf
         ),
-        blb_v3_search_full_validation=(
-            blb_v3_search_full_validation
+        comparator_bo_stage1_no_improvement=(
+            comparator_bo_stage1_no_improvement
         ),
-        comparator_smoke=comparator_smoke,
+        comparator_bo_stage2_no_improvement=(
+            comparator_bo_stage2_no_improvement
+        ),
+        comparator_greedy_stage1_no_improvement_rounds=(
+            comparator_greedy_stage1_no_improvement_rounds
+        ),
+        comparator_greedy_stage2_no_improvement_rounds=(
+            comparator_greedy_stage2_no_improvement_rounds
+        ),
+        comparator_ga_stage1_generations=comparator_ga_stage1_generations,
+        comparator_ga_stage2_generations=comparator_ga_stage2_generations,
         comparator_stage1_only=comparator_stage1_only,
     )
 

@@ -14,7 +14,6 @@ from rfr.search.comparators.common.stage2_core import (
     SearchResult,
     _EvaluationCache,
     _best_history_row,
-    _cache_stop_reason,
     candidate_rank_key,
 )
 
@@ -48,8 +47,6 @@ def _run_greedy(
     cache = _EvaluationCache(
         space,
         evaluator,
-        config.evaluation_budget,
-        config.observation_attempt_limit,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
     )
@@ -59,7 +56,10 @@ def _run_greedy(
         cached = cache.get(action)
         if cached is None:
             if not cache.can_observe:
-                break
+                raise RuntimeError(
+                    "Stage-2 Greedy exhausted the action space before "
+                    "evaluating every anchor"
+                )
             cached = cache.evaluate(action)
         anchors.append(cached)
         history.append(_best_history_row(
@@ -71,10 +71,10 @@ def _run_greedy(
     if not anchors:
         raise RuntimeError("greedy search could not evaluate an anchor")
 
-    termination = "verified_local_optima"
     scan_index = 0
     for start_index, start in enumerate(anchors):
         current = start
+        no_improvement_rounds = 0
         while True:
             scan_index += 1
             one_evaluated, one_complete = _evaluate_full_neighborhood(
@@ -94,10 +94,13 @@ def _run_greedy(
                 accepted=bool(one_improved and one_complete),
             ))
             if not one_complete:
-                termination = _cache_stop_reason(cache)
-                break
+                raise RuntimeError(
+                    "Stage-2 Greedy exhausted the action space during a 1-opt "
+                    "neighborhood scan"
+                )
             if one_improved:
                 current = one_best
+                no_improvement_rounds = 0
                 continue
 
             two_evaluated, two_complete = _evaluate_full_neighborhood(
@@ -117,34 +120,36 @@ def _run_greedy(
                 accepted=bool(two_improved and two_complete),
             ))
             if not two_complete:
-                termination = _cache_stop_reason(cache)
-                break
+                raise RuntimeError(
+                    "Stage-2 Greedy exhausted the action space during a 2-opt "
+                    "neighborhood scan"
+                )
             if two_improved:
                 current = two_best
-
+                no_improvement_rounds = 0
                 continue
 
-
+            no_improvement_rounds += 1
             history.append(_best_history_row(
                 cache,
-                phase="greedy_final_verification",
+                phase="greedy_no_improvement_round",
                 iteration=scan_index,
                 start_index=int(start_index),
                 one_opt_improvement=False,
                 two_opt_improvement=False,
+                no_improvement_rounds=int(no_improvement_rounds),
             ))
-            break
-        if termination in ("evaluation_budget", "observation_attempt_guard"):
-            break
-    if termination != "verified_local_optima" and not cache.can_observe:
-        termination = _cache_stop_reason(cache)
+            if no_improvement_rounds >= int(
+                    config.greedy_no_improvement_rounds
+            ):
+                break
     cache.assert_replay_consumed()
     return SearchResult(
         algorithm="greedy",
         best=cache.best(),
         observations=cache.observations,
         history=tuple(history),
-        termination_reason=termination,
+        termination_reason="consecutive_no_improvement_rounds",
     )
 
 

@@ -54,7 +54,12 @@ Stage 2 layerwise PPO:
 
 Comparators:
   --comparator-stage1-only
-  --comparator-smoke
+  --bo-stage1-no-improvement N
+  --bo-stage2-no-improvement N
+  --greedy-stage1-no-improvement-rounds N
+  --greedy-stage2-no-improvement-rounds N
+  --ga-stage1-generations N
+  --ga-stage2-generations N
 
 Final evaluation is a separate command:
   bash run_search.sh eval --preset NAME
@@ -135,11 +140,9 @@ reject_comparator_overrides() {
       --stage2-k-trials|--stage2-k-trials=*|\
       --stage2-probe-size|--stage2-probe-size=*|\
       --blb-v3-search-backend|--blb-v3-search-backend=*|\
-      --blb-v3-search-evaluation-budget|--blb-v3-search-evaluation-budget=*|\
       --blb-v3-search-initial-design-size|--blb-v3-search-initial-design-size=*|\
       --blb-v3-search-candidate-pool-size|--blb-v3-search-candidate-pool-size=*|\
       --blb-v3-search-population-size|--blb-v3-search-population-size=*|\
-      --blb-v3-search-patience-generations|--blb-v3-search-patience-generations=*|\
       --blb-v3-search-rf-n-estimators|--blb-v3-search-rf-n-estimators=*|\
       --blb-v3-search-rf-min-samples-leaf|--blb-v3-search-rf-min-samples-leaf=*)
         fail "comparator contracts do not allow overriding $arg"
@@ -228,8 +231,13 @@ ELASTIC_GPU_MAX_RESTARTS="8"
 RANDOM_SEED="42"
 FINAL_EVAL_PRESET="default"
 SKIP_FINAL_EVAL="false"
-COMPARATOR_SMOKE="false"
 COMPARATOR_STAGE1_ONLY="false"
+BO_STAGE1_NO_IMPROVEMENT="1000"
+BO_STAGE2_NO_IMPROVEMENT="2000"
+GREEDY_STAGE1_NO_IMPROVEMENT_ROUNDS="1"
+GREEDY_STAGE2_NO_IMPROVEMENT_ROUNDS="1"
+GA_STAGE1_GENERATIONS="200"
+GA_STAGE2_GENERATIONS="200"
 
 BASELINE_GROUPS="5"
 BASELINE_TRIALS_PER_GROUP="3"
@@ -241,21 +249,16 @@ FINAL_CONSTRAINT_PROBABILITY="0.95"
 PROMOTION_VALIDATION_TRIALS="15"
 FINAL_SELECTION_TOP_N="20"
 FINAL_SELECTION_VALIDATION_TRIALS="15"
-MIN_CONVERGENCE_EPISODES="90000"
-CONVERGENCE_PATIENCE_UPDATES="100"
 ONLINE_K_TRIALS="3"
 TERMINAL_EVAL_BATCH_SIZE="4"
 
 SEARCH_BACKEND="ppo"
-SEARCH_EVALUATION_BUDGET="0"
 SEARCH_INITIAL_DESIGN_SIZE="64"
 SEARCH_CANDIDATE_POOL_SIZE="2048"
 SEARCH_POPULATION_SIZE="64"
-SEARCH_PATIENCE="100"
 SEARCH_MUTATION_MAX_COORDINATES="3"
 SEARCH_RF_N_ESTIMATORS="128"
 SEARCH_RF_MIN_SAMPLES_LEAF="2"
-SEARCH_FULL_VALIDATION="true"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -296,8 +299,13 @@ while [ "$#" -gt 0 ]; do
     --random-seed) require_value "$@"; RANDOM_SEED="$2"; shift 2 ;;
     --final-eval-preset) require_value "$@"; FINAL_EVAL_PRESET="$2"; shift 2 ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; shift ;;
-    --comparator-smoke) COMPARATOR_SMOKE="true"; shift ;;
     --comparator-stage1-only) COMPARATOR_STAGE1_ONLY="true"; shift ;;
+    --bo-stage1-no-improvement) require_value "$@"; BO_STAGE1_NO_IMPROVEMENT="$2"; shift 2 ;;
+    --bo-stage2-no-improvement) require_value "$@"; BO_STAGE2_NO_IMPROVEMENT="$2"; shift 2 ;;
+    --greedy-stage1-no-improvement-rounds) require_value "$@"; GREEDY_STAGE1_NO_IMPROVEMENT_ROUNDS="$2"; shift 2 ;;
+    --greedy-stage2-no-improvement-rounds) require_value "$@"; GREEDY_STAGE2_NO_IMPROVEMENT_ROUNDS="$2"; shift 2 ;;
+    --ga-stage1-generations) require_value "$@"; GA_STAGE1_GENERATIONS="$2"; shift 2 ;;
+    --ga-stage2-generations) require_value "$@"; GA_STAGE2_GENERATIONS="$2"; shift 2 ;;
     --search-algorithm|--algorithm)
       require_value "$@"
       [ "$(normalize_algorithm "$2")" = "$ALGORITHM" ] || fail "preset algorithm does not match run subcommand"
@@ -313,8 +321,6 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-promotion-validation-trials) require_value "$@"; PROMOTION_VALIDATION_TRIALS="$2"; shift 2 ;;
     --blb-v3-final-selection-top-n) require_value "$@"; FINAL_SELECTION_TOP_N="$2"; shift 2 ;;
     --blb-v3-final-selection-validation-trials) require_value "$@"; FINAL_SELECTION_VALIDATION_TRIALS="$2"; shift 2 ;;
-    --blb-v3-min-convergence-episodes) require_value "$@"; MIN_CONVERGENCE_EPISODES="$2"; shift 2 ;;
-    --blb-v3-convergence-patience-updates) require_value "$@"; CONVERGENCE_PATIENCE_UPDATES="$2"; shift 2 ;;
     --blb-v3-online-k-trials) require_value "$@"; ONLINE_K_TRIALS="$2"; shift 2 ;;
     --blb-v3-terminal-eval-batch-size) require_value "$@"; TERMINAL_EVAL_BATCH_SIZE="$2"; shift 2 ;;
     *) fail "unsupported option: $1" ;;
@@ -330,7 +336,7 @@ case "$DATASET" in mrpc|rte|sst2) ;; *) fail "unsupported dataset: $DATASET" ;; 
 case "$MODEL_TYPE" in bert-base|bert-large) ;; *) fail "unsupported model type: $MODEL_TYPE" ;; esac
 case "$ELASTIC_GPU_MODE" in auto|off) ;; *) fail "elastic GPU mode must be auto or off" ;; esac
 
-for value in "$BATCH_SIZE" "$STAGE2_INFERENCE_BATCH_SIZE" "$PPO_UPDATE_INTERVAL" "$STAGE2_ROLLOUT_SIZE" "$STAGE2_SAVE_INTERVAL" "$STAGE2_EVAL_INTERVAL" "$STAGE2_K_TRIALS" "$STAGE2_PROBE_SIZE" "$ELASTIC_GPU_MAX_RESTARTS"; do
+for value in "$BATCH_SIZE" "$STAGE2_INFERENCE_BATCH_SIZE" "$PPO_UPDATE_INTERVAL" "$STAGE2_ROLLOUT_SIZE" "$STAGE2_SAVE_INTERVAL" "$STAGE2_EVAL_INTERVAL" "$STAGE2_K_TRIALS" "$STAGE2_PROBE_SIZE" "$ELASTIC_GPU_MAX_RESTARTS" "$BO_STAGE1_NO_IMPROVEMENT" "$BO_STAGE2_NO_IMPROVEMENT" "$GREEDY_STAGE1_NO_IMPROVEMENT_ROUNDS" "$GREEDY_STAGE2_NO_IMPROVEMENT_ROUNDS" "$GA_STAGE1_GENERATIONS" "$GA_STAGE2_GENERATIONS"; do
   is_positive_integer "$value" || fail "expected a positive integer, got: $value"
 done
 for value in "$STAGE1_EPISODES" "$STAGE2_EPISODES" "$ELASTIC_GPU_RECOVERY_INTERVAL"; do
@@ -387,32 +393,18 @@ else
   case "$ALGORITHM" in
     bo_rf)
       SEARCH_BACKEND="bo_rf"
-      SEARCH_EVALUATION_BUDGET="50000"
-      SEARCH_PATIENCE="2000"
       ;;
     greedy)
       SEARCH_BACKEND="greedy"
-      SEARCH_EVALUATION_BUDGET="2176782336"
       ;;
     coinn_ga)
       SEARCH_BACKEND="coinn_ga"
-      SEARCH_EVALUATION_BUDGET="11464"
-      SEARCH_PATIENCE="5"
       ;;
   esac
   if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
     SKIP_STAGE2="true"
     SKIP_FINAL_EVAL="true"
     STAGE2_EPISODES="0"
-    if [ "$ALGORITHM" = "bo_rf" ]; then
-      SEARCH_EVALUATION_BUDGET="10000"
-      SEARCH_PATIENCE="1000"
-    fi
-  fi
-  if [ "$COMPARATOR_SMOKE" = "true" ]; then
-    SEARCH_EVALUATION_BUDGET="1"
-    SEARCH_FULL_VALIDATION="false"
-    SKIP_FINAL_EVAL="true"
   fi
 fi
 
@@ -538,19 +530,19 @@ CMD=(
   --blb_v3_online_constraint_probability "$ONLINE_CONSTRAINT_PROBABILITY"
   --blb_v3_promotion_constraint_probability "$PROMOTION_CONSTRAINT_PROBABILITY"
   --blb_v3_final_constraint_probability "$FINAL_CONSTRAINT_PROBABILITY"
-  --blb_v3_min_convergence_episodes "$MIN_CONVERGENCE_EPISODES"
-  --blb_v3_convergence_patience_updates "$CONVERGENCE_PATIENCE_UPDATES"
   --blb_v3_search_backend "$SEARCH_BACKEND"
-  --blb_v3_search_evaluation_budget "$SEARCH_EVALUATION_BUDGET"
   --blb_v3_search_initial_design_size "$SEARCH_INITIAL_DESIGN_SIZE"
   --blb_v3_search_candidate_pool_size "$SEARCH_CANDIDATE_POOL_SIZE"
   --blb_v3_search_population_size "$SEARCH_POPULATION_SIZE"
-  --blb_v3_search_patience_generations "$SEARCH_PATIENCE"
   --blb_v3_search_mutation_max_coordinates "$SEARCH_MUTATION_MAX_COORDINATES"
   --blb_v3_search_rf_n_estimators "$SEARCH_RF_N_ESTIMATORS"
   --blb_v3_search_rf_min_samples_leaf "$SEARCH_RF_MIN_SAMPLES_LEAF"
-  --blb_v3_search_full_validation "$SEARCH_FULL_VALIDATION"
-  --comparator_smoke "$COMPARATOR_SMOKE"
+  --comparator_bo_stage1_no_improvement "$BO_STAGE1_NO_IMPROVEMENT"
+  --comparator_bo_stage2_no_improvement "$BO_STAGE2_NO_IMPROVEMENT"
+  --comparator_greedy_stage1_no_improvement_rounds "$GREEDY_STAGE1_NO_IMPROVEMENT_ROUNDS"
+  --comparator_greedy_stage2_no_improvement_rounds "$GREEDY_STAGE2_NO_IMPROVEMENT_ROUNDS"
+  --comparator_ga_stage1_generations "$GA_STAGE1_GENERATIONS"
+  --comparator_ga_stage2_generations "$GA_STAGE2_GENERATIONS"
   --comparator_stage1_only "$COMPARATOR_STAGE1_ONLY"
 )
 
