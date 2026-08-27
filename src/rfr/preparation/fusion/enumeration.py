@@ -872,7 +872,7 @@ def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int])
     Decodes each effective non-K slot's action index straight to its scaling
     factor via ``_field_level_values`` (the canonical per-slot decode, using the
     calibrated max_sfs). This avoids the action-field-name vs cfg-attr-name
-    mismatch that previously left ``slots`` empty.
+    mismatch while ensuring every retained option has decoded slot metadata.
     """
     from rfr.search.common.action_space import (
         _BLOCK_SPECS,

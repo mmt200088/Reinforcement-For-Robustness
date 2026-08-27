@@ -12,14 +12,10 @@ can move which cut-points carry ``sf_post`` (the 2026 regen moved block2's
 rescales to ``rotKT_mask1`` / ``preprocess_qkt`` and block5_n1's middle rescale
 to ``ctct_xmean_over_std``).
 
-Previously three places hard-coded order + which nodes (baseline extraction,
-``rescale_optimizer_bridge.DEFAULT_CFG_TO_T_NEW_MAP``, action active/compat
-slots), so a regen drifted them silently. This module instead maps EVERY node of
-the COMPLETE chain to its cfg + RL fields ONCE (stable domain knowledge — node
-names + meanings don't change), and derives the ordered t_new stages + active
-rescale slots from whatever the *current* skeleton selects. Any skeleton subset
-— current or future — is therefore handled automatically, and
-:func:`unmapped_full_chain_nodes` flags a brand-new RO node loudly.
+This module maps every node of the complete chain to its configuration and RL
+fields, then derives ordered t_new stages and active rescale slots from the
+selected skeleton. :func:`unmapped_full_chain_nodes` fails when a graph adds an
+unmapped node.
 
 Torch-free.
 """

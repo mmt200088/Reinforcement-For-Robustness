@@ -252,10 +252,8 @@ class InProcessInvoker:
             ) -> dict:
         """Direct variable API for the RL hot path.
 
-        ``__call__`` stays as the compatibility surface for callers that still
-        build a JSON-shaped payload.  Sequential RL already runs in-process, so
-        this method avoids the extra payload construction/splitting layer and
-        hands the decoded action variables straight to ``ReplanSession``.
+        This method avoids JSON payload construction and hands decoded action
+        variables straight to ``ReplanSession``.
         """
         return self._session.replan(
             str(config_name),

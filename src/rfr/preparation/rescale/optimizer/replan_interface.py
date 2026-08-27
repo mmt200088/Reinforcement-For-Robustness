@@ -758,7 +758,7 @@ class ReplanSession:
         delta_overrides: Optional[Mapping[str, Any]] = None,
         allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
     ) -> CompactReplanResult:
-        """Run replan without expanding the compatibility JSON document."""
+        """Run replan without expanding the full diagnostic JSON document."""
 
         return self.replan(  # type: ignore[return-value]
             graph_key,
@@ -769,7 +769,7 @@ class ReplanSession:
         )
 
     def __call__(self, graph_key: str, payload: Any) -> Dict[str, Any]:
-        """Compatibility invoker: ``session(graph_key, payload) -> dict``."""
+        """Run replan from a mapping payload and return its JSON document."""
 
         t_new, delta_overrides, allowed_fusion_pairs = split_replan_payload(
             payload, include_allowed_fusion_pairs=True
