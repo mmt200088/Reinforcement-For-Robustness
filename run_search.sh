@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+PYTHON_BIN="${RFR_PYTHON:-python3}"
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || {
+  printf 'Error: Python interpreter not found: %s\n' "$PYTHON_BIN" >&2
+  exit 1
+}
 
 usage() {
   cat <<'EOF'
@@ -153,7 +158,7 @@ reject_comparator_overrides() {
 
 if [ "${1:-}" = "eval" ]; then
   shift
-  exec python3 -m rfr.cli.evaluate "$@"
+  exec "$PYTHON_BIN" -m rfr.cli.evaluate "$@"
 fi
 
 if [ "${1:-}" = "--list-presets" ]; then
@@ -482,7 +487,7 @@ PY
 fi
 
 CMD=(
-  python -m rfr.cli.run
+  "$PYTHON_BIN" -m rfr.cli.run
   --base_model "$BASE_MODEL"
   --data_path "$DATASET"
   --output_dir "$RUN_ROOT"
@@ -552,7 +557,7 @@ fi
 LAUNCH_CMD=("${CMD[@]}")
 if [ "$ALGORITHM" = "rl" ] && [ "$ELASTIC_GPU_MODE" = "auto" ]; then
   LAUNCH_CMD=(
-    python3 -m rfr.search.runtime.supervisor
+    "$PYTHON_BIN" -m rfr.search.runtime.supervisor
     --run-dir "$RUN_ROOT"
     --recovery-interval "$ELASTIC_GPU_RECOVERY_INTERVAL"
     --max-restarts "$ELASTIC_GPU_MAX_RESTARTS"
