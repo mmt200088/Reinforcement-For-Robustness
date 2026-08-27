@@ -20,6 +20,7 @@ import numpy as np
 from rfr.search.common.layerwise_action import (
     LAYER_GENE_CARDINALITY,
     compute_variable_cost_from_action_matrix,
+    decode_layer_gene,  # noqa: F401 - public comparator codec
     decode_layerwise_action_genes,
     encode_layerwise_action_matrix,
 )
