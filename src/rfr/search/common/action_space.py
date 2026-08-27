@@ -1400,20 +1400,6 @@ def avg_truncation_k_in_action(
     return float(total / count)
 
 
-def sum_truncation_k_in_action(
-        action_vec: np.ndarray,
-        num_layers: int,
-        ) -> int:
-    """Sum of decoded truncation-k values across all effective K slots.
-
-    Lets cost-matched random samplers do an integer equality pre-filter
-    before paying for a Rescale_optimizer call (mean comparisons would
-    need an explicit tolerance).
-    """
-    total, _count = _sum_count_effective_k_values_in_action(action_vec, num_layers)
-    return int(total)
-
-
 def make_config_name(profile: str, block_idx: int, layer_idx: int, cfg: object = None) -> str:
     """Build the layered Rescale_optimizer config key.
 

@@ -488,9 +488,6 @@ def train(
         final_eval_only: bool = False,
         resume_run_dir: str = "",
 
-        decoupled_layout: bool = False,
-        stage1_run_id: str = "",
-
         stage1_accuracy_tolerance: float = None,
         stage2_limit_tolerance: float = None,
         stage2_stability_tolerance: float = None,
@@ -543,7 +540,6 @@ def train(
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
-    decoupled_layout = parse_bool_flag(decoupled_layout, "decoupled_layout")
     from rfr.search.comparators.common.stage2_core import normalize_search_backend
 
     blb_v3_search_backend = normalize_search_backend(
@@ -791,8 +787,6 @@ def train(
         skip_final_eval=skip_final_eval,
         final_eval_only=final_eval_only,
         resume_run_dir=resume_run_dir,
-        decoupled_layout=decoupled_layout,
-        stage1_run_id=stage1_run_id,
         data_path=data_path,
         glue_data_protocol=glue_protocol_context,
         stage1_accuracy_tolerance=stage1_accuracy_tolerance,

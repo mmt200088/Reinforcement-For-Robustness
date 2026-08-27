@@ -261,7 +261,7 @@ class RLDiagnosticsRecorder:
                 stays standalone — typical wiring uses
                 :func:`rfr.search.common.action_io.action_vec_to_slots_list`.
             schema_version: emitted in ``best_action_vec.json`` so future
-                Paean parsers can pick the right reader.
+                downstream readers can select the matching schema.
             history_window: optional maximum retained episode rows for rolling
                 reports. JSONL and cumulative state remain complete.
             ppo_history_window: optional maximum retained PPO update rows.
@@ -1640,7 +1640,7 @@ class RLDiagnosticsRecorder:
         lines.append("| `first_invalid_counts.json` | (L, B) → 首次 invalid 计数 |")
         lines.append("| `action_histogram.npz` | (num_slots, max_levels) 频次矩阵 |")
         lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")
-        lines.append("| `best_action_vec.json` | **训练期最优**：`slots` 列表（按 SF/K 选）+ `action_vec` 兜底字段。**可直接喂给 `run_search.sh eval --action-config`** |")
+        lines.append("| `best_action_vec.json` | Training diagnostic for the current best action; formal evaluation uses `search_best_config.json`. |")
         lines.append("")
         self._dump(lines)
 

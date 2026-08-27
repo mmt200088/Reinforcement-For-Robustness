@@ -256,18 +256,14 @@ def select_fusion_eval_metadata(
         softmax: Sequence[int],
         fusion_map: Any = None,
         ) -> Dict[str, Any]:
-    """Decide the decode metadata for one final-eval candidate so the trained best
-    replays its boosted fusion config.
+    """Attach the fusion metadata needed to replay a selected action.
 
     Rules (in order):
 
-    * an explicit ``fusion_count_fixed_action_v1`` metadata wins (user-supplied
-      config) — returned unchanged;
+    * explicit ``fusion_count_fixed_action_v1`` metadata is returned unchanged;
     * a per-slot run (not fusion, no group) is returned unchanged;
-    * ONLY the trained best (``action_vec == base_action``) gets boost-replay; any
-      other candidate (cost-matched random / range-mutated) is an arbitrary vector
-      that is NOT a map option, so it keeps the default index decode;
-    * for the best, attach the persisted ``fusion_group`` if present, else
+    * the selected vector must match the materialized base action;
+    * attach the persisted ``fusion_group`` if present, otherwise
       reconstruct it from the vector + the committed map.
     """
     md = dict(existing_metadata or {})

@@ -113,7 +113,7 @@ def group_slots_by_layer_block(
         "first_input": 26
       }
 
-    Strictly for human display in the markdown summary; ``Paean`` reads the
+    Strictly for human display in the Markdown summary; final evaluation reads the
     flat list/dict.
     """
     layers: Dict[str, Dict[str, Any]] = {}

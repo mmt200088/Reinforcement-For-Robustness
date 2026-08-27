@@ -364,7 +364,6 @@ PPO_ENTROPY_START = 0.05
 PPO_ENTROPY_END = 0.001
 
 
-from rfr.search.common.local_optimum import detect_rl_local_optimum  # noqa: E402,F401
 
 
 class RunningMeanStd:
@@ -1116,8 +1115,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  skip_final_eval=False,
                  final_eval_only=False,
                  resume_run_dir='',
-                 decoupled_layout=False,
-                 stage1_run_id='',
                  stage1_accuracy_tolerance=None,
                  stage2_limit_tolerance=None,
                  stage2_stability_tolerance=None,
@@ -1370,11 +1367,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self.search_algorithm = "rl"
 
-        self.decoupled_layout = bool(decoupled_layout)
-        self.stage1_run_id = str(stage1_run_id or "").strip()
+        self.standalone_stage_layout = (
+            str(blb_v3_search_backend or "ppo").strip().lower() == "ppo"
+        )
         output_layout = resolve_run_output_layout(
             run_output_dir,
-            flattened=self.decoupled_layout,
+            flattened=self.standalone_stage_layout,
         )
         self.run_output_dir = output_layout["run_output_dir"]
         self.dataset_protocol_path = None
@@ -1843,7 +1841,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "dataset_protocol_hash": self.dataset_protocol_hash,
                 "completed_evaluations": int(completed_episodes),
                 "source_result_path": best_config.get("result_path"),
-                "selection_binding": best_config.get("selection_binding"),
+                "source_result_sha256": best_config.get("result_sha256"),
                 "search_accounting": best_config.get("search_accounting"),
             },
         )
@@ -3200,38 +3198,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             self,
             *,
             search_config,
-            baseline_stage1_gelu=None,
-            baseline_stage1_softmax=None,
-            limit_loss=None,
-            limit_p=None,
-            limit_s=None,
             ):
         """Evaluate the one configuration loaded from search-best JSON."""
-        import numpy as np
-
-        if baseline_stage1_gelu is None or baseline_stage1_softmax is None:
-            baseline_stage1_gelu, baseline_stage1_softmax = (
-                self.get_stage1_exact_baseline_configuration()
-            )
-        baseline_stage1_gelu = np.asarray(baseline_stage1_gelu, dtype=int)
-        baseline_stage1_softmax = np.asarray(baseline_stage1_softmax, dtype=int)
-
-        if limit_loss is None or limit_p is None or limit_s is None:
-            base_loss, base_p, base_s, _ = self.evaluate_model(
-                baseline_stage1_gelu,
-                baseline_stage1_softmax,
-                use_train=False,
-                split=self.get_reward_reference_split_name(),
-            )
-            selection_limits = self.build_constraint_limits_from_metrics(
-                base_loss,
-                base_p,
-                base_s,
-            )
-            limit_loss = selection_limits["loss"] if limit_loss is None else limit_loss
-            limit_p = selection_limits["metric1"] if limit_p is None else limit_p
-            limit_s = selection_limits["metric2"] if limit_s is None else limit_s
-
         from rfr.evaluation.action_eval import BLBActionFinalEvaluationModule
 
         runner = BLBActionFinalEvaluationModule(
@@ -3240,14 +3208,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             repeat_n=self.final_eval_repeat_n,
             results_dir=self.final_eval_dir,
         )
-        return runner.run(
-            search_config=search_config,
-            baseline_stage1_gelu=baseline_stage1_gelu,
-            baseline_stage1_softmax=baseline_stage1_softmax,
-            limit_loss=float(limit_loss),
-            limit_p=float(limit_p),
-            limit_s=float(limit_s),
-        )
+        return runner.run(search_config=search_config)
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None, *,
                         model=None, device=None):
@@ -3766,15 +3727,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 update_persistent_metadata_stage(
                     self.run_output_dir, "stage1_search", "skipped")
 
-            if not self.skip_final_eval:
-                base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
-                    base_gelu,
-                    base_softmax,
-                    split=reward_reference_split,
-                )
-                limit_loss = base_loss * (1.0 + self.error_threshold)
-                limit_p = base_p * (1.0 - self.correlation_drop_ratio)
-                limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
 
 
@@ -4027,8 +3979,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage1_result_path = os.path.join(
                 stage1_output_dir, "result.json",
             )
-            from rfr.common.json_utils import stable_json_hash
-
             with open(stage1_result_path, "rb") as result_handle:
                 stage1_result_sha256 = hashlib.sha256(
                     result_handle.read()
@@ -4038,26 +3988,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             if not isinstance(stage1_manifest, Mapping):
                 raise RuntimeError("Stage-1 manifest must be a JSON object")
-            stage1_selection_payload = {
-                "backend": backend,
-                "seed": int(stage1_comparator_result.config.seed),
-                "action": list(selected_stage1.action),
-                "gelu_degrees": list(selected_stage1.gelu_degrees),
-                "softmax_degrees": list(selected_stage1.softmax_degrees),
-                "num_layers": int(self.total_layers),
-                "dataset_protocol_hash": self.dataset_protocol_hash,
-            }
-            stage1_selection_binding = {
-                **stage1_selection_payload,
-                "result_path": stage1_result_path,
-                "result_sha256": stage1_result_sha256,
-                "selection_hash": stable_json_hash(
-                    stage1_selection_payload
-                ),
-            }
-            self.stage1_comparator_selection_binding = dict(
-                stage1_selection_binding
-            )
             best_config = {
                 "gelu": np.asarray(
                     selected_stage1.gelu_degrees, dtype=int,
@@ -4075,7 +4005,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "dataset_protocol_hash": self.dataset_protocol_hash,
                 "evaluation": selected_stage1.as_dict(),
                 "result_path": stage1_result_path,
-                "selection_binding": stage1_selection_binding,
+                "result_sha256": stage1_result_sha256,
                 "search_accounting": build_stage1_search_accounting(
                     result=stage1_comparator_result,
                     manifest=stage1_manifest,
@@ -4087,8 +4017,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage1_completed_episodes = int(
                 stage1_comparator_result.evaluation_count
             )
-            if not self.comparator_stage1_only:
-                self.stage2_fixed_config_source = "stage1_result"
             if self.run_output_dir:
                 update_persistent_metadata_stage(
                     self.run_output_dir,
@@ -5248,38 +5176,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log(f"  [迁移][警告] portable policy 保存失败：{_e}")
 
 
-            try:
-                _diag = detect_rl_local_optimum(
-                    episode_returns=episode_rewards,
-                    episode_entropies=episode_entropies,
-                    best_score_history=None,
-                    action_history=None,
-                    window=max(50, int(max(1, stage1_completed_episodes) * 0.1)),
-                )
-                _report_path = os.path.join(
-                    os.path.dirname(self.stage1_step_info_file),
-                    "pruning_search_log.txt",
-                )
-                with open(_report_path, "w", encoding="utf-8") as _f:
-                    _f.write("=== Stage-1 RL 局部最优检测报告 ===\n")
-                    _f.write(f"完成回合数: {len(episode_rewards)}\n")
-                    _f.write(f"判定: {_diag['summary']}\n\n")
-                    _f.write("--- 各项判据信号 ---\n")
-                    for k, v in _diag["signals"].items():
-                        _f.write(f"  {k}: {v}\n")
-                    _f.write("\n--- 数值指标 ---\n")
-                    for k, v in _diag["metrics"].items():
-                        _f.write(f"  {k}: {v}\n")
-                    _f.write("\n--- 说明 ---\n")
-                    _f.write(
-                        "判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中\n"
-                        "≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。\n"
-                    )
-                self.log(f"  [检测] 局部最优检测报告 → {_report_path}")
-                self.log(f"  [检测] {_diag['summary']}")
-            except Exception as _e:
-                self.log(f"  [检测][警告] 局部最优检测失败：{_e}")
-
             best_config, used_baseline = self._select_stage1_reward_best_config(
                 best_config,
                 best_reward,
@@ -5552,11 +5448,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
                 final_eval_result = self.run_selected_config_final_eval(
                     search_config=search_config,
-                    baseline_stage1_gelu=base_gelu,
-                    baseline_stage1_softmax=base_softmax,
-                    limit_loss=limit_loss,
-                    limit_p=limit_p,
-                    limit_s=limit_s,
                 )
                 if self.run_output_dir:
                     update_persistent_metadata_stage(

@@ -164,7 +164,7 @@ def apply_optimizer_outputs_to_cfgs(
     """Apply Rescale_optimizer/replan outputs to decoded cfg objects in place.
 
     This is the canonical write-back seam for every executable Stage-2 path:
-    online RL terminal eval, sequential per-block eval, Paean final eval, and
+    online RL terminal evaluation, comparator evaluation, final evaluation, and
     fixed-action experiments.  The action decode proposes cfgs; the optimizer's
     ``new_compact_config`` decides which rescale points survive and what SFs the
     model must actually install.  This helper centralizes that write-back plus

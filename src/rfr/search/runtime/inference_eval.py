@@ -3,7 +3,7 @@
 These helpers cover the part after a BLB/Stage-1 configuration has already
 been installed on the model: run the model forward, aggregate loss/logits, and
 compute metrics.  Keep this module as the shared seam for RL probes, multi-GPU
-probe workers, Paean final/fixed eval, and fixed-action experiments.
+probe workers, selected-configuration evaluation, and fixed-action checks.
 """
 from __future__ import annotations
 

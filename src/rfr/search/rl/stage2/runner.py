@@ -509,12 +509,16 @@ def _build_layerwise_candidate_identity_context(
     stage1_binding_payload = None
     if isinstance(stage1_selection_binding, Mapping):
         stage1_binding_payload = {
-            "backend": str(stage1_selection_binding.get("backend") or ""),
-            "seed": int(stage1_selection_binding.get("seed", -1)),
-            "action": [
-                int(value)
-                for value in stage1_selection_binding.get("action") or []
-            ],
+            "schema_version": str(
+                stage1_selection_binding.get("schema_version") or ""
+            ),
+            "algorithm": str(
+                stage1_selection_binding.get("algorithm") or ""
+            ),
+            "model_type": str(
+                stage1_selection_binding.get("model_type") or ""
+            ),
+            "dataset": str(stage1_selection_binding.get("dataset") or ""),
             "gelu_degrees": [
                 int(value)
                 for value in stage1_selection_binding.get(
@@ -528,32 +532,26 @@ def _build_layerwise_candidate_identity_context(
                 )
             ],
             "num_layers": int(stage1_selection_binding.get("num_layers", 0)),
-            "result_path": os.path.abspath(os.fspath(
-                stage1_selection_binding.get("result_path") or ""
+            "config_path": os.path.abspath(os.fspath(
+                stage1_selection_binding.get("config_path") or ""
             )),
-            "result_sha256": str(
-                stage1_selection_binding.get("result_sha256") or ""
+            "config_sha256": str(
+                stage1_selection_binding.get("config_sha256") or ""
             ),
-                "selection_hash": str(
-                    stage1_selection_binding.get("selection_hash") or ""
-                ),
-                "dataset_protocol_hash": str(
-                    stage1_selection_binding.get(
-                        "dataset_protocol_hash"
-                    ) or ""
-                ),
+            "dataset_protocol_hash": str(
+                stage1_selection_binding.get("dataset_protocol_hash") or ""
+            ),
         }
-        hash_fields = (
-            stage1_binding_payload["result_sha256"],
-            stage1_binding_payload["selection_hash"],
-        )
-        if any(
-                len(value) != 64
-                or any(character not in "0123456789abcdef" for character in value)
-                for value in hash_fields
+        config_sha256 = stage1_binding_payload["config_sha256"]
+        if (
+                len(config_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in config_sha256
+                )
         ):
             raise RuntimeError(
-                "strict candidate identity requires valid Stage-1 content hashes"
+                "strict candidate identity requires a valid Stage-1 JSON hash"
             )
         if (
                 stage1_binding_payload["gelu_degrees"]
@@ -564,6 +562,16 @@ def _build_layerwise_candidate_identity_context(
                 != len(stage1_degrees["gelu"])
                 or stage1_binding_payload["dataset_protocol_hash"]
                 != str(getattr(evaluator, "dataset_protocol_hash", "") or "")
+                or stage1_binding_payload["config_path"]
+                != str(
+                    getattr(evaluator, "stage1_best_config_input_path", "")
+                    or ""
+                )
+                or config_sha256
+                != str(
+                    getattr(evaluator, "stage1_best_config_input_sha256", "")
+                    or ""
+                )
         ):
             raise RuntimeError(
                 "strict candidate identity does not match Stage-1 binding"

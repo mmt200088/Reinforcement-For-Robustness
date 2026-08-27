@@ -1,7 +1,8 @@
 """Shared evaluation metric helpers for Stage-2 inference paths.
 
 The Stage-2 codebase has several inference entrypoints: online RL probes,
-multi-GPU probe workers, Paean final-eval, and fixed-action experiments.  These
+multi-GPU probe workers, selected-configuration evaluation, and fixed-action
+checks. These
 helpers keep the metric aggregation semantics identical across those paths:
 batch losses are weighted by sample count, metric2 is weighted F1, and
 repeat evaluations report population mean/std over complete trials.
@@ -345,7 +346,7 @@ def pack_repeat_evaluation(
     """Build the canonical repeated-evaluation payload.
 
     Keep the trial numbering, numeric coercion, and population-stat semantics in
-    this helper so Paean final eval, fixed-action experiments, and future report
+    this helper so final evaluation, fixed-action checks, and future report
     writers do not drift in their JSON shape.
     """
     normalized_trials = [

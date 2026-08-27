@@ -31,7 +31,6 @@ from rfr.search.common.layerwise_action import (
 from rfr.preparation.rescale.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
 )
-from rfr.search.common.feasibility import build_final_eval_feasibility
 from rfr.search.common.eval_metrics import (
     pack_repeat_evaluation,
 )
@@ -176,11 +175,6 @@ class BLBActionFinalEvaluationModule:
     def run(
         self,
         search_config: Mapping[str, Any],
-        baseline_stage1_gelu: np.ndarray,
-        baseline_stage1_softmax: np.ndarray,
-        limit_loss: float,
-        limit_p: float,
-        limit_s: float,
     ) -> Dict[str, object]:
         from rfr.search.common.best_config import (
             profile_for,
@@ -301,15 +295,6 @@ class BLBActionFinalEvaluationModule:
         )
         ev.log("=" * 60)
 
-        baseline_result = self._evaluate_clean_baseline(
-            baseline_stage1_gelu=baseline_stage1_gelu,
-            baseline_stage1_softmax=baseline_stage1_softmax,
-        )
-        report_constraints = ev.build_constraint_limits_from_metrics(
-            baseline_result["loss"],
-            baseline_result["p"],
-            baseline_result["s"],
-        )
         isolated_rng_state = self._capture_isolated_candidate_rng_state()
         name = f"{selected_config['algorithm']}_selected"
         result = self._evaluate_candidate_with_seed_lifecycle(
@@ -322,34 +307,23 @@ class BLBActionFinalEvaluationModule:
                 metadata=metadata,
                 gelu=opt_gelu,
                 softmax=opt_softmax,
-                report_constraints=report_constraints,
                 max_sfs=action_context.max_sfs,
                 prepared_materialized=prepared_materialized,
                 materialization_consistency=final_eval_handoff["materialization"],
             ),
         )
         results = [result]
-        self._attach_relative_metrics(baseline_result, results)
         summary_path = self._save_results_json(
             selected_source="search_best_config.json",
-            baseline_stage1_gelu=baseline_stage1_gelu,
-            baseline_stage1_softmax=baseline_stage1_softmax,
             opt_gelu=opt_gelu,
             opt_softmax=opt_softmax,
-            baseline_result=baseline_result,
             candidate_results=results,
-            selection_constraints={
-                "limit_loss": float(limit_loss),
-                "limit_primary_metric": float(limit_p),
-                "limit_secondary_metric": float(limit_s),
-            },
             action_context_provenance=action_context.provenance,
             final_eval_handoff=final_eval_handoff,
         )
         text_path = self._save_results_markdown(
             json_path=summary_path,
             selected_source="search_best_config.json",
-            baseline_result=baseline_result,
             candidate_results=results,
         )
         ev.log(f"Final-evaluation summary: {summary_path}")
@@ -364,7 +338,6 @@ class BLBActionFinalEvaluationModule:
             "selected_source": "search_best_config.json",
             "opt_gelu": opt_gelu,
             "opt_softmax": opt_softmax,
-            "baseline_result": baseline_result,
             "optimized_result": result,
             "candidate_results": results,
             "selected_results": results,
@@ -374,87 +347,6 @@ class BLBActionFinalEvaluationModule:
             "stage2_final_eval_handoff": final_eval_handoff,
         }
 
-    def _evaluate_clean_baseline(self, *, baseline_stage1_gelu, baseline_stage1_softmax):
-        repeats = max(1, int(getattr(self, "repeat_n", 1)))
-        if repeats <= 1:
-            single = self._run_single_clean_baseline_eval(
-                baseline_stage1_gelu=baseline_stage1_gelu,
-                baseline_stage1_softmax=baseline_stage1_softmax,
-            )
-            single["loss_std"] = 0.0
-            single["p_std"] = 0.0
-            single["s_std"] = 0.0
-            single["evaluation_n"] = 1
-            single["evaluation_protocol"] = "single_validation_full"
-            return single
-
-        trials = self._run_clean_baseline_trials(
-            baseline_stage1_gelu=baseline_stage1_gelu,
-            baseline_stage1_softmax=baseline_stage1_softmax,
-            repeats=repeats,
-        )
-        repeat = pack_repeat_evaluation(
-            trials,
-            evaluation_mode="clean_baseline_repeated_validation_full",
-        )
-        stats = repeat["stats"]
-        result = {
-            "name": "Baseline (Stage-1 Exact)",
-            "family": "Baseline",
-            "loss": float(stats["loss_mean"]),
-            "p": float(stats["p_mean"]),
-            "s": float(stats["s_mean"]),
-            "time_ms": float(stats["time_mean_ms"]),
-            "loss_std": float(stats["loss_std"]),
-            "p_std": float(stats["p_std"]),
-            "s_std": float(stats["s_std"]),
-            "evaluation_n": int(stats["n"]),
-            "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
-            "repeat_evaluation": repeat,
-        }
-        return result
-
-    def _run_single_clean_baseline_eval(self, *, baseline_stage1_gelu, baseline_stage1_softmax):
-        return self._run_clean_baseline_trials(
-            baseline_stage1_gelu=baseline_stage1_gelu,
-            baseline_stage1_softmax=baseline_stage1_softmax,
-            repeats=1,
-        )[0]
-
-    def _run_clean_baseline_trials(
-        self,
-        *,
-        baseline_stage1_gelu,
-        baseline_stage1_softmax,
-        repeats: int,
-    ):
-        ev = self.evaluator
-        ev.apply_configuration(
-            np.asarray(baseline_stage1_gelu, dtype=int),
-            np.asarray(baseline_stage1_softmax, dtype=int),
-        )
-        self._clear_all_noise()
-        split_name = ev._resolve_eval_split(
-            use_train=False,
-            split=getattr(self, "final_eval_split", FINAL_EVAL_SPLIT),
-        )
-        trials = []
-        for _idx in range(max(1, int(repeats))):
-            loss, p, s, t = ev._run_evaluation(
-                ev.dataloaders[split_name],
-                use_train=False,
-                split_name=split_name,
-            )
-            trials.append({
-                "name": "Baseline (Stage-1 Exact)",
-                "family": "Baseline",
-                "loss": float(loss),
-                "p": float(p),
-                "s": float(s),
-                "time_ms": float(t),
-            })
-        return trials
-
     def _evaluate_action_candidate(
             self,
             *,
@@ -463,7 +355,6 @@ class BLBActionFinalEvaluationModule:
             overrides,
             gelu,
             softmax,
-            report_constraints,
             max_sfs,
             metadata=None,
             prepared_materialized=None,
@@ -615,56 +506,7 @@ class BLBActionFinalEvaluationModule:
                 if skipped_forward
                 else "single_validation_full"
             )
-        feasibility = self._build_feasibility_report(
-            result=result,
-            report_constraints=report_constraints,
-            optimizer_valid=not bool(materialized.optimizer_invalid),
-            decode_ok=True,
-            apply_ok=bool(replan_application.get("model_uses_replan_config", False)),
-            eval_ok=not bool(skipped_forward),
-        )
-        result["final_eval_feasibility"] = feasibility
-        result["feasible"] = feasibility.get("feasible")
-        result["diagnostic_feasible"] = feasibility.get("diagnostic_feasible")
-        result["strict_feasible"] = feasibility.get("strict_feasible")
         return result
-
-    def _build_feasibility_report(self, *, result, report_constraints, optimizer_valid, decode_ok, apply_ok, eval_ok):
-        ev = self.evaluator
-        threshold_source = str(
-            getattr(ev, "blb_final_eval_threshold_source", "")
-            or getattr(ev, "final_eval_threshold_source", "")
-            or "baseline-derived"
-        )
-        acc_std_limit = (
-            report_constraints.get("metric1_std")
-            if isinstance(report_constraints, dict) else None
-        )
-        f1_std_limit = (
-            report_constraints.get("metric2_std")
-            if isinstance(report_constraints, dict) else None
-        )
-        acc_std_limit = getattr(ev, "blb_final_eval_metric1_std_limit", acc_std_limit)
-        f1_std_limit = getattr(ev, "blb_final_eval_metric2_std_limit", f1_std_limit)
-        strict_z = getattr(ev, "blb_final_eval_strict_z", 1.0)
-        return build_final_eval_feasibility(
-            optimizer_valid=bool(optimizer_valid),
-            decode_ok=bool(decode_ok),
-            apply_ok=bool(apply_ok),
-            eval_ok=bool(eval_ok),
-            acc_mean=result.get("p"),
-            f1_mean=result.get("s"),
-            acc_std=result.get("p_std", 0.0),
-            f1_std=result.get("s_std", 0.0),
-            acc_limit=report_constraints.get("metric1") if isinstance(report_constraints, dict) else None,
-            f1_limit=report_constraints.get("metric2") if isinstance(report_constraints, dict) else None,
-            acc_std_limit=acc_std_limit,
-            f1_std_limit=f1_std_limit,
-            loss_mean=result.get("loss"),
-            loss_std=result.get("loss_std", 0.0),
-            threshold_source=threshold_source,
-            strict_z=float(strict_z),
-        )
 
     def _optimizer_outputs(self, profile: str, cfgs_dict):
         bridge = getattr(self, "rescale_bridge", None)
@@ -1465,7 +1307,6 @@ class BLBActionFinalEvaluationModule:
         *,
         json_path: str,
         selected_source: str,
-        baseline_result,
         candidate_results,
     ) -> str:
         metric_names = self.evaluator.get_metric_short_names()
@@ -1473,7 +1314,7 @@ class BLBActionFinalEvaluationModule:
         secondary = metric_names[1] if len(metric_names) > 1 else "metric2"
         path = os.path.join(
             self.results_dir,
-            f"blb_action_final_eval_report_{self.evaluator.dataset_key}.md",
+            "selected_config_final_eval.md",
         )
         lines = [
             "# BLB Action Final Evaluation Report",
@@ -1485,16 +1326,6 @@ class BLBActionFinalEvaluationModule:
             f"- rescale_optimizer: `{getattr(self, 'rescale_backend', 'unknown')}`",
             f"- rescale_optimizer_root: `{getattr(self, 'rescale_optimizer_root', '') or '(none)'}`",
             f"- json: `{json_path}`",
-            "",
-            "## Baseline",
-            "",
-            f"- clean baseline loss: `{baseline_result['loss']:.6f}`",
-            f"- clean baseline {primary}: `{baseline_result['p']:.6f}`",
-            f"- clean baseline {secondary}: `{baseline_result['s']:.6f}`",
-            f"- clean baseline protocol: `{baseline_result.get('evaluation_protocol', 'single_validation_full')}`",
-            f"- clean baseline loss std: `{float(baseline_result.get('loss_std', 0.0)):.6f}`",
-            f"- clean baseline {primary} std: `{float(baseline_result.get('p_std', 0.0)):.6f}`",
-            f"- clean baseline {secondary} std: `{float(baseline_result.get('s_std', 0.0)):.6f}`",
             "",
         ]
         lines.extend([
@@ -1611,19 +1442,15 @@ class BLBActionFinalEvaluationModule:
         self,
         *,
         selected_source,
-        baseline_stage1_gelu,
-        baseline_stage1_softmax,
         opt_gelu,
         opt_softmax,
-        baseline_result,
         candidate_results,
-        selection_constraints,
         action_context_provenance: Optional[Mapping[str, Any]] = None,
         final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
     ):
         handoff = to_jsonable(final_eval_handoff)
         output = {
-            "schema_version": "paean_blb_action_final_eval_result_v1",
+            "schema_version": "selected_config_final_eval_result_v1",
             "status": "complete",
             "dataset": self.evaluator.dataset_key,
             "final_eval_split": getattr(
@@ -1634,16 +1461,10 @@ class BLBActionFinalEvaluationModule:
             ),
             "selected_source": selected_source,
             "stage2_final_eval_handoff": handoff,
-            "baseline_stage1": {
-                "gelu": np.asarray(baseline_stage1_gelu, dtype=int).tolist(),
-                "softmax": np.asarray(baseline_stage1_softmax, dtype=int).tolist(),
-            },
             "selected_stage1": {
                 "gelu": np.asarray(opt_gelu, dtype=int).tolist(),
                 "softmax": np.asarray(opt_softmax, dtype=int).tolist(),
             },
-            "constraints": {"selection": selection_constraints},
-            "baseline": to_jsonable(baseline_result),
             "candidate_results": [to_jsonable(r) for r in candidate_results],
             "calibrated_action_context": to_jsonable(
                 action_context_provenance or {}
@@ -1658,14 +1479,7 @@ class BLBActionFinalEvaluationModule:
         }
         output_path = os.path.join(
             self.results_dir,
-            f"blb_action_final_eval_results_{self.evaluator.dataset_key}.json",
+            "selected_config_final_eval.json",
         )
         _atomic_json(output_path, output)
         return output_path
-
-    @staticmethod
-    def _attach_relative_metrics(baseline, results):
-        for result in results:
-            result["delta_loss_vs_baseline"] = float(result["loss"] - baseline["loss"])
-            result["delta_p_vs_baseline"] = float(result["p"] - baseline["p"])
-            result["delta_s_vs_baseline"] = float(result["s"] - baseline["s"])

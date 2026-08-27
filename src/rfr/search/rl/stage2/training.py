@@ -34,7 +34,7 @@ def _repo_root() -> str:
 def resolve_blb_persistence_dir(evaluator: Any) -> str:
     run_dir = str(getattr(evaluator, "run_output_dir", "") or "").strip()
     if run_dir:
-        if getattr(evaluator, "decoupled_layout", False):
+        if getattr(evaluator, "standalone_stage_layout", False):
             output_dir = os.path.join(run_dir, "progress")
         else:
             output_dir = os.path.join(run_dir, "stage2", "progress")

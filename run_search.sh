@@ -17,7 +17,7 @@ Usage:
   bash run_search.sh run bo_rf [options]
   bash run_search.sh run greedy [options]
   bash run_search.sh run coinn_ga [options]
-  bash run_search.sh eval --preset NAME [options]
+  bash run_search.sh eval --config PATH [options]
   bash run_search.sh --list-presets
 
 Supported profiles:
@@ -67,7 +67,7 @@ Comparators:
   --ga-stage2-generations N
 
 Final evaluation is a separate command:
-  bash run_search.sh eval --preset NAME
+  bash run_search.sh eval --config <run>/search_best_config.json
 EOF
 }
 
@@ -363,14 +363,12 @@ esac
 
 SKIP_STAGE1="false"
 SKIP_STAGE2="false"
-DECOUPLED_LAYOUT="false"
 
 if [ "$ALGORITHM" = "rl" ]; then
   case "$MODE" in
     stage1-only)
       SKIP_STAGE2="true"
       SKIP_FINAL_EVAL="true"
-      DECOUPLED_LAYOUT="true"
       STAGE2_EPISODES="0"
       ;;
     stage2-only)
@@ -502,7 +500,6 @@ CMD=(
   --skip_noise_rl "$SKIP_STAGE2"
   --skip_final_eval "$SKIP_FINAL_EVAL"
   --resume_run_dir "$RESUME_FROM"
-  --decoupled_layout "$DECOUPLED_LAYOUT"
   --stage1_best_config_path "$STAGE1_CONFIG"
   --stage1_rl_lr "$STAGE1_LR"
   --stage2_rl_lr "$STAGE2_LR"
