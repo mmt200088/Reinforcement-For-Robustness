@@ -54,6 +54,11 @@ class PrecisionPreset:
             )
         )
 
+    @property
+    def k_by_block(self) -> Tuple[int, int, int, int, int]:
+        """Return the simulation K tuple installed in the plaintext model."""
+        return self.simulation_k_by_block
+
 PRECISION_PRESETS = (
     PrecisionPreset(
         "high",
