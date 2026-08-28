@@ -2239,7 +2239,7 @@ def run_layerwise_search_baseline(
                 "search_wall_seconds": online_elapsed,
             })
             consume_stop_flag(stop_flag_path)
-            raise SystemExit(0)
+            raise SystemExit(0) from None
         finally:
             uninstall_graceful_stop_handler()
         paths = persist_search_result(
@@ -2451,7 +2451,7 @@ def run_layerwise_search_baseline(
             )
         _atomic_json(manifest_path, stopped_manifest)
         consume_stop_flag(strict_stop_flag_path)
-        raise SystemExit(0)
+        raise SystemExit(0) from None
     except Exception:
         failed_seconds = float(
             time.perf_counter() - strict_started_monotonic
