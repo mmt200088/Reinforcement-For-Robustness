@@ -22,10 +22,13 @@ Use Python 3.9-3.12, CUDA-enabled PyTorch, and Linux `flock`:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -e .
 export RFR_PYTHON=python
 ```
 
+Install the CUDA-enabled PyTorch build for the host in the active environment
+before `pip install -e .` when the server does not already provide it.
 `RFR_PYTHON` makes search, supervision, and evaluation use the same Python
 environment. Model weights and datasets may be cached by Hugging Face or placed
 under `local_assets/`; generated assets and run outputs are not tracked.
@@ -67,6 +70,8 @@ bash run_search.sh run rl \
 ```
 
 Normal Stage 1 termination occurs only after the configured maximum episode.
+The minimum valid PPO smoke run is 120 episodes; the preset uses 51,000 for a
+production search.
 On completion it writes:
 
 ```text
@@ -84,6 +89,8 @@ bash run_search.sh run rl \
 ```
 
 Normal Stage 2 termination occurs only after the configured maximum episode.
+The minimum valid PPO smoke run is 120 episodes; the preset uses 150,000 for a
+production search.
 The action at each layer is `[fusion_count, precision]`, where fusion count is
 `0` or `1` and precision is H, M, or L. Completed strict selection writes:
 
