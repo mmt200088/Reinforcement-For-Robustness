@@ -41,6 +41,11 @@ from rfr.search.rl.stage2.seed_utils import derive_layerwise_online_evaluation_s
 
 SEARCH_EVIDENCE_SPLIT = TRAIN_PROBE_SPLIT
 
+
+class _Stage2ComparatorGracefulStop(RuntimeError):
+    pass
+
+
 def _field(value: Any, name: str, default: Any = None) -> Any:
     if isinstance(value, Mapping):
         return value.get(name, default)
@@ -154,6 +159,7 @@ class LayerwiseRuntimeEvaluator:
             base_seed: int,
             expected_trials: int,
             on_evaluation: Callable[[Mapping[str, Any]], None] | None = None,
+            stop_requested: Callable[[], bool] | None = None,
             ):
         self.env = env
         self.limits = limits_from_reference(reference)
@@ -164,7 +170,19 @@ class LayerwiseRuntimeEvaluator:
                 "Stage-2 search stability evaluation requires at least two trials"
             )
         self.on_evaluation = on_evaluation
+        self.stop_requested = stop_requested
         self.evaluation_count = 0
+
+    def _finish_evaluation(
+            self,
+            evaluation: SearchEvaluation,
+            ) -> SearchEvaluation:
+        self.evaluation_count += 1
+        if self.on_evaluation is not None:
+            self.on_evaluation(evaluation.as_dict())
+        if self.stop_requested is not None and self.stop_requested():
+            raise _Stage2ComparatorGracefulStop
+        return evaluation
 
     def __call__(self, action_matrix: ActionMatrix) -> SearchEvaluation:
         evaluation_index = int(self.evaluation_count)
@@ -264,10 +282,7 @@ class LayerwiseRuntimeEvaluator:
                     ),
                     metadata=metadata,
                 )
-                self.evaluation_count += 1
-                if self.on_evaluation is not None:
-                    self.on_evaluation(evaluation.as_dict())
-                return evaluation
+                return self._finish_evaluation(evaluation)
             if runtime_info.get("forward_ran") is not True:
                 raise RuntimeError(
                     "real Stage-2 evaluation did not execute model forward"
@@ -417,10 +432,7 @@ class LayerwiseRuntimeEvaluator:
                 gate_probability=gate_probability,
                 metadata=metadata,
             )
-            self.evaluation_count += 1
-            if self.on_evaluation is not None:
-                self.on_evaluation(evaluation.as_dict())
-            return evaluation
+            return self._finish_evaluation(evaluation)
         finally:
             if callable(clear):
                 clear()
@@ -2168,6 +2180,20 @@ def run_layerwise_search_baseline(
         ),
     )
     if persisted_search_result is None:
+        from rfr.search.runtime.control import (
+            STOP_FLAG_FILENAME,
+            consume_stop_flag,
+            graceful_stop_requested,
+            install_graceful_stop_handler,
+            reset_graceful_stop_state,
+            uninstall_graceful_stop_handler,
+        )
+
+        stop_flag_path = os.path.join(output_dir, STOP_FLAG_FILENAME)
+        reset_graceful_stop_state()
+        consume_stop_flag(stop_flag_path)
+        install_graceful_stop_handler(log_fn=print)
+
         def on_evaluation(row: Mapping[str, Any]) -> None:
             owned = dict(row)
             owned_metadata = dict(owned.get("metadata") or {})
@@ -2184,15 +2210,34 @@ def run_layerwise_search_baseline(
             base_seed=int(seed),
             expected_trials=expected_trials,
             on_evaluation=on_evaluation,
+            stop_requested=lambda: graceful_stop_requested(stop_flag_path),
         )
         runtime_evaluator.evaluation_count = len(preload)
-        result = run_search(
-            normalized_backend,
-            LayerwiseSearchSpace(int(layerwise_env.horizon)),
-            runtime_evaluator,
-            config,
-            preload=preload,
-        )
+        try:
+            result = run_search(
+                normalized_backend,
+                LayerwiseSearchSpace(int(layerwise_env.horizon)),
+                runtime_evaluator,
+                config,
+                preload=preload,
+            )
+        except _Stage2ComparatorGracefulStop:
+            online_elapsed = float(
+                recovered_online_wall_seconds
+                + time.perf_counter() - run_started_monotonic
+            )
+            _atomic_json(manifest_path, {
+                **run_manifest,
+                "status": "running",
+                "stopped_by": "graceful_stop",
+                "observation_count": int(runtime_evaluator.evaluation_count),
+                "online_search_wall_seconds": online_elapsed,
+                "search_wall_seconds": online_elapsed,
+            })
+            consume_stop_flag(stop_flag_path)
+            raise SystemExit(0)
+        finally:
+            uninstall_graceful_stop_handler()
         paths = persist_search_result(
             output_dir=output_dir,
             result=result,
