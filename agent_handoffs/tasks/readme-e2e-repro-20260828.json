@@ -1,0 +1,66 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "109b468d244afc24d8c2f4f0bf846c1fb08f796e",
+  "base_tree": "385a132e2596ea7884945b32a7ba2b64bf24157b",
+  "branch": "codex/task-readme-e2e-repro-20260828",
+  "branch_role": "task",
+  "changed_scopes": [
+    "README.md",
+    "pyproject.toml",
+    "requirements.txt",
+    "src/rfr/preparation/fusion/enumeration.py",
+    "src/rfr/preparation/fusion/enumeration_fast.py",
+    "src/rfr/search/comparators/common/stage2_runner.py",
+    "src/rfr/search/rl/stage2/runner.py"
+  ],
+  "completed_at": "2026-08-28T18:12:21+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/rfr_readme_e2e_109b468_20260828/"
+  ],
+  "source_commit": "0bf490960c72945058fafc05ed236a10c735186b",
+  "source_tree": "34d540bc90b11a90a7594c1a54bc8eb785a84dfc",
+  "started_at": "2026-08-28T15:04:58+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "readme-e2e-repro-20260828",
+  "verification": [
+    {
+      "command": "install final package source into an isolated server environment",
+      "evidence": "Editable installation resolved transformers 4.44.2, accelerate 0.29.0, evaluate 0.4.6, CUDA=true, and one RTX 4090; Trainer imported successfully.",
+      "outcome": "passed"
+    },
+    {
+      "command": "compile, shell, preset, production-surface, Git diff, and README command matrix",
+      "evidence": "Python compilation, Bash syntax, 12 preset validations, production_surface_guard, git diff --check, and 15 RL/comparator dry-runs passed on server commit 0bf490960c72945058fafc05ed236a10c735186b.",
+      "outcome": "passed"
+    },
+    {
+      "command": "rebuild search preparation artifacts",
+      "evidence": "The three-task train-probe fixture rebuilt byte-identically with SHA-256 82dd5bd7bc82fa7aa1b8582011cab29ec3046ae889d63aa071e814e2ce8a2d26. Five MRPC fusion templates passed 330 golden comparisons; block5_n1 fully enumerated 4,624,620 combinations and reproduced both authoritative production options.",
+      "outcome": "passed"
+    },
+    {
+      "command": "real BERT-base MRPC RL Stage 1 and Stage 2",
+      "evidence": "Stage 1 completed 120 episodes and wrote stage1_best_config.json. Stage 2 consumed that exact JSON, completed 120 episodes with real Rescale, five fusion maps, CUDA terminal probes, candidate promotion, PPO, checkpoints, and diagnostics; it correctly withheld search_best_config.json because no strict selection existed.",
+      "outcome": "passed"
+    },
+    {
+      "command": "real BO-RF, Greedy, and COINN-GA comparator execution",
+      "evidence": "BO-RF completed both stages and strict top-5 at no-improvement=1. COINN-GA completed Stage 1 and Stage 2 with exactly one configured generation and 121 Stage-2 evaluations (P64 plus 57 offspring), then strict top-5. Greedy completed Stage 1, executed 2,701 real Stage-2 candidates across 1-opt/2-opt, and a two-layer production-core run reached natural complete-neighborhood termination.",
+      "outcome": "passed"
+    },
+    {
+      "command": "comparator online and strict graceful-stop/resume gates",
+      "evidence": "Greedy resumed 2,640 persisted observations without re-inference and stopped from one SIGINT at candidate boundary with status=running and no formal JSON. BO-RF stopped during strict validation with a 466,079-byte candidate-store checkpoint, resumed to 1,011,791 bytes, and matched uninterrupted Stage 1, Stage 2 action, selection status, strict verdict, and final configuration fingerprint exactly.",
+      "outcome": "passed"
+    },
+    {
+      "command": "six-profile materialization, model CUDA canaries, and selected-configuration final evaluation",
+      "evidence": "All six BERT-base/large MRPC/RTE/SST-2 profiles loaded five fusion maps and materialized 12/24-layer actions with unchanged simulation K while preserving paper ciphertext K metadata. All six model IDs completed CUDA forwards. Final eval loaded a strict-feasible search_best_config_v1 and evaluated exactly one selected configuration on validation_full; MRPC validation_size=408 and both JSON and Markdown outputs were written under the documented layout.",
+      "outcome": "passed"
+    }
+  ]
+}
