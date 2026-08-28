@@ -507,7 +507,12 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     ``option0`` (fc=0) is never touched. Mutates + returns ``options``.
     """
     from rfr.search.common import precision_boost as _pb
-    from rfr.search.common.action_space import _decode_block_field_values
+    from rfr.search.common.action_space import (
+        _BLOCK_SPECS,
+        NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
+        _decode_block_field_values,
+        _field_level_values,
+    )
 
     from . import count_map as _fcm
 
@@ -565,6 +570,40 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         base_fv = _pb.canonicalize_noise_irrelevant_rescales(
             base_fv, topo, rescale_baseline_sfs, probe_fn=_make_probe, sig_fn=_sig,
         )
+
+        canonical_action = [int(value) for value in opt["action_indices"]]
+        for position, (field_name, kind, _default) in enumerate(
+            _BLOCK_SPECS[int(ctx.block_idx)].fields
+        ):
+            if (
+                field_name not in base_fv
+                or base_fv_raw.get(field_name) == base_fv[field_name]
+            ):
+                continue
+            level_values = _field_level_values(
+                kind=str(kind),
+                levels=int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind]),
+                max_sf=int(
+                    ctx.max_sfs.get(
+                        int(ctx.block_idx),
+                        field_name,
+                        layer_idx=int(ctx.ref_layer),
+                    )
+                ),
+                N=int(ctx.N_block),
+            )
+            matching_indices = [
+                index
+                for index, value in enumerate(level_values)
+                if value is not None and int(value) == int(base_fv[field_name])
+            ]
+            if not matching_indices:
+                raise RuntimeError(
+                    f"{ctx.graph_key}: canonical value {base_fv[field_name]} for "
+                    f"{field_name} has no action index"
+                )
+            canonical_action[position] = int(matching_indices[0])
+        opt["action_indices"] = canonical_action
 
 
         res1 = _pb.boost_option(
