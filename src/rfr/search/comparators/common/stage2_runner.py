@@ -1207,6 +1207,7 @@ def canonical_strict_validation(
         communication_importance_ratio: float,
         promotion_probability: float,
         final_probability: float,
+        stop_requested: Callable[[], bool] | None = None,
         ) -> dict[str, Any]:
     """Reuse the canonical A/B/C point gates and axis counterfactuals."""
     from rfr.search.common.statistical_constraints import assess_candidate
@@ -1244,6 +1245,8 @@ def canonical_strict_validation(
     records: list[dict[str, Any]] = []
     strict_evaluations: list[tuple[SearchEvaluation, bool]] = []
     for online in ranked:
+        if stop_requested is not None and stop_requested():
+            raise _Stage2ComparatorGracefulStop
         resource = online.resource
         metadata = dict(online.metadata)
         full_vector = tuple(
@@ -1340,6 +1343,8 @@ def canonical_strict_validation(
                     "preserving search_complete_pending_strict for retry"
                 )
             record["certification"] = certification_record
+        if stop_requested is not None and stop_requested():
+            raise _Stage2ComparatorGracefulStop
 
         strict_metrics = _strict_metrics(
             None if certification is None else certification.metrics
@@ -1904,11 +1909,20 @@ def run_layerwise_search_baseline(
         rf_min_samples_leaf: int,
         communication_importance_ratio: float,
         manifest: Mapping[str, Any],
-        strict_validator: Callable[[SearchResult], Mapping[str, Any]],
+        strict_validator: Callable[..., Mapping[str, Any]],
         pending_strict_context_writer: Callable[[Mapping[str, Any]], None] | None = None,
         resume: bool = True,
         ) -> dict[str, Any]:
     """Run one non-RL baseline with ordinary crash-recoverable artifacts."""
+    from rfr.search.runtime.control import (
+        STOP_FLAG_FILENAME,
+        consume_stop_flag,
+        graceful_stop_requested,
+        install_graceful_stop_handler,
+        reset_graceful_stop_state,
+        uninstall_graceful_stop_handler,
+    )
+
     normalized_backend = normalize_search_backend(backend)
     run_started_monotonic = time.perf_counter()
     requested_manifest = dict(manifest)
@@ -2180,15 +2194,6 @@ def run_layerwise_search_baseline(
         ),
     )
     if persisted_search_result is None:
-        from rfr.search.runtime.control import (
-            STOP_FLAG_FILENAME,
-            consume_stop_flag,
-            graceful_stop_requested,
-            install_graceful_stop_handler,
-            reset_graceful_stop_state,
-            uninstall_graceful_stop_handler,
-        )
-
         stop_flag_path = os.path.join(output_dir, STOP_FLAG_FILENAME)
         reset_graceful_stop_state()
         consume_stop_flag(stop_flag_path)
@@ -2356,11 +2361,20 @@ def run_layerwise_search_baseline(
             )
 
     strict_started_monotonic = time.perf_counter()
+    strict_stop_flag_path = os.path.join(output_dir, STOP_FLAG_FILENAME)
+    reset_graceful_stop_state()
+    consume_stop_flag(strict_stop_flag_path)
+    install_graceful_stop_handler(log_fn=print)
     try:
         strict_payload = (
             strict_payload_from_artifact
             if strict_payload_from_artifact is not None
-            else strict_validator(result)
+            else strict_validator(
+                result,
+                stop_requested=lambda: graceful_stop_requested(
+                    strict_stop_flag_path
+                ),
+            )
         )
         if not isinstance(strict_payload, Mapping):
             raise RuntimeError(
@@ -2413,6 +2427,32 @@ def run_layerwise_search_baseline(
             raise RuntimeError(
                 "least-violating selection has an inconsistent status"
             )
+    except _Stage2ComparatorGracefulStop:
+        stopped_seconds = float(
+            time.perf_counter() - strict_started_monotonic
+        )
+        stopped_manifest = {
+            **run_manifest,
+            "status": "search_complete_pending_strict",
+            "stopped_by": "graceful_stop",
+            "strict_attempt_count": int(
+                run_manifest.get("strict_attempt_count", 0)
+            ) + 1,
+            "last_strict_attempt_wall_seconds": stopped_seconds,
+            "strict_attempt_wall_seconds_total": float(
+                run_manifest.get(
+                    "strict_attempt_wall_seconds_total", 0.0,
+                ) + stopped_seconds
+            ),
+        }
+        if strict_candidate_store is not None:
+            store_path = os.fspath(strict_candidate_store.path)
+            stopped_manifest["strict_candidate_store_checkpoint_size"] = int(
+                os.path.getsize(store_path) if os.path.exists(store_path) else 0
+            )
+        _atomic_json(manifest_path, stopped_manifest)
+        consume_stop_flag(strict_stop_flag_path)
+        raise SystemExit(0)
     except Exception:
         failed_seconds = float(
             time.perf_counter() - strict_started_monotonic
@@ -2440,6 +2480,8 @@ def run_layerwise_search_baseline(
         }
         _atomic_json(manifest_path, failed_manifest)
         raise
+    finally:
+        uninstall_graceful_stop_handler()
     strict_validation_wall_seconds = (
         0.0
         if strict_payload_from_artifact is not None

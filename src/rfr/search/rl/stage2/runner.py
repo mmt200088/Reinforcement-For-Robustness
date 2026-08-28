@@ -1125,7 +1125,7 @@ def _run_layerwise_training_branch(
         search_manifest["strict_candidate_store"] = os.fspath(
             strict_candidate_store.path
         )
-        def strict_validator(search_result):
+        def strict_validator(search_result, stop_requested=None):
             return canonical_strict_validation(
                 result=search_result,
                 layerwise_env=layerwise_env,
@@ -1145,6 +1145,7 @@ def _run_layerwise_training_branch(
                     "final_constraint_probability",
                     0.95,
                 )),
+                stop_requested=stop_requested,
             )
 
         from rfr.search.common.statistical_constraints import (
