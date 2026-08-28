@@ -8,6 +8,6 @@ scikit-learn>=1.2
 matplotlib>=3.7
 fire>=0.5
 tqdm>=4.65
-accelerate>=0.20
+accelerate==0.29.0
 safetensors>=0.3
 evaluate>=0.4
