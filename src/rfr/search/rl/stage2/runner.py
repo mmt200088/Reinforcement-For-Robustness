@@ -20,7 +20,11 @@ from rfr.search.runtime.elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
-from rfr.preparation.data.protocol import PROTOCOL_SCHEMA, TRAIN_PROBE_SPLIT
+from rfr.preparation.data.protocol import (
+    PROTOCOL_SCHEMA,
+    TRAIN_PROBE_SIZE,
+    TRAIN_PROBE_SPLIT,
+)
 from rfr.search.common.data_points import (
     RLDataPointWriter,
     make_unique_run_id,
@@ -3644,7 +3648,7 @@ def _restore_pending_strict_resume_evidence(
         context.get("authoritative_validation_example_count", 0)
     )
     if (
-            int(authoritative_example_count) != 408
+            int(authoritative_example_count) != TRAIN_PROBE_SIZE
             or stored_example_count != int(authoritative_example_count)
     ):
         raise RuntimeError(
@@ -4217,7 +4221,7 @@ def _run_layerwise_via_runner_locked(
             online_trials=int(train_cfg.num_trials_per_step),
             baseline_groups=configured_baseline_groups,
             trials_per_group=configured_baseline_trials,
-            authoritative_example_count=408,
+            authoritative_example_count=TRAIN_PROBE_SIZE,
         )
     bullet = "*"
     log = runner._make_log_safe(ev.log)
