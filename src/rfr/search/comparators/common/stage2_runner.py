@@ -1247,7 +1247,6 @@ def canonical_strict_validation(
     for online in ranked:
         if stop_requested is not None and stop_requested():
             raise _Stage2ComparatorGracefulStop
-        resource = online.resource
         metadata = dict(online.metadata)
         full_vector = tuple(
             int(value)
