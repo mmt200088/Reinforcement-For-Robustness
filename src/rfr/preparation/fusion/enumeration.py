@@ -657,9 +657,10 @@ def prepare_block_type_context(
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,
-        _full_vec_offset_for_block,
         _is_action_field_effective,
+        block_dims,
         distinct_sf_level_indices,
+        layer_dims,
     )
 
     from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
@@ -715,7 +716,10 @@ def prepare_block_type_context(
 
     fields = _BLOCK_SPECS[int(block_idx)].fields
     block_num_slots = len(fields)
-    block_offset = _full_vec_offset_for_block(int(num_layers), int(ref_layer), int(block_idx))
+    block_offset = int(ref_layer) * len(layer_dims()) + sum(
+        len(block_dims(candidate))
+        for candidate in range(1, int(block_idx))
+    )
     k_slot_index = next(i for i, (_n, k, _m) in enumerate(fields) if k == "K")
     N_block = int(_block_default_N(int(block_idx), gelu_degree=int(gelu_degree), attn_degree=int(attn_degree)))
 
