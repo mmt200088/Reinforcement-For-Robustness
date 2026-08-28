@@ -1197,6 +1197,7 @@ def canonical_strict_validation(
         final_probability: float,
         ) -> dict[str, Any]:
     """Reuse the canonical A/B/C point gates and axis counterfactuals."""
+    from rfr.search.common.statistical_constraints import assess_candidate
     from rfr.search.rl.stage2.layerwise_runner import (
         _FINAL_REVALIDATION_PASSED,
         _deserialize_boosted_overrides,
@@ -1274,12 +1275,11 @@ def canonical_strict_validation(
             action_matrix=online.action_matrix,
             assessment=assessment,
             priority=3,
-            variable_cost=float(resource.ppo_resource_score),
-            frontier_cost=None,
-            frontier_candidates=None,
+            frontier_candidates={},
             boosted_overrides=boosted_overrides,
             bootstrap_seed=bootstrap_seed,
             episode_reward=online.reward,
+            assess_candidate_fn=assess_candidate,
             promotion_probability=float(promotion_probability),
             validation_banks=validation_banks,
         )
