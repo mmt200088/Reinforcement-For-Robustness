@@ -539,7 +539,27 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
                 node=attr_to_node[eff_attr], slot_idx=slot_idx, const_sf=sf,
             ))
         elif slot_idx >= 0:
-            points.append(PointSpec(kind="slot", distribution=dist, N=N, slot_idx=slot_idx))
+            linked_rescale = next(
+                (
+                    point
+                    for point in points
+                    if point.kind == "rescale"
+                    and point.distribution == dist
+                    and point.slot_idx == slot_idx
+                ),
+                None,
+            )
+            if dist == "rescale" and linked_rescale is not None:
+                points.append(PointSpec(
+                    kind="rescale",
+                    distribution=dist,
+                    N=N,
+                    skel_pos=linked_rescale.skel_pos,
+                    slot_idx=slot_idx,
+                    const_sf=sf,
+                ))
+            else:
+                points.append(PointSpec(kind="slot", distribution=dist, N=N, slot_idx=slot_idx))
         else:
             points.append(PointSpec(kind="const", distribution=dist, N=N, const_sf=sf))
 
