@@ -91,9 +91,8 @@ class PointSpec:
     kind:
       * "source"      — cut_point_sf entry of skeleton position 0, key "sf".
       * "rescale"     — skeleton position ``skel_pos``: absent from
-                        cut_point_sf → fused away (no point); "sf_post"
-                        present → that value; present without "sf_post" →
-                        the PROPOSED value (= the combo value of ``slot_idx``).
+                        cut_point_sf or missing "sf_post" → fused away;
+                        otherwise use "sf_post".
       * "encode"      — propagation_deltas[name]: int delta → that value,
                         else the proposed value (slot combo value or const).
       * "slot"        — always the combo value of ``slot_idx`` (model-noise
@@ -238,12 +237,9 @@ def eval_combo_fast(
         elif spec.kind == "rescale":
             node_id = int(skel[spec.skel_pos])
             cpt = cut_points.get(node_id)
-            if cpt is None:
+            if cpt is None or cpt.get("sf_post") is None:
                 continue
-            if "sf_post" in cpt:
-                sf = int(cpt["sf_post"])
-            else:
-                sf = sf_by_slot[spec.slot_idx] if spec.slot_idx >= 0 else spec.const_sf
+            sf = int(cpt["sf_post"])
         elif spec.kind == "encode":
             delta = prop.get(spec.node)
             if isinstance(delta, int):
@@ -539,27 +535,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
                 node=attr_to_node[eff_attr], slot_idx=slot_idx, const_sf=sf,
             ))
         elif slot_idx >= 0:
-            linked_rescale = next(
-                (
-                    point
-                    for point in points
-                    if point.kind == "rescale"
-                    and point.distribution == dist
-                    and point.slot_idx == slot_idx
-                ),
-                None,
-            )
-            if dist == "rescale" and linked_rescale is not None:
-                points.append(PointSpec(
-                    kind="rescale",
-                    distribution=dist,
-                    N=N,
-                    skel_pos=linked_rescale.skel_pos,
-                    slot_idx=slot_idx,
-                    const_sf=sf,
-                ))
-            else:
-                points.append(PointSpec(kind="slot", distribution=dist, N=N, slot_idx=slot_idx))
+            points.append(PointSpec(kind="slot", distribution=dist, N=N, slot_idx=slot_idx))
         else:
             points.append(PointSpec(kind="const", distribution=dist, N=N, const_sf=sf))
 
