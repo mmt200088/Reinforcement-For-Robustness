@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "record_type": "task_handoff",
+  "task_id": "clarify-module-ownership-20261015",
+  "branch": "codex/task-clarify-module-ownership-20261015",
+  "branch_role": "task",
+  "base_commit": "b1519d39d5d90c717e02be3f56dc1cc872a8ea0e",
+  "base_tree": "661eef0a18de14351fab28f085cec983f3009639",
+  "source_commit": "d32dd037bad7de938f4134641000154ae868c253",
+  "source_tree": "7a732fc796ab355411ae95545b79dfe044b7d1f9",
+  "status": "completed",
+  "changed_scopes": [
+    "README.md",
+    "docs/CODE_STRUCTURE.md",
+    "pyproject.toml",
+    "scripts/production_surface_guard.py",
+    "src/rfr"
+  ],
+  "verification": [
+    {
+      "command": "Python compilation; bash -n; python -m rfr.cli.validate_preset configs/presets/*.conf; python scripts/production_surface_guard.py --json",
+      "outcome": "passed",
+      "evidence": "Re-run from exact pushed source: 115 Python files compiled, 3 shell files parsed, 12 presets passed; production-surface/local-import/ownership guards passed. Five injected negative structure cases were rejected. No tracked source changes during verification."
+    },
+    {
+      "command": "python tmp/module-layout/verify_extraction.py",
+      "outcome": "passed",
+      "evidence": "Against b1519d39d5d90c717e02be3f56dc1cc872a8ea0e: 174 normalized AST units matched, including the recomposed callback and relocated PPO methods. Normalization is limited to module qualification/import relocation, explicit workflow receiver, approved symbol/message renames and docstrings. All 117 configs/fixture files are byte-identical."
+    },
+    {
+      "command": "Stage-1 reference/new CPU environment trace comparison inside verify_extraction.py",
+      "outcome": "passed",
+      "evidence": "40 deterministic-fixture episodes, 720 transitions across 12/24 layers and one/two metric modes matched exactly, including states, rewards and action metadata; mutable rollout-setting checks passed. Trace SHA256 42b77fa5974b3199bced14c7fa4f5614901fe301ff5156201ae64a7cb338701c. This is not a real-model smoke test."
+    },
+    {
+      "command": "python tmp/module-layout/run_history.py <reference-or-task-checkout>",
+      "outcome": "passed",
+      "evidence": "29/29 tests passed on both the baseline and pushed task source, no skips in this subset. Historical suite source cd3ae58e98e3c220ba3630f4e00f52ce13b1720f: test_stage1_determinism.py, test_blb_seq_seed_utils.py, test_blb_layerwise_precision_presets.py plus source_inspection_utils.py. Only checkout location and the moved execution_env source path were adapted; the full historical suite was not run."
+    },
+    {
+      "command": "python tmp/module-layout/scientific_snapshot.py <checkout>; cmp baseline/scientific-snapshot.json after/scientific-snapshot.json",
+      "outcome": "passed",
+      "evidence": "Six profiles, 66 valid in-process Rescale baseline replans; precision presets, policy architecture, layer schedules, resource scores and Stage-1/Stage-2 seed sequences matched. Only checkout-root strings normalized. Snapshot SHA256 4304673f42ebfb4c43c6b62d9020013eb0669f4aaa87add83f5f33a63ad3ce16."
+    },
+    {
+      "command": "PATH=<test-lock-helper>:$PATH python tmp/module-layout/check_launchers.py",
+      "outcome": "passed",
+      "evidence": "24 before/after command cases matched after normalizing checkout/interpreter/fixture paths: 12 PPO presets and 6 final-evaluation dry-runs passed; 3 comparator dry-runs passed with a neutral --logfile training.log preset. Three default comparator invocations reproduce the pre-existing macOS Bash 3.2 empty-array failure on both commits. A test-only fcntl implementation of flock -n FD supplied actual POSIX locking; contention and release were verified. No production launcher or presets were modified. Native Linux command verification remains a server gate."
+    },
+    {
+      "command": "Dependency-aware import sweep of all src/rfr modules",
+      "outcome": "passed",
+      "evidence": "85 modules imported, 27 explicitly skipped for unavailable Torch/Transformers-related dependencies, zero unexpected failures. Local verification used Python 3.9, NumPy 1.26.4 and scikit-learn 1.6.1 in an isolated temporary environment. Torch/CUDA, real BERT inference, real checkpoint reload and the full hardware-dependent regression suite were NOT run. Server verification is required before canonical promotion/deployment; this handoff certifies source organization and local checks only."
+    },
+    {
+      "command": "python -m ruff check --select F821,F822,F823 src scripts; isolated baseline/new diagnostic comparison; git diff --check",
+      "outcome": "passed",
+      "evidence": "Configured undefined-name checks and whitespace checks passed. Ignoring project lint exclusions exposes the same seven pre-existing Rescale diagnostics in both versions (BaselineHandoverError, MaxSFsTable and CfgToDeltaFn); no new diagnostics were introduced and unrelated issues were not edited."
+    }
+  ],
+  "server_evidence": [],
+  "supersedes": [],
+  "aggregate_eligible": true,
+  "deployment_eligible": false,
+  "started_at": "2026-10-15T10:37:51+08:00",
+  "completed_at": "2026-10-15T11:02:42+08:00"
+}
