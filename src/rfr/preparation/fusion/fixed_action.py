@@ -68,7 +68,7 @@ def reconstruct_fusion_group(
     feeds ``BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action`` and
     the GLUE decode so both replay the boosted config. The K value per step is read
     straight from the flat vector (left exactly as the RL search encoded it)."""
-    from rfr.search.common.action_space import K_LEVELS
+    from rfr.search.common.full_action import K_LEVELS
     from rfr.search.common.layerwise_action import fusion_materialization_blocks
 
     del softmax

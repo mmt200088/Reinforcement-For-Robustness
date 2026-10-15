@@ -4,7 +4,7 @@ Stage-1 reward scoring is a deterministic function of the episode's
 ``(gelu_degrees, softmax_degrees, split)``: the BERT weights are frozen, the
 model runs in eval mode under ``inference_mode``, the dataloader iterates with
 ``shuffle=False``, and the Stage-1 path never installs noise. The single-GPU
-path has exploited this for a long time via ``LayerImportanceEvaluator.
+path has exploited this for a long time via ``SearchWorkflow.
 _eval_cache``; the multi-GPU worker path (``_stage1_evaluate_on_model``)
 deliberately skipped that dict because un-locked cross-thread writes are a
 race risk. This module is the lock-protected replacement so worker episodes

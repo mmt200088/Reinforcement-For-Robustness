@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .action_space import (
+from .full_action import (
     BLB_FIRST_INPUT_N,
     K_LEVELS,
     LEVELS_FIRST_INPUT,
@@ -40,7 +40,7 @@ def action_vec_to_slots_list(
         ) -> List[Dict[str, Any]]:
     """Return a list of human-readable slot dicts for ``action_vec``.
 
-    Wraps :func:`rfr.search.common.action_space.describe_action_vector` and
+    Wraps :func:`rfr.search.common.full_action.describe_action_vector` and
     renames its fields for end-user clarity (``value`` → ``scaling_factor``
     or ``truncation_bits`` depending on kind).
     """
@@ -282,7 +282,7 @@ def _build_label_to_offset_map(num_layers: int) -> Dict[str, Tuple[int, int, str
     Built from the same source-of-truth used by the policy (``per_layer_field_offsets``
     and ``make_slot_label``). Idempotent: same num_layers always yields the same map.
     """
-    from .action_space import make_slot_label
+    from .full_action import make_slot_label
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
     out: Dict[str, Tuple[int, int, str, str]] = {}

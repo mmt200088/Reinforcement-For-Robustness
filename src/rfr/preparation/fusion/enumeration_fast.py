@@ -350,14 +350,14 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
     ``sync_block*`` functions. Raises on any wiring that does not behave as
     an exact identity map of the decoded SF.
     """
-    from rfr.search.common.action_space import (
+    from rfr.search.common.full_action import (
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _BLOCK_SPECS,
         _field_level_values,
         action_vector_to_cfgs,
     )
 
-    from rfr.preparation.rescale.bridge import (
+    from rfr.preparation.rescale.optimizer_bridge import (
         GRAPH_NODE_TO_CFG_ATTR,
         cfg_to_t_new_from_table,
         sync_block2_aux_fresh_binding,

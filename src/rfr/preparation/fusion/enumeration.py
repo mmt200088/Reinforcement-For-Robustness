@@ -381,9 +381,9 @@ def _installed_signature(points: Sequence[Any]) -> Tuple:
 def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dict[str, Any]:
     """Decode one block-slot vector exactly as the runtime env does, run real
     replan, and (if valid) return the post-override installed noise plan."""
-    from rfr.search.common.action_space import action_vector_to_cfgs
+    from rfr.search.common.full_action import action_vector_to_cfgs
 
-    from rfr.preparation.rescale.bridge import (
+    from rfr.preparation.rescale.optimizer_bridge import (
         apply_optimizer_output_to_cfg,
         sync_block2_aux_fresh_binding,
         sync_block2_qk_binding,
@@ -440,9 +440,9 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
     ``field_values`` (above-baseline SF allowed) — the precision boost evaluator.
     Returns valid / fusion_count / total_bits / q_initial / q_final / fusions /
     points (the chain fields come straight from the real replan result)."""
-    from rfr.search.common.action_space import build_block_cfg_from_field_values
+    from rfr.search.common.full_action import build_block_cfg_from_field_values
 
-    from rfr.preparation.rescale.bridge import (
+    from rfr.preparation.rescale.optimizer_bridge import (
         apply_optimizer_output_to_cfg,
         sync_block2_aux_fresh_binding,
         sync_block2_qk_binding,
@@ -507,7 +507,7 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     ``option0`` (fc=0) is never touched. Mutates + returns ``options``.
     """
     from rfr.search.common import precision_boost as _pb
-    from rfr.search.common.action_space import (
+    from rfr.search.common.full_action import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _decode_block_field_values,
@@ -691,8 +691,8 @@ def prepare_block_type_context(
     import json as _json
     import os as _os
 
-    from rfr.search.common import action_space as _action_space
-    from rfr.search.common.action_space import (
+    from rfr.search.common import full_action as _action_space
+    from rfr.search.common.full_action import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,
@@ -702,7 +702,7 @@ def prepare_block_type_context(
         layer_dims,
     )
 
-    from rfr.preparation.rescale.bridge import InProcessInvoker, RescaleOptimizerBridge
+    from rfr.preparation.rescale.optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
 
     from rfr.preparation.rescale.baseline_bootstrap import (
         load_static_skeletons_baseline,
@@ -886,7 +886,7 @@ def check_k_independence(
     confirm ``fusion_count`` does not change (spec §3.6). K is decided
     separately, so the map (built at baseline K) is only valid if K does not
     move fusion."""
-    from rfr.search.common.action_space import K_LEVELS
+    from rfr.search.common.full_action import K_LEVELS
 
     violations: List[Dict[str, Any]] = []
     samples_checked = 0
@@ -917,7 +917,7 @@ def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int])
     calibrated max_sfs). This avoids the action-field-name vs cfg-attr-name
     mismatch while ensuring every retained option has decoded slot metadata.
     """
-    from rfr.search.common.action_space import (
+    from rfr.search.common.full_action import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
         _block_default_N,

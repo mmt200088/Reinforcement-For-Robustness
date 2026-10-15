@@ -1,4 +1,4 @@
-"""Layerwise Stage-2 orchestration, checkpointing, and strict selection."""
+"""Stage-2 setup, resume, backend dispatch and strict-selection orchestration."""
 from __future__ import annotations
 
 from collections import deque
@@ -31,7 +31,7 @@ from rfr.search.common.data_points import (
     write_strict_json_file,
 )
 
-from rfr.search.common.action_space import K_LEVELS
+from rfr.search.common.full_action import K_LEVELS
 from rfr.preparation.rescale.baseline_bootstrap import resolve_stage2_model_type
 from rfr.search.rl.stage2.policy import (
     BLBStage2LayerwisePolicy,
@@ -513,7 +513,7 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_DECODE_VERSION,
         layerwise_action_space_version,
     )
-    from rfr.search.rl.stage2.layerwise_runner import bind_layerwise_candidate_identity
+    from rfr.search.rl.stage2.ppo_runner import bind_layerwise_candidate_identity
 
     stage1_degrees = {
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
@@ -773,8 +773,8 @@ def _run_layerwise_training_branch(
         max_communication_saving_units,
         max_compute_saving_units,
     )
-    from rfr.search.rl.stage2.layerwise_env import BLBStage2LayerwiseEnv
-    from rfr.search.rl.stage2.layerwise_runner import (
+    from rfr.search.rl.stage2.policy_env import BLBStage2LayerwiseEnv
+    from rfr.search.rl.stage2.ppo_runner import (
         _PROBABILITY_FIELDS,
         CheckpointFileFingerprintTracker,
         StrictSelectionKey,
@@ -3577,7 +3577,7 @@ def _restore_pending_strict_resume_evidence(
         authoritative_example_count: int,
         ) -> dict[str, Any]:
     """Restore and validate every baseline reference used by strict resume."""
-    from rfr.search.rl.stage2.layerwise_runner import LayerwiseValidationBanks
+    from rfr.search.rl.stage2.ppo_runner import LayerwiseValidationBanks
     from rfr.search.common.statistical_constraints import baseline_reference_from_resume_payload
 
     if not isinstance(context, Mapping):
@@ -3968,7 +3968,7 @@ def _build_stage2_materialization_env(
         load_calibrated_stage2_action_context,
         validate_calibrated_stage2_action_context,
     )
-    from rfr.search.rl.stage2.env import BLBStage2Env, BLBStage2EnvConfig
+    from rfr.search.rl.stage2.execution_env import BLBStage2Env, BLBStage2EnvConfig
     from rfr.search.rl.stage2.reward import BaselineCostStats, RewardWeights
 
     ev = runner.evaluator
@@ -4090,8 +4090,8 @@ def run_layerwise_via_runner(
         ) -> Dict[str, Any]:
     """Lock the complete Stage-2 run before any probe or persistent write."""
     validate_exact_k_domain(K_LEVELS)
-    from rfr.search.rl.stage2.layerwise_runner import LayerwiseRunLock
-    from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
+    from rfr.search.rl.stage2.ppo_runner import LayerwiseRunLock
+    from rfr.search.rl.stage2.entrypoint import resolve_blb_persistence_dir
 
     blb_progress_dir = resolve_blb_persistence_dir(runner.evaluator)
     probe_runner_owner_holder = _ProbeRunnerOwnerHolder()
@@ -4186,7 +4186,7 @@ def _run_layerwise_via_runner_locked(
     )
     from rfr.search.runtime.probe_runner import enable_cuda_reward_probe_fast_math
     from rfr.search.rl.stage2.reward import ParetoCostArchive
-    from rfr.search.rl.stage2.training import resolve_blb_persistence_dir
+    from rfr.search.rl.stage2.entrypoint import resolve_blb_persistence_dir
 
 
     enable_cuda_reward_probe_fast_math()
@@ -4207,7 +4207,7 @@ def _run_layerwise_via_runner_locked(
         precision_tolerance, stability_multiplier, bootstrap_samples = (
             _resolve_robust_baseline_config(train_cfg, ev)
         )
-        from rfr.search.rl.stage2.layerwise_runner import (
+        from rfr.search.rl.stage2.ppo_runner import (
             validate_layerwise_validation_bank_config,
         )
 
@@ -4319,7 +4319,7 @@ def _run_layerwise_via_runner_locked(
         base_env.probe_runner = shared_probe_runner_owner.view("F1")
 
 
-    from rfr.search.rl.stage2.env import estimate_baseline_cost_stats
+    from rfr.search.rl.stage2.execution_env import estimate_baseline_cost_stats
     from rfr.search.rl.stage2.reward import calibrate_weights_from_baseline
     precomputed = {
         "total_bits_sum": int(ss_cost_stats.total_bits_sum),
@@ -4514,7 +4514,7 @@ def _run_layerwise_via_runner_locked(
                 _resolve_robust_baseline_config(train_cfg, ev)
             )
             if decision_path == "layerwise":
-                from rfr.search.rl.stage2.layerwise_runner import (
+                from rfr.search.rl.stage2.ppo_runner import (
                     validate_layerwise_validation_bank_config,
                 )
 
@@ -4639,7 +4639,7 @@ def _run_layerwise_via_runner_locked(
                     bank_references[bank_label] = bank_reference
                     bank_summaries[bank_label] = bank_summary
 
-                from rfr.search.rl.stage2.layerwise_runner import (
+                from rfr.search.rl.stage2.ppo_runner import (
                     LayerwiseValidationBank,
                     LayerwiseValidationBanks,
                 )

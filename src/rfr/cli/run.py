@@ -1,3 +1,5 @@
+"""Load the BERT/data context and run configuration search or final evaluation."""
+
 import os
 import sys
 import json
@@ -461,7 +463,7 @@ def load_glue_dataset_equivalent(
             f"equivalent parquet errors: {equivalent_errors}"
         ) from primary_exc
 
-def train(
+def run(
         base_model: str = "",
         data_path: str = "mrpc",
         output_dir: str = "./runs",
@@ -632,11 +634,13 @@ def train(
     )
 
 
-    from rfr.search.common import evaluator as _lie
-    _lie.set_ppo_update_interval(ppo_update_interval)
+    # Load the workflow before seeding/model creation, as in the original entrypoint.
+    from rfr.search.workflow import SearchWorkflow
+    from rfr.search.rl.stage1 import config as stage1_config
+    stage1_config.set_ppo_update_interval(ppo_update_interval)
     print(
-        f"[PPO] ppo_update_interval={_lie.PPO_UPDATE_INTERVAL} "
-        f"(batch={_lie.PPO_BATCH_SIZE} steps, details chunk={_lie.STEP_INFO_CHUNK_SIZE} episodes)"
+        f"[PPO] ppo_update_interval={stage1_config.PPO_UPDATE_INTERVAL} "
+        f"(batch={stage1_config.PPO_BATCH_SIZE} steps, details chunk={stage1_config.STEP_INFO_CHUNK_SIZE} episodes)"
     )
 
     print(
@@ -758,9 +762,7 @@ def train(
         )
 
 
-    from rfr.search.common.evaluator import LayerImportanceEvaluator
-
-    importance_evaluator = LayerImportanceEvaluator(
+    workflow = SearchWorkflow(
         model=model,
         train_data=train_data,
 
@@ -862,7 +864,7 @@ def train(
             disable_tqdm=False,
         ),
         data_collator=data_collator,
-        callbacks=[importance_evaluator],
+        callbacks=[workflow],
     )
 
     model.config.use_cache = False
@@ -877,6 +879,6 @@ def train(
 if __name__ == "__main__":
     run_fire_entrypoint(
         fire,
-        train,
+        run,
         program_name="run_search",
     )

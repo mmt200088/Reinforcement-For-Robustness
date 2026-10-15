@@ -8,7 +8,7 @@ import numpy as np
 
 from rfr.common.json_utils import bounded_stable_json_hash
 
-from rfr.preparation.rescale.bridge import (
+from rfr.preparation.rescale.optimizer_bridge import (
     _strip_layer_suffix,
     aggregate_optimizer_signals,
     apply_optimizer_output_to_cfg,
@@ -19,7 +19,7 @@ from rfr.preparation.rescale.bridge import (
     sync_block5_aux_fresh_binding,
 )
 
-from rfr.search.common.action_space import (
+from rfr.search.common.full_action import (
     ActionDecodeResult,
     MaxSFsTable,
     action_vector_to_cfgs,
@@ -528,7 +528,7 @@ def evaluate_action_for_cost(
         attn_degree=attn_degree,
     )
     if boosted_overrides:
-        from rfr.search.common.action_space import (
+        from rfr.search.common.full_action import (
             _block_default_N,
             _degree_for_layer,
             build_block_cfg_from_field_values,

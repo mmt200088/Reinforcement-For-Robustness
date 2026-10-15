@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -56,6 +58,16 @@ ALLOWED_RESULT_FILES = {
 }
 
 FORBIDDEN_RUNTIME_PATHS = {
+    "src/rfr/search/common/evaluator.py",
+    "src/rfr/search/common/action_space.py",
+    "src/rfr/evaluation/training_curve_plot.py",
+    "src/rfr/search/rl/stage2/training.py",
+    "src/rfr/search/rl/stage2/runner.py",
+    "src/rfr/search/rl/stage2/layerwise_runner.py",
+    "src/rfr/search/rl/stage2/env.py",
+    "src/rfr/search/rl/stage2/layerwise_env.py",
+    "src/rfr/search/runtime/blb_bridge.py",
+    "src/rfr/preparation/rescale/bridge.py",
     "llama_7B_LayerImportance.sh",
     "rl_tune.py",
     "layer_importance_evaluator.py",
@@ -132,7 +144,23 @@ REQUIRED_RUNTIME_PATHS = {
     "src/rfr/preparation/fusion/count_map.py",
     "src/rfr/preparation/rescale/optimizer/replan_interface.py",
     "src/rfr/search/rl/stage1/parallel_runner.py",
-    "src/rfr/search/rl/stage2/training.py",
+    "src/rfr/search/rl/stage2/entrypoint.py",
+    "src/rfr/search/rl/stage2/orchestration.py",
+    "src/rfr/search/rl/stage2/ppo_runner.py",
+    "src/rfr/search/rl/stage2/policy_env.py",
+    "src/rfr/search/rl/stage2/execution_env.py",
+    "src/rfr/search/workflow.py",
+    "src/rfr/search/rl/stage1/config.py",
+    "src/rfr/search/rl/stage1/policy.py",
+    "src/rfr/search/rl/stage1/env.py",
+    "src/rfr/search/rl/stage1/rollout.py",
+    "src/rfr/search/rl/stage1/training.py",
+    "src/rfr/search/rl/stage1/runner.py",
+    "src/rfr/search/common/full_action.py",
+    "src/rfr/search/common/run_artifacts.py",
+    "src/rfr/search/common/training_curves.py",
+    "src/rfr/search/runtime/model_installation.py",
+    "src/rfr/preparation/rescale/optimizer_bridge.py",
     "src/rfr/search/common/best_config.py",
     "src/rfr/search/comparators/bo_rf/stage1.py",
     "src/rfr/search/comparators/bo_rf/stage2.py",
@@ -261,6 +289,90 @@ def tracked_text(path: str) -> str:
     return _git("show", f"HEAD:{path}").decode("utf-8", errors="replace")
 
 
+def module_structure_errors(paths: Iterable[str]) -> list[str]:
+    """Check local imports and algorithm ownership without importing Torch."""
+    modules: dict[str, ast.Module] = {}
+    packages: set[str] = set()
+    errors: list[str] = []
+    for path in paths:
+        if not path.startswith("src/rfr/") or not path.endswith(".py"):
+            continue
+        module = path[4:-3].replace("/", ".")
+        if module.endswith(".__init__"):
+            module = module.removesuffix(".__init__")
+            packages.add(module)
+        try:
+            modules[module] = ast.parse(tracked_text(path), filename=path)
+        except SyntaxError as exc:
+            errors.append(f"{path}: {exc}")
+
+    exports: dict[str, set[str]] = {}
+    for module, tree in modules.items():
+        names: set[str] = set()
+        pending = list(tree.body)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                names.update(target.id for target in targets if isinstance(target, ast.Name))
+                if any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        names.update(
+                            item.value for item in node.value.elts
+                            if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                        )
+            else:
+                # Module-level conditional/optional exports, not function locals.
+                pending.extend(ast.iter_child_nodes(node))
+        exports[module] = names
+
+    for module, tree in modules.items():
+        package = module if module in packages else module.rsplit(".", 1)[0]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                targets = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                target = node.module or ""
+                if node.level:
+                    target = importlib.util.resolve_name("." * node.level + target, package)
+                targets = [target]
+                if target in modules:
+                    for alias in node.names:
+                        if alias.name != "*" and alias.name not in exports[target] and f"{target}.{alias.name}" not in modules:
+                            errors.append(f"{module}:{node.lineno}: missing local import {target}.{alias.name}")
+                if target == "rfr.search.rl.stage1.config":
+                    if any(alias.name in {"PPO_UPDATE_INTERVAL", "PPO_BATCH_SIZE", "STEP_INFO_CHUNK_SIZE"} for alias in node.names):
+                        errors.append(f"{module}:{node.lineno}: mutable rollout settings must be read through the config module")
+            else:
+                continue
+            for target in targets:
+                if target.startswith("rfr.") and target not in modules:
+                    errors.append(f"{module}:{node.lineno}: missing local module {target}")
+                if target == "rfr.search.workflow" and module.startswith(("rfr.search.common.", "rfr.search.rl.stage1.")):
+                    errors.append(f"{module}:{node.lineno}: lower-level code must not import the workflow")
+
+    owners = {
+        "SearchWorkflow": "rfr.search.workflow",
+        "GTrXLStrategyNetwork": "rfr.search.rl.stage1.policy",
+        "TransformerOptEnv": "rfr.search.rl.stage1.env",
+        "RecurrentRolloutBuffer": "rfr.search.rl.stage1.rollout",
+        "ppo_update_gtrxl": "rfr.search.rl.stage1.training",
+        "run_stage1": "rfr.search.rl.stage1.runner",
+    }
+    for name, expected in owners.items():
+        actual = sorted(
+            module for module, tree in modules.items()
+            if any(isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name == name for node in ast.walk(tree))
+        )
+        if actual != [expected]:
+            errors.append(f"{name}: expected sole owner {expected}, got {actual}")
+    return sorted(errors)
+
+
 def audit() -> dict[str, object]:
     paths = tracked_paths()
     path_set = set(paths)
@@ -293,6 +405,7 @@ def audit() -> dict[str, object]:
         for token in FORBIDDEN_RUNTIME_REFERENCES:
             if token in source:
                 reference_hits.append({"path": path, "token": token})
+    structure_errors = module_structure_errors(paths)
     return {
         "ok": (
             not missing_required_paths
@@ -300,12 +413,14 @@ def audit() -> dict[str, object]:
             and not tracked_artifact_paths
             and not backup_paths
             and not reference_hits
+            and not structure_errors
         ),
         "missing_required_paths": missing_required_paths,
         "forbidden_paths": forbidden_paths,
         "tracked_artifact_paths": tracked_artifact_paths,
         "backup_paths": backup_paths,
         "reference_hits": reference_hits,
+        "module_structure_errors": structure_errors,
     }
 
 
@@ -323,6 +438,7 @@ def main() -> int:
             "tracked_artifact_paths",
             "backup_paths",
             "reference_hits",
+            "module_structure_errors",
         ):
             values = result[key]
             if values:

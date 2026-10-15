@@ -1,8 +1,7 @@
 """Install and clear materialized BLB block configurations on a BERT model.
 
-All noise variances come from the registered N-specific tables. Degree-aware
-blocks are validated against the installed Stage-1 GELU and Softmax vectors.
-"""
+This module installs already-planned configs; preparation.rescale.optimizer_bridge
+calls the Rescale optimizer. Noise and degree validation remain unchanged."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -186,7 +185,7 @@ class BLBNoiseRLBridge:
             extra_overrides=None,
             ):
         """Evaluate already-installed configs without changing model state."""
-        from rfr.preparation.rescale.bridge import aggregate_optimizer_signals
+        from rfr.preparation.rescale.optimizer_bridge import aggregate_optimizer_signals
 
         outputs = rescale_bridge.evaluate_blocks(requests, extra_overrides=extra_overrides)
         signals = aggregate_optimizer_signals(outputs)

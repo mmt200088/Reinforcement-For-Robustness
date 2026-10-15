@@ -1,4 +1,6 @@
-"""Stage 2 environment for layerwise BLB configuration search."""
+"""Full-action execution environment: materialization, noisy probes and rewards.
+
+This is not the policy action schedule; policy_env owns one decision per layer."""
 from __future__ import annotations
 
 import copy
@@ -14,10 +16,10 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
-from rfr.preparation.rescale.bridge import RescaleOptimizerBridge
+from rfr.search.runtime.model_installation import BLBNoiseRLBridge
+from rfr.preparation.rescale.optimizer_bridge import RescaleOptimizerBridge
 
-from rfr.search.common.action_space import (
+from rfr.search.common.full_action import (
     K_LEVELS,
     MaxSFsTable,
     action_dims_for_config,

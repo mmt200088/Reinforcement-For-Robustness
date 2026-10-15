@@ -10,7 +10,7 @@ import time
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 from rfr.common.json_utils import to_jsonable as _to_jsonable
-from rfr.evaluation.training_curve_plot import save_stage1_style_training_curve
+from rfr.search.common.training_curves import save_stage1_style_training_curve
 
 
 BLB_STATUS_FILENAME = "blb_stage2_status.json"
@@ -394,7 +394,7 @@ def _stage1_style_panel(ax, raw, *, color, ma_color, ma_window, title,
                         ylabel, baseline=None, baseline_label="Baseline"):
     """Draw one Stage-1-style panel: raw (alpha) + Moving Avg + optional Baseline.
 
-    Mirrors ``layer_importance_evaluator``'s 3-panel convention so Stage-2 curves
+    Mirrors ``rfr.search.rl.stage1.runner``'s 3-panel convention so Stage-2 curves
     are visually identical in style. ASCII titles only (matplotlib default font
     has no CJK glyphs; Chinese lives in the markdown report).
     """

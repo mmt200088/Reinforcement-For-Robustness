@@ -1,4 +1,4 @@
-"""Stage-1 PPO rollout and checkpoint runtime."""
+"""Stage-1 policy, environment, training loop and deterministic runtime support."""
 
 from __future__ import annotations
 

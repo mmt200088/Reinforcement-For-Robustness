@@ -9,9 +9,9 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 import numpy as np
 import torch
 
-from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
+from rfr.search.runtime.model_installation import BLBNoiseRLBridge
 from rfr.search.runtime.model_handler import reseed_noise_rng
-from rfr.search.common.action_space import (
+from rfr.search.common.full_action import (
     ActionDecodeResult,
     _block_default_N,
     _decode_block_field_values,
@@ -39,7 +39,7 @@ from rfr.preparation.rescale.optimizer_cost import materialize_decoded_action
 from rfr.evaluation.protocol import require_final_evaluation_protocol
 from rfr.preparation.data.protocol import FINAL_EVAL_SPLIT
 from rfr.common.json_utils import read_json_file, to_jsonable
-from rfr.preparation.rescale.bridge import (
+from rfr.preparation.rescale.optimizer_bridge import (
     RescaleOptimizerBridge,
     aggregate_optimizer_signals,
     build_rescale_invoker,

@@ -1,6 +1,6 @@
 """N-GPU parallel rollout runner for Stage-1 RL.
 
-Stage-2 BLB has ``blb_stage2_rl/probe_runner.py``: K reward trials for one
+Stage-2 BLB has ``rfr.search.runtime.probe_runner``: K reward trials for one
 action run concurrently across N GPUs. Stage-1 RL's expensive unit is
 different — every episode ends with one BERT forward over the proxy split.
 So Stage-1's parallelism is **data-parallel rollout collection**: each of
@@ -11,10 +11,10 @@ one PPO update happens on the shared Stage-1 policy.
 
 Design (mirrors Stage-2 conventions where they fit):
 
-* **One PPO learner, one action stream.** Caller owns the Stage-1 policy on
-  the primary device. Worker threads transfer state tensors to that device
-  for action sampling under a lock; the policy forward is tiny so lock
-  serialization is negligible.
+* **One PPO learner, per-worker policy replicas.** Caller owns the central
+  policy. Each worker samples from its eval-mode replica, synchronized from
+  the central policy at each rollout window. The merged rollouts feed one
+  central PPO update.
 * **Worker 0 reuses the evaluator's primary model.** No extra GPU memory.
 * **Workers 1..N-1 deepcopy the BERT model onto their device** plus their
   own ``ReversibleLayerHandler`` for GELU/Softmax replacement. Each worker
@@ -462,7 +462,7 @@ def build_stage1_parallel_runner(
                             returning a fresh TransformerOptEnv whose eval wrapper
                             calls into the worker's replica.
         collect_episode_fn: One-episode rollout routine (lives in
-                            layer_importance_evaluator.py so it can use the
+                            rfr.search.rl.stage1.runner so it can use the
                             existing per-step state-building / step-info writer
                             helpers without circular import).
         device_ids:         e.g. ``[0, 1, 2, 3]``. ``device_ids[0]`` is the
@@ -477,7 +477,7 @@ def build_stage1_parallel_runner(
     """
     if ReversibleLayerHandler is None or _HANDLER_IMPORT_ERROR is not None:
         raise RuntimeError(
-            "function_handler import failed; cannot build Stage1ParallelRunner. "
+            "model_handler import failed; cannot build Stage1ParallelRunner. "
             "Original error: "
             f"{_HANDLER_IMPORT_ERROR!r}"
         )

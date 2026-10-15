@@ -618,7 +618,7 @@ def stage1_exact_log_barrier(
         *,
         is_upper_bound: bool,
         ) -> float:
-    """Exact Stage-1 log-barrier shape from layer_importance_evaluator.py."""
+    """Exact Stage-1 log-barrier shape from rfr.search.rl.stage1.runner."""
     limit = _safe_float(limit_value, 0.0)
     try:
         curr = float(curr_value)
@@ -757,7 +757,7 @@ def accuracy_margin_barrier(worst_signed_margin: float, weights: RewardWeights) 
 def stage1_log_barrier(margin: float, weights: RewardWeights) -> float:
     """ADR-015 Stage-1-style log-barrier on ONE signed normalized margin.
 
-    Faithful port of ``layer_importance_evaluator.log_barrier_reward``:
+    Faithful port of ``the Stage-1 log-barrier reward``:
       * ``margin >= 0`` (satisfied): ``SAT * log(margin + 1e-5)`` — diminishing
         reward for extra headroom (can be slightly negative for margin < 1).
       * ``margin < 0`` (violated): ``-VIO * exp(-margin * STEEPNESS)`` — a smooth

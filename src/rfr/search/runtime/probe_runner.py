@@ -49,12 +49,12 @@ import torch.nn as nn
 from rfr.search.runtime.elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
 from rfr.search.runtime.model_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
-from rfr.search.common.action_space import ActionDecodeResult
+from rfr.search.common.full_action import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
 
 
 try:
-    from rfr.search.runtime.blb_bridge import BLBNoiseRLBridge
+    from rfr.search.runtime.model_installation import BLBNoiseRLBridge
 except Exception:  # pragma: no cover — torch-free import path
     BLBNoiseRLBridge = None  # type: ignore
 
@@ -2394,7 +2394,7 @@ def build_probe_runner(
     if BLBNoiseRLBridge is None:
         raise RuntimeError(
             "blb_rl_bridge import failed earlier; cannot build ProbeRunner. "
-            "Likely cause: function_handler.py failed to import (torch/transformers missing)."
+            "Likely cause: model_handler.py failed to import (torch/transformers missing)."
         )
     if not device_ids:
         raise ValueError("build_probe_runner requires at least one device id")

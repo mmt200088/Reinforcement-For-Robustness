@@ -84,7 +84,7 @@ def parse_degree_config(raw_value: Any) -> List[int] | None:
 
     Accepts ``None``/empty as missing, Python sequences, JSON-list strings, and
     comma-separated strings.  This intentionally preserves the historical
-    ``rl_tune*.py`` command-line behavior.
+    ``rfr.cli.run`` command-line behavior.
     """
     if raw_value is None or raw_value == "":
         return None

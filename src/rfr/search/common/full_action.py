@@ -16,7 +16,7 @@ import numpy as np
 from rfr.common.json_utils import read_json_file
 from rfr.preparation.fusion.count_map import FUSION_CONFIG_ROOT
 from rfr.preparation.rescale import RESCALE_CONFIG_ROOT
-from rfr.search.runtime.blb_bridge import (
+from rfr.search.runtime.model_installation import (
     Block1ActionSpec,
     Block2ActionSpec,
     Block3ActionSpec,

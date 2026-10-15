@@ -60,7 +60,8 @@ ignore = [
 allowed-confusables = ["’", "‘"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/rfr/search/common/evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
+"src/rfr/search/workflow.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
+"src/rfr/search/rl/stage1/runner.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
 "src/rfr/cli/run.py" = ["F841", "E402"]
 ".github/*" = ["ALL"]
 "scripts/*" = ["F401", "F841"]

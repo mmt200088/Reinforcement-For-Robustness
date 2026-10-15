@@ -1,4 +1,6 @@
-"""Stage-2 environment with one policy action per BERT layer."""
+"""Policy-facing Stage-2 environment with one fusion/precision decision per layer.
+
+Completed compact actions are handed to execution_env for model evaluation."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from rfr.search.common.action_space import make_all_max_action_vector
+from rfr.search.common.full_action import make_all_max_action_vector
 from rfr.search.common.layerwise_action import (
     LAYERWISE_SLOT_NAMES,
     LayerwiseDecodedAction,

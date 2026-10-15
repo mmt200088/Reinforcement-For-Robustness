@@ -5,6 +5,15 @@ sequence-classification models. The production surface contains two-stage PPO,
 BO-RF, Greedy, COINN-GA, fusion-map preparation, the in-process Rescale
 optimizer, and selected-configuration evaluation.
 
+## Code Map
+
+Start with [the code structure and reading guide](docs/CODE_STRUCTURE.md).
+`src/rfr/search/workflow.py` owns cross-stage state and dispatch. Stage-1
+algorithms live under `search/rl/stage1/`; Stage 2 explicitly separates its
+entrypoint, orchestration, PPO loop, policy environment and execution
+environment. Shared training plots live with search utilities, while
+`evaluation/` is reserved for selected-configuration final evaluation.
+
 ## Supported Profiles
 
 - Models: `bert-base`, `bert-large`

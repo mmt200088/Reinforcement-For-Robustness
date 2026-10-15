@@ -1,20 +1,9 @@
-"""Torch-free access to the BLB noise-variance table.
+"""Torch-free access to the runtime noise-variance table.
 
-The canonical source of truth is ``function_handler._NOISE_STD_RAW`` (the
-``noise_std_table.csv`` import). ``function_handler`` imports torch at module
-load, so importing it pulls torch in — unusable on a torch-free box (local dev)
-or in the torch-free test lane. This module extracts ``_NOISE_STD_RAW`` from the
-``function_handler.py`` *source* via ``ast`` (no execution, no torch) and rebuilds
-the same ``NOISE_VARIANCE_TABLE_BY_N`` mapping.
-
-The extraction mirrors ``scripts/blb_verify_noise_install.load_noise_variance_table``
-exactly (``encoding=std_enc^2``, ``fresh=std_fresh^2``, ``rescale=std_rs^2``,
-``rotation`` reuses the rescale column). Both read the single ``_NOISE_STD_RAW``
-literal, so there is no data drift.
-
-The table stays in the torch-free common package. It reads the model-handler
-source without importing torch.
-"""
+The source of truth is _NOISE_STD_RAW in search/runtime/model_handler.py.
+Read its literal through ast without importing Torch. Encoding, fresh and
+rescale variances are squared standard deviations; rotation uses rescale.
+This module does not read a local CSV file."""
 
 from __future__ import annotations
 
@@ -27,7 +16,7 @@ _FUNCTION_HANDLER = _THIS_DIR.parent / "runtime" / "model_handler.py"
 
 
 def _extract_noise_std_raw() -> Dict[int, Dict[int, Tuple[float, float, float]]]:
-    """Pull the ``_NOISE_STD_RAW`` literal out of function_handler.py via ast."""
+    """Pull the ``_NOISE_STD_RAW`` literal out of model_handler.py via ast."""
     src = _FUNCTION_HANDLER.read_text(encoding="utf-8")
     tree = ast.parse(src)
     for node in ast.walk(tree):
@@ -68,7 +57,7 @@ def variance(N: int, scaling_factor: int, distribution: str) -> float:
     A scaling factor ABOVE the table max installs no measurable noise: var(46) is
     ~2.8e-25 and each +1 SF is ~x0.25, so var(>46) is far below fp precision
     (var(49)~4e-27). Such a point is treated as 0 (no noise) — matching
-    ``function_handler.get_input_noise_variance_by_N`` — so the precision boost can
+    ``model_handler.get_input_noise_variance_by_N`` — so the precision boost can
     push an installed point past the table max instead of being blocked by it. SF
     BELOW the table min stays a KeyError (that regime is snapped to the table min
     upstream and never looked up here).

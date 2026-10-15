@@ -1,4 +1,4 @@
-"""Production entrypoint for layerwise Stage-2 training and comparators."""
+"""Stage-2 entrypoint and configuration adapter for PPO and comparators."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ from typing import Any, Mapping, Optional
 import torch
 
 from rfr.preparation.data.protocol import TRAIN_PROBE_SIZE, TRAIN_PROBE_SPLIT
-from rfr.preparation.rescale.bridge import (
+from rfr.preparation.rescale.optimizer_bridge import (
     RescaleOptimizerBridge,
     build_rescale_invoker,
 )
 
-from rfr.search.rl.stage2.env import ProbeBatch
+from rfr.search.rl.stage2.execution_env import ProbeBatch
 from rfr.search.rl.stage2.policy import LayerwisePPOConfig
 
 
@@ -227,7 +227,7 @@ class BLBStage2RLRunner:
         fixed_source: str,
         resume_checkpoint_path: Optional[str] = None,
     ) -> dict[str, Any]:
-        from rfr.search.rl.stage2.runner import run_layerwise_via_runner
+        from rfr.search.rl.stage2.orchestration import run_layerwise_via_runner
 
         self.evaluator.activate_stage2_inference_batch_size()
         return run_layerwise_via_runner(

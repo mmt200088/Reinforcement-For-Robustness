@@ -423,7 +423,7 @@ def static_skeletons_baseline_to_action(
             noise-table SF when true; preserve archived values when false.
     """
 
-    from rfr.search.common.action_space import (
+    from rfr.search.common.full_action import (
         K_LEVELS, MaxSFsTable, NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N,
         _BLOCK_NODE_NAME_BY_FIELD, _BLOCK_SPECS,
         _block_default_N, load_max_sfs, make_all_max_action_vector,
@@ -531,7 +531,7 @@ def static_skeletons_baseline_to_action(
                 action_vec[int(li * layer_dim + field_offset)] = 0
 
 
-    from rfr.search.common.action_space import BASELINE_K_BY_BLOCK
+    from rfr.search.common.full_action import BASELINE_K_BY_BLOCK
     k_sum = 0.0
     k_count = 0
     for li in range(L):

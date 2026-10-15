@@ -1,4 +1,6 @@
-"""Twelve-step robust PPO training for the Stage-2 layerwise action space."""
+"""Layerwise robust PPO loop, candidate promotion and checkpoint evidence.
+
+The horizon follows the BERT layer count (12 or 24), not a fixed twelve steps."""
 
 from __future__ import annotations
 
